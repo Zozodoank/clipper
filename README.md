@@ -2,7 +2,7 @@
 
 A local web application built with **React (Vite)** and **Node.js (Express)** that automates transforming YouTube videos into viral, high-converting **9:16 vertical reels** for **Shopee Affiliate Marketing**.
 
-Powered by **Aivene AI (`gemini-1.5-flash`)**, **yt-dlp**, and **FFmpeg** anti-detection video rendering with burned-in subtitles and Indonesian voiceover generation.
+Powered by **Aivene AI (`gpt-4o-mini` & `gemini-1.5-flash`)**, **Google AI Studio Ad Advisor Standards**, **yt-dlp**, and **FFmpeg** anti-detection video rendering.
 
 ---
 
@@ -10,21 +10,24 @@ Powered by **Aivene AI (`gemini-1.5-flash`)**, **yt-dlp**, and **FFmpeg** anti-d
 
 1. **YouTube Downloader**: Automatically downloads source videos at 720p resolution using `yt-dlp`.
 2. **Visual Keyframe Sampling**: Samples 1 frame every 2 seconds via `ffmpeg` and converts to Base64.
-3. **AI Vision & Affiliate Scripting**:
-   - Analyzes frames with **Aivene API** (`baseURL: 'https://api.aivene.com/v1'`, model: `gemini-1.5-flash`).
-   - Identifies the best **15-30 second viral highlight segment** (`startTime`, `endTime`).
-   - Produces a high-converting **Indonesian voiceover script** and **social media caption** with viral hashtags and embedded Shopee CTA link.
-4. **Indonesian Voiceover Synthesis (TTS)**: Synthesizes high quality Indonesian promotional audio.
-5. **Anti-Detection FFmpeg Rendering Pipeline**:
+3. **Ad Advisor AI Analysis (`gpt-4o-mini`)**:
+   - **🎬 Kotak Scene (Scene Breakdown)**: Detailed scene-by-scene timing (`timeRange`), visual cue descriptions (`visualDescription`), exact spoken line (`voiceover`), and director notes (`adAdvisorNotes`).
+   - **📋 Sample Context**: Comprehensive product summary, unique selling points (USPs), target audience, and psychological buying triggers.
+   - **🎙️ Voiceover Script (Indonesian)**: Structured according to Ad Advisor best practices:
+     - `[HOOK 0-3s]`: Viral hook to stop the scroll
+     - `[DEMO & BENEFIT 3-15s]`: Highlighting product value seen in visual frames
+     - `[CALL TO ACTION 15-30s]`: Clear Shopee affiliate checkout CTA
+   - **🤖 Google AI Studio / Gemini Manual Prompt**: Pre-formatted copyable prompt template ready to copy-paste into Google AI Studio or Gemini for manual fine-tuning.
+   - **📱 Reels & TikTok Caption**: Viral caption with emojis, trending hashtags, and embedded Shopee affiliate link.
+4. **Anti-Detection FFmpeg Rendering Pipeline**:
    - Crops & scales to **9:16 vertical ratio (720x1280)**.
-   - Adjusts video speed to **1.03x** (`setpts=0.97*PTS`) to alter frame timing.
+   - Alters video speed to **1.03x** (`setpts=0.97*PTS`, audio `atempo=1.03`) to alter frame timing.
    - Modifies color fingerprint with contrast & saturation tweaks (`eq=contrast=1.05:saturation=1.05`).
    - Reverses orientation with **Horizontal Flip (`hflip`)** filter.
-   - Layers TTS voiceover audio over ducked background sound.
-   - Burns synchronized, high-contrast **subtitles** into the video.
-6. **Local Preview & Instant Download**:
+   - Preserves crisp synchronized audio.
+5. **Local Preview & Instant Download**:
    - HTML5 9:16 Video Player preview.
-   - 1-Click Copy for Instagram/Facebook Reels Caption with hashtags and Shopee affiliate link.
+   - 1-Click Copy for all 5 creative assets (Kotak Scene, Script, Context, Prompt, Caption).
    - Direct download button for the rendered `.mp4` file.
    - Automatic temp file cleanup.
 
@@ -35,63 +38,29 @@ Powered by **Aivene AI (`gemini-1.5-flash`)**, **yt-dlp**, and **FFmpeg** anti-d
 - **Frontend**: React 18, Vite, Tailwind CSS, Lucide Icons.
 - **Backend**: Node.js, Express.js, Server-Sent Events (SSE).
 - **Engines**: FFmpeg (`ffmpeg-static`), yt-dlp (`yt-dlp-wrap` / binary).
-- **AI Integration**: Official `openai` npm package configured for Aivene (`https://api.aivene.com/v1`).
-
----
-
-## 📋 Prerequisites
-
-- **Node.js** (v18 or higher recommended)
-- **npm** (comes with Node.js)
-- **Aivene API Key** (from [aivene.com](https://aivene.com))
-
-> [!NOTE]
-> `ffmpeg-static` is bundled in the server dependencies, and `yt-dlp` will auto-download its standalone executable to `./server/bin/` if not present in your system PATH.
+- **AI Integration**: Official `openai` npm package configured for Aivene (`https://api.aivene.com/v1`, models: `gpt-4o-mini`, `gemini-1.5-flash`).
 
 ---
 
 ## 🚀 Step-by-Step Installation & Execution
 
-### 1. Clone or Open Project Directory
-```bash
-cd Clippers
+### 1. Open Terminal in the Project Directory
+```powershell
+cd "c:\Users\SEMOGA AWET\Documents\Clippers"
 ```
 
-### 2. Install Dependencies
-You can install dependencies for both backend and frontend in one command:
-```bash
+### 2. Install Dependencies (If not already installed)
+```powershell
 npm run install:all
 ```
-*Or manually:*
-```bash
-cd server && npm install
-cd ../client && npm install
-```
 
-### 3. (Optional) Configure Environment Variables
-You can copy the server `.env.example` to `.env`:
-```bash
-# In server directory
-cp .env.example .env
-```
-You can also input your Aivene API key directly into the Web UI.
-
-### 4. Run Development Servers
+### 3. Run Development Servers
 Start both backend (Port 5000) and frontend (Port 3000) concurrently:
-```bash
+```powershell
 npm run dev
 ```
 
-*Or start them in separate terminals:*
-```bash
-# Terminal 1 - Backend:
-npm run server:dev
-
-# Terminal 2 - Frontend:
-npm run client
-```
-
-### 5. Access the Web Application
+### 4. Access the Web Application
 Open your browser and navigate to:
 ```
 http://localhost:3000
@@ -101,68 +70,16 @@ http://localhost:3000
 
 ## 📱 How to Use
 
-1. **Enter YouTube Video URL**: Paste the link of the product unboxing or review video.
-2. **Enter Shopee Affiliate Link**: Paste your Shopee product referral/affiliate link.
-3. **Enter Aivene API Key**: Paste your API key (it will be saved locally in your browser).
-4. **Customize Anti-Detection Filters (Optional)**: Click **Settings** to toggle horizontal flip, adjust speed (1.00x - 1.08x), subtitle burning, or voice profile.
-5. **Click "Generate Local Clip"**:
-   - Watch the live step-by-step progress bar and logs.
-   - When finished, preview the 9:16 vertical video in the player.
-   - Click **Copy Caption** to copy the generated caption + Shopee link.
-   - Click **Download 9:16 Video (.mp4)** to save the video to your local disk.
-
----
-
-## 📁 Project Structure
-
-```
-Clippers/
-├── dev-runner.js             # Root launcher script for concurrent client & server
-├── package.json              # Root workspace management
-├── README.md                 # Documentation and instructions
-│
-├── server/                   # Backend Express Engine
-│   ├── package.json
-│   ├── server.js             # API routes (/api/generate, /api/progress, /api/video, etc.)
-│   ├── .env.example
-│   ├── services/
-│   │   ├── binaryChecker.js  # Resolves & auto-downloads FFmpeg & yt-dlp executables
-│   │   ├── downloader.js     # Downloads 720p video via yt-dlp
-│   │   ├── frameExtractor.js # Extracts 1 frame / 2s and Base64 encodes
-│   │   ├── aiService.js      # Aivene API gemini-1.5-flash vision analysis & TTS
-│   │   ├── subtitleService.js# Generates timed SRT subtitles
-│   │   ├── videoRenderer.js  # FFmpeg anti-detection rendering pipeline
-│   │   └── cleaner.js        # Cleans up intermediate temp files
-│   ├── temp/                 # Temporary storage (auto-cleaned)
-│   ├── output/               # Rendered 9:16 MP4 video outputs
-│   └── bin/                  # Local standalone executables
-│
-└── client/                   # Frontend React (Vite) Application
-    ├── package.json
-    ├── vite.config.js
-    ├── tailwind.config.js
-    ├── postcss.config.js
-    ├── index.html
-    └── src/
-        ├── main.jsx
-        ├── index.css
-        ├── App.jsx
-        └── components/
-            ├── Navbar.jsx
-            ├── DependenciesStatus.jsx
-            ├── InputCard.jsx
-            ├── ProgressCard.jsx
-            ├── VideoPlayer.jsx
-            ├── CaptionCard.jsx
-            └── SettingsModal.jsx
-```
-
----
-
-## 🛡️ Anti-Detection Video Filters Explained
-
-- **9:16 Aspect Ratio (720x1280)**: Converts widescreen landscape videos into vertical reels.
-- **Speed Multiplier (1.03x / `0.97*PTS`)**: Modifies video playback speed and audio tempo to disrupt audio-visual fingerprint hash matching.
-- **Color EQ Alteration (`contrast=1.05:saturation=1.05:brightness=0.01`)**: Alters RGB histograms and pixel values.
-- **Horizontal Flip (`hflip`)**: Reverses left/right orientation to bypass perceptual video matching algorithms.
-- **Voiceover Layering & Subtitles**: Generates fresh Indonesian promotional voiceover and burns styled subtitle typography onto the frame.
+1. **Select Model**: Choose **gpt-4o-mini** (Recommended for Ad Advisor scene breakdown & scripts) or **gemini-1.5-flash**.
+2. **Enter YouTube Video URL**: Paste the link of the product review or unboxing video.
+3. **Enter Shopee Affiliate Link**: Paste your Shopee referral link.
+4. **Enter Aivene API Key**: Paste your API key (saved locally in browser).
+5. **Click "Generate Local Clip & Script"**:
+   - The engine downloads the video, samples frames, and analyzes them with Ad Advisor logic.
+   - Once finished, preview the 9:16 video and access all 5 generated assets in the tabbed panel:
+     - **Kotak Scene**: Copy scene-by-scene breakdown for manual editing or storyboard.
+     - **Script Voiceover**: Copy the complete Indonesian spoken narration.
+     - **Sample Context**: Review target audience, core problem, and USPs.
+     - **AI Studio Prompt**: Copy-paste into Google AI Studio / Gemini to experiment with alternate scripts.
+     - **Caption & Shopee Link**: Copy ready-to-post caption with hashtags and link.
+   - Click **Download 9:16 Video (.mp4)** to save the video to your disk.

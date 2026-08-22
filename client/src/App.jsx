@@ -6,7 +6,7 @@ import ProgressCard from './components/ProgressCard';
 import VideoPlayer from './components/VideoPlayer';
 import CaptionCard from './components/CaptionCard';
 import SettingsModal from './components/SettingsModal';
-import { Sparkles, Video, ShieldCheck, Zap, Layers, RefreshCw } from 'lucide-react';
+import { Sparkles, Video, ShieldCheck, Zap, Layers, RefreshCw, Clapperboard } from 'lucide-react';
 
 export default function App() {
   // Form State (persisting API key in localStorage for convenience)
@@ -14,13 +14,15 @@ export default function App() {
     youtubeUrl: '',
     shopeeLink: '',
     apiKey: localStorage.getItem('AIVENE_API_KEY') || '',
+    model: 'gpt-4o-mini',
   }));
 
   // Anti-Detection & Pipeline Settings
   const [settings, setSettings] = useState({
     hflip: true,
     speedMultiplier: 1.03,
-    enableSubtitles: true,
+    enableSubtitles: false,
+    enableTts: false,
     voice: 'alloy',
   });
 
@@ -90,7 +92,7 @@ export default function App() {
 
     setProgressState({
       step: 'start',
-      message: 'Initializing local AI processing pipeline...',
+      message: 'Initializing Ad Advisor & Local Video Engine...',
       progress: 5,
       status: 'running',
       error: null,
@@ -130,7 +132,6 @@ export default function App() {
     };
 
     sse.onerror = () => {
-      // In case of SSE disconnect, fall back to POST response
       sse.close();
     };
 
@@ -145,6 +146,7 @@ export default function App() {
           youtubeUrl: formData.youtubeUrl,
           shopeeLink: formData.shopeeLink,
           apiKey: formData.apiKey,
+          model: formData.model || 'gpt-4o-mini',
           options: settings,
         }),
       });
@@ -158,7 +160,7 @@ export default function App() {
       setResult(data);
       setProgressState({
         step: 'completed',
-        message: 'Generation complete! Output video and caption ready.',
+        message: 'Generation complete! Kotak Scene, Ad Advisor Script, and 9:16 Video ready.',
         progress: 100,
         status: 'completed',
         error: null,
@@ -202,7 +204,7 @@ export default function App() {
         {/* Two-column layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           
-          {/* Left Column: Form & Live Pipeline Progress (5 cols on lg) */}
+          {/* Left Column: Form & Live Pipeline Progress (6 cols on lg) */}
           <div className="lg:col-span-6 space-y-6">
             <InputCard
               formData={formData}
@@ -218,47 +220,46 @@ export default function App() {
             )}
           </div>
 
-          {/* Right Column: Video Preview, Caption, Scripts & Download (6 cols on lg) */}
+          {/* Right Column: Video Preview, Scene Breakdown & Scripts (6 cols on lg) */}
           <div className="lg:col-span-6 space-y-6">
             {result ? (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                {/* 9:16 Video Player & Download Button */}
+                {/* 9:16 Video Player & Direct Download Button */}
                 <VideoPlayer result={result} />
 
-                {/* Reels Caption, Hashtags & Voiceover Script */}
+                {/* Ad Advisor Kotak Scene, Context, Voiceover Script & AI Studio Prompt */}
                 <CaptionCard result={result} />
               </div>
             ) : (
               /* Idle Empty State Showcase */
-              <div className="glass-panel rounded-2xl p-8 text-center flex flex-col items-center justify-center min-h-[460px] border-dashed border-slate-800">
+              <div className="glass-panel rounded-2xl p-8 text-center flex flex-col items-center justify-center min-h-[480px] border-dashed border-slate-800">
                 <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-shopee-500/20 via-orange-500/20 to-amber-500/20 border border-shopee-500/30 flex items-center justify-center text-shopee-500 mb-4 shadow-xl">
-                  <Video className="w-8 h-8 stroke-[1.75]" />
+                  <Clapperboard className="w-8 h-8 stroke-[1.75]" />
                 </div>
 
                 <h3 className="text-lg font-bold text-white mb-2">
-                  No Clip Generated Yet
+                  Ready to Generate Ad Advisor Clip
                 </h3>
                 <p className="text-xs text-slate-400 max-w-md leading-relaxed mb-6">
-                  Paste a YouTube video URL and your Shopee affiliate link on the left, then click <strong className="text-slate-200">"Generate Local Clip"</strong>.
-                  The local engine will automatically download, analyze frames with Aivene AI, generate an Indonesian voiceover, and render an anti-detection 9:16 video.
+                  Input link YouTube dan link Shopee Affiliate Anda di sebelah kiri. Model <strong className="text-indigo-400 font-mono">gpt-4o-mini</strong> akan menganalisis visual frame untuk membuat <strong className="text-slate-200">Kotak Scene</strong>, <strong className="text-slate-200">Sample Context</strong>, <strong className="text-slate-200">Script Voice Over (Ad Advisor)</strong>, serta merender video vertikal 9:16 anti-detection.
                 </p>
 
                 {/* Feature highlight badges */}
                 <div className="grid grid-cols-2 gap-3 w-full max-w-sm text-left">
                   <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
                     <div className="font-bold text-slate-200 flex items-center gap-1.5 mb-1">
-                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                      <span>AI Vision Analysis</span>
+                      <Clapperboard className="w-3.5 h-3.5 text-shopee-400" />
+                      <span>Kotak Scene AI</span>
                     </div>
-                    <p className="text-[11px] text-slate-400">Extracts 15-30s high-converting viral segment</p>
+                    <p className="text-[11px] text-slate-400">Scene breakdown + visual cues + spoken narration</p>
                   </div>
 
                   <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
                     <div className="font-bold text-slate-200 flex items-center gap-1.5 mb-1">
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Anti-Detection Edits</span>
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span>AI Studio Prompt</span>
                     </div>
-                    <p className="text-[11px] text-slate-400">1.03x speed, color shift, hflip & burned subs</p>
+                    <p className="text-[11px] text-slate-400">Siap copy-paste ke Gemini / Google AI Studio</p>
                   </div>
                 </div>
               </div>
@@ -279,7 +280,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-slate-800/60 py-4 bg-slate-950/40 text-center text-xs text-slate-500">
-        <p>Local AI Affiliate Clipper &bull; React + Node.js + FFmpeg + Aivene AI &bull; Strictly Local Processing</p>
+        <p>Local AI Affiliate Clipper &bull; React + Node.js + FFmpeg + Aivene AI (gpt-4o-mini / gemini-1.5-flash) &bull; Ad Advisor Standard</p>
       </footer>
 
     </div>

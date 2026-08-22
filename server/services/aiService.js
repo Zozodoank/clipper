@@ -4,23 +4,32 @@ import path from 'path';
 import fetch from 'node-fetch';
 
 /**
- * Calls Aivene API (model 'gemini-1.5-flash') using OpenAI SDK with multimodal Base64 image frames.
+ * Calls Aivene API (using model 'gpt-4o-mini' or 'gemini-1.5-flash') using OpenAI SDK with multimodal Base64 image frames.
+ * Generates Ad Advisor standard affiliate creative assets: Scene Breakdown (Kotak Scene), Sample Context,
+ * Voiceover Script (ID), AI Studio / Gemini prompt template, and Reels Caption with Shopee Affiliate link.
+ * 
  * @param {object} params
  * @param {string} params.apiKey - Aivene API Key
+ * @param {string} [params.model='gpt-4o-mini'] - Target AI model
  * @param {Array<object>} params.frames - Array of { timestamp, timeFormatted, base64 }
  * @param {object} params.videoMetadata - { title, duration, description }
  * @param {string} params.shopeeLink - Affiliate URL
  * @param {Function} params.onProgress - Progress callback
- * @returns {Promise<{ startTime: string, endTime: string, startSeconds: number, endSeconds: number, duration: number, voiceoverScript: string, caption: string, productHook: string }>}
+ * @returns {Promise<object>} Structured Ad Advisor creative output
  */
 export async function analyzeVideoWithAivene({
   apiKey,
+  model = 'gpt-4o-mini',
   frames,
   videoMetadata,
   shopeeLink,
   onProgress = () => {}
 }) {
-  onProgress({ step: 'ai_vision', message: 'Sending visual frames to Aivene (gemini-1.5-flash)...', progress: 55 });
+  onProgress({
+    step: 'ai_vision',
+    message: `Sending visual frames to Aivene (${model}) for Ad Advisor analysis...`,
+    progress: 55
+  });
 
   const effectiveApiKey = apiKey || process.env.AIVENE_API_KEY;
   if (!effectiveApiKey) {
@@ -35,23 +44,39 @@ export async function analyzeVideoWithAivene({
   const totalDuration = videoMetadata?.duration || 60;
   const videoTitle = videoMetadata?.title || 'Product Showcase Video';
 
-  const systemPrompt = `You are a World-Class Viral Affiliate Marketing Producer specializing in Indonesian Short-Form Content (TikTok, Instagram Reels, Facebook Reels, YouTube Shorts).
-Your goal is to analyze the sequence of video frames extracted from a video, find the most engaging and viral 15-30 second segment, and create an irresistible Indonesian affiliate sales pitch for Shopee.
+  const systemPrompt = `You are a World-Class Short-Form Video Producer and Senior Ad Advisor specializing in high-converting Indonesian Affiliate Video Ads (TikTok Shop, Shopee Video, Instagram Reels, Facebook Reels) conforming to Google AI Studio Ad Advisor best practices.
 
-Strict Rules:
-1. Identify the most engaging, action-packed, or product-demonstrating 15 to 30 second continuous clip from the video frames.
-2. Output exact 'startTime' and 'endTime' (format "MM:SS" or "HH:MM:SS", within 00:00 to ${formatSeconds(totalDuration)}). Ensure segment duration is between 15 and 30 seconds.
-3. Write a high-converting, natural Indonesian promotional voiceover script ('voiceoverScript'). It must:
-   - Hook the viewer in the first 3 seconds (curiosity, pain point, or "Racun Shopee" curiosity hook).
-   - Highlight 2-3 key benefits shown in the visual clip.
-   - End with a strong Call to Action (CTA) telling viewers to check the Shopee link in bio / caption / comments.
-   - Match the 15-30 second speaking duration (approximately 35-70 spoken Indonesian words).
-4. Write an engaging social media Reels caption ('caption'):
-   - Punchy headline with emojis.
-   - Persuasive product description.
-   - Direct CTA with the provided Shopee affiliate link.
-   - 8-12 trending Indonesian hashtags (#racunshopee #shopeehaul #affiliatehaul #spillracunshopee #tiktokshop #reelsviral #fyp, etc.).
-5. You MUST return ONLY valid JSON matching the requested schema.`;
+Your objective:
+Analyze the sampled video frames, extract deep product context, identify the most captivating 15-30 second viral highlight window, and generate 5 structured creative marketing assets:
+
+1. 'sampleContext': Comprehensive context breakdown in Indonesian:
+   - Product Identity & What it does
+   - Target Audience & Their Core Pain Point
+   - Key Unique Selling Propositions (USPs) seen in the visual frames
+   - Best emotional buying trigger
+
+2. 'scenes' (Kotak Scene / Scene-by-Scene Breakdown):
+   - Break the chosen 15-30 second highlight into 3 to 4 distinct scenes.
+   - For each scene provide:
+     * 'sceneNumber': integer (1, 2, 3...)
+     * 'timeRange': e.g. "00:00 - 00:05"
+     * 'visualDescription': What is happening visually in Indonesian
+     * 'voiceover': The exact spoken narration line for this scene
+     * 'adAdvisorNotes': Director tips on pacing, sound effects (SFX), or visual text overlays
+
+3. 'voiceoverScript': Complete, cohesive Indonesian spoken script written in Ad Advisor structure:
+   - [HOOK 0-3s]: High-curiosity question or bold statement ("Racun Shopee", "Stop scroll!", etc.)
+   - [AGITATION & DEMO 3-15s]: Demonstrating the benefit shown in the video
+   - [VALUE PROPOSITION 15-22s]: Why this product is worth buying
+   - [CALL TO ACTION 22-30s]: Direct CTA to checkout via Shopee link in bio/caption
+
+4. 'aiStudioPrompt': A ready-to-copy prompt in Indonesian formatted specifically for manual copy-pasting into Google AI Studio / Gemini to experiment with alternate voiceover variations or scripts.
+
+5. 'caption': Viral Instagram & Facebook Reels caption with emojis, Indonesian hashtags (#racunshopee, #shopeehaul, #spillracun, etc.), and the provided Shopee affiliate link.
+
+6. 'startTime' and 'endTime': Best continuous 15-30s highlight window (format "MM:SS").
+
+Output MUST be strictly valid JSON matching the requested schema.`;
 
   const userTextPrompt = `Video Title: "${videoTitle}"
 Total Video Duration: ${totalDuration} seconds (${formatSeconds(totalDuration)})
@@ -60,15 +85,32 @@ Shopee Affiliate Link to promote: ${shopeeLink || 'https://shope.ee/affiliate_li
 Visual Frames Sampled (${frames.length} frames across timeline):
 ${frames.map((f, i) => `Frame #${i + 1} at timestamp ${f.timeFormatted} (${f.timestamp}s)`).join('\n')}
 
-Analyze the visual frames attached to identify the product/scene, select the best 15-30s highlight segment, and generate the Indonesian affiliate script and caption.
+Analyze the product, choose the 15-30s highlight segment, and generate the Ad Advisor structured breakdown and voiceover script in Indonesian.
 
-Return JSON strictly in this structure:
+Return strict JSON in this format:
 {
   "startTime": "00:15",
   "endTime": "00:40",
-  "productHook": "Short punchy Indonesian hook text for video overlay",
-  "voiceoverScript": "Lengkap teks voiceover bahasa Indonesia tanpa markdown/tanda baca aneh...",
-  "caption": "Teks caption lengkap beserta link Shopee dan hashtag..."
+  "productHook": "Headline hook untuk banner video",
+  "sampleContext": {
+    "productName": "Nama produk",
+    "targetAudience": "Target audiens spesifik",
+    "coreProblem": "Masalah utama yang diselesaikan",
+    "keyFeatures": ["Fitur 1", "Fitur 2", "Fitur 3"],
+    "buyingTrigger": "Alasan psikologis beli"
+  },
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "timeRange": "00:15 - 00:20",
+      "visualDescription": "Deskripsi visual adegan",
+      "voiceover": "Teks voiceover scene 1",
+      "adAdvisorNotes": "Tips sutradara (SFX / Pacing / Text on screen)"
+    }
+  ],
+  "voiceoverScript": "[HOOK]\\n...\\n\\n[PROBLEM & DEMO]\\n...\\n\\n[CALL TO ACTION]\\n...",
+  "aiStudioPrompt": "Salin prompt ini ke Google AI Studio / Gemini...",
+  "caption": "Teks caption lengkap dengan link Shopee dan hashtag..."
 }`;
 
   const messageContent = [
@@ -81,9 +123,11 @@ Return JSON strictly in this structure:
     })),
   ];
 
+  const primaryModel = model || 'gpt-4o-mini';
+
   try {
     const response = await client.chat.completions.create({
-      model: 'gemini-1.5-flash',
+      model: primaryModel,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: messageContent },
@@ -99,7 +143,6 @@ Return JSON strictly in this structure:
     try {
       parsedResult = JSON.parse(rawContent);
     } catch (parseErr) {
-      // Clean possible markdown backticks
       const cleaned = rawContent.replace(/```json/gi, '').replace(/```/g, '').trim();
       parsedResult = JSON.parse(cleaned);
     }
@@ -123,23 +166,56 @@ Return JSON strictly in this structure:
     const finalStartTime = formatSeconds(startSec);
     const finalEndTime = formatSeconds(endSec);
 
-    // Fallback script if empty
+    // Fallbacks
     let voiceoverScript = (parsedResult.voiceoverScript || '').trim();
     if (!voiceoverScript) {
-      voiceoverScript = `Gila sih, produk yang satu ini bener-bener viral dan berguna banget buat kamu! Kualitasnya mantap, harganya juga ramah di kantong. Buruan cek link Shopee di deskripsi sekarang sebelum kehabisan diskonnya ya!`;
+      voiceoverScript = `[HOOK]\nGila sih, barang yang satu ini bener-bener viral dan wajib banget kamu punya!\n\n[DEMO & BENEFIT]\nKualitasnya kokoh, praktis dipakai sehari-hari, dan bikin hidup jauh lebih mudah.\n\n[CALL TO ACTION]\nHarganya lagi diskon gila-gilaan di Shopee, buruan klik link di bio/deskripsi sebelum kehabisan!`;
     }
 
     let caption = (parsedResult.caption || '').trim();
     if (!caption) {
-      caption = `🔥 Racun Shopee Viral Wajib Punya!\n\nBarang impian yang lagi rame banget! Buruan checkout sebelum kehabisan diskon & promo gratis ongkirnya!\n\n🛒 Link Pembelian Shopee: ${shopeeLink || 'https://shope.ee/link-disini'}\n\n#racunshopee #shopeehaul #racuntiktok #reelsviral #affiliateindonesia #spillracunshopee`;
+      caption = `🔥 Racun Shopee Viral Wajib Punya!\n\nBarang impian yang lagi viral! Buruan checkout sekarang mumpung lagi diskon & promo gratis ongkir!\n\n🛒 Link Pembelian Shopee: ${shopeeLink || 'https://shope.ee/link-disini'}\n\n#racunshopee #shopeehaul #racuntiktok #reelsviral #affiliateindonesia #spillracunshopee`;
     } else if (shopeeLink && !caption.includes(shopeeLink)) {
       caption += `\n\n🛒 Link Shopee: ${shopeeLink}`;
     }
 
+    // Fallback for AI Studio Prompt if empty
+    let aiStudioPrompt = (parsedResult.aiStudioPrompt || '').trim();
+    if (!aiStudioPrompt) {
+      aiStudioPrompt = `Bertindaklah sebagai Senior Ad Advisor untuk konten Shopee Affiliate Indonesia.\nKonteks Produk: "${videoTitle}"\nBuat variasi script voiceover 20-30 detik dengan formula Hook (0-3s), Story/Problem (3-15s), dan Call To Action ke link Shopee: ${shopeeLink || 'https://shope.ee/link'}`;
+    }
+
+    // Fallback for Scenes if empty
+    let scenes = Array.isArray(parsedResult.scenes) && parsedResult.scenes.length > 0
+      ? parsedResult.scenes
+      : [
+          {
+            sceneNumber: 1,
+            timeRange: `${finalStartTime} - ${formatSeconds(startSec + 5)}`,
+            visualDescription: "Tampilan visual produk dengan aksi menarik di awal.",
+            voiceover: "Gila sih, barang yang satu ini bener-bener lagi rame banget!",
+            adAdvisorNotes: "Gunakan hook visual dinamis & teks 'Wajib Punya!' di layar."
+          },
+          {
+            sceneNumber: 2,
+            timeRange: `${formatSeconds(startSec + 5)} - ${formatSeconds(startSec + 15)}`,
+            visualDescription: "Demonstrasi fitur utama dan kepraktisan penggunaan produk.",
+            voiceover: "Kualitasnya juara dan praktis banget buat kebutuhan sehari-hari.",
+            adAdvisorNotes: "Pacing suara antusias, sorot keunggulan produk secara close-up."
+          },
+          {
+            sceneNumber: 3,
+            timeRange: `${formatSeconds(startSec + 15)} - ${finalEndTime}`,
+            visualDescription: "Hasil akhir penggunaan produk dan ajakan bertindak.",
+            voiceover: "Buruan checkout sekarang mumpung ada promo diskon di link Shopee!",
+            adAdvisorNotes: "Munculkan tanda panah / animasi ke bio / link pembelian."
+          }
+        ];
+
     onProgress({
       step: 'ai_vision',
-      message: `AI Vision analysis complete! Highlight chosen: ${finalStartTime} - ${finalEndTime} (${duration}s)`,
-      progress: 68
+      message: `Ad Advisor analysis complete (${primaryModel})! Highlight chosen: ${finalStartTime} - ${finalEndTime} (${duration}s)`,
+      progress: 75
     });
 
     return {
@@ -149,23 +225,26 @@ Return JSON strictly in this structure:
       endSeconds: endSec,
       duration,
       productHook: parsedResult.productHook || 'Racun Shopee Viral!',
+      sampleContext: parsedResult.sampleContext || {
+        productName: videoTitle,
+        targetAudience: "Pengguna Shopee & pencari produk viral",
+        coreProblem: "Mencari produk berkualitas dengan harga terjangkau",
+        keyFeatures: ["Praktis", "Bahan Berkualitas", "Harga Terjangkau"],
+        buyingTrigger: "FOMO & Diskon Terbatas"
+      },
+      scenes,
       voiceoverScript,
+      aiStudioPrompt,
       caption,
     };
   } catch (error) {
     console.error('[AIService] Aivene API error:', error);
-    throw new Error(`Aivene API Vision analysis failed: ${error.message}`);
+    throw new Error(`Aivene API Ad Advisor analysis failed: ${error.message}`);
   }
 }
 
 /**
- * Generates an MP3 TTS voiceover file from script using Aivene TTS or Google TTS fallback.
- * @param {object} params
- * @param {string} params.apiKey - Aivene API Key
- * @param {string} params.voiceoverScript - Indonesian text
- * @param {string} params.outputPath - Output MP3 path
- * @param {Function} params.onProgress - Progress callback
- * @returns {Promise<{ audioPath: string, durationEstimate: number }>}
+ * Optional fallback helper for generating MP3 voiceover if user chooses to enable it.
  */
 export async function generateVoiceoverAudio({
   apiKey,
@@ -174,11 +253,10 @@ export async function generateVoiceoverAudio({
   voice = 'alloy',
   onProgress = () => {}
 }) {
-  onProgress({ step: 'tts', message: 'Generating Indonesian voiceover audio (TTS)...', progress: 72 });
+  onProgress({ step: 'tts', message: 'Generating Indonesian voiceover audio (Optional TTS)...', progress: 78 });
 
   const effectiveApiKey = apiKey || process.env.AIVENE_API_KEY;
 
-  // 1. Try Aivene TTS via OpenAI SDK
   if (effectiveApiKey) {
     try {
       const client = new OpenAI({
@@ -186,49 +264,22 @@ export async function generateVoiceoverAudio({
         baseURL: 'https://api.aivene.com/v1',
       });
 
-      console.log('[AIService] Requesting TTS audio via Aivene API...');
+      const cleanText = voiceoverScript.replace(/\[.*?\]/g, '').trim();
       const mp3Response = await client.audio.speech.create({
         model: 'tts-1',
         voice: voice || 'alloy',
-        input: voiceoverScript,
+        input: cleanText,
       });
 
       const buffer = Buffer.from(await mp3Response.arrayBuffer());
       fs.writeFileSync(outputPath, buffer);
-      console.log(`[AIService] TTS audio successfully generated at ${outputPath}`);
-      onProgress({ step: 'tts', message: 'Voiceover audio successfully synthesized via Aivene.', progress: 80 });
       return { audioPath: outputPath };
     } catch (ttsErr) {
-      console.warn(`[AIService] Aivene TTS API not available or error (${ttsErr.message}). Switching to Google TTS fallback...`);
+      console.warn(`[AIService] TTS optional engine note: ${ttsErr.message}`);
     }
   }
 
-  // 2. Fallback: Google Translate TTS for Indonesian ('id')
-  try {
-    console.log('[AIService] Using Indonesian TTS fallback synthesis...');
-    const encodedText = encodeURIComponent(voiceoverScript.slice(0, 300));
-    const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=id&client=tw-ob`;
-
-    const res = await fetch(ttsUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      },
-    });
-
-    if (!res.ok) {
-      throw new Error(`Fallback TTS HTTP error: ${res.statusText}`);
-    }
-
-    const buffer = Buffer.from(await res.arrayBuffer());
-    fs.writeFileSync(outputPath, buffer);
-    console.log(`[AIService] Fallback TTS audio written to ${outputPath}`);
-    onProgress({ step: 'tts', message: 'Indonesian voiceover synthesized using fallback engine.', progress: 80 });
-    return { audioPath: outputPath };
-  } catch (fallbackErr) {
-    console.error(`[AIService] Fallback TTS failed: ${fallbackErr.message}`);
-    // If TTS totally fails, return null so videoRenderer will use source audio
-    return { audioPath: null };
-  }
+  return { audioPath: null };
 }
 
 // Helpers

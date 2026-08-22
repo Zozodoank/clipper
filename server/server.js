@@ -63,7 +63,6 @@ app.get('/api/progress/:jobId', (req, res) => {
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
 
-  // Send initial state
   const current = jobProgress.get(jobId) || { step: 'init', message: 'Initializing...', progress: 0 };
   sendProgress(current);
 
@@ -83,12 +82,13 @@ app.get('/api/progress/:jobId', (req, res) => {
   });
 });
 
-// 3. Main Pipeline: Generate Affiliate Clip
+// 3. Main Pipeline: Generate Affiliate Clip & Ad Advisor Assets
 app.post('/api/generate', async (req, res) => {
   const {
     youtubeUrl,
     shopeeLink,
     apiKey,
+    model = 'gpt-4o-mini',
     options = {},
     jobId: clientJobId
   } = req.body;
@@ -113,15 +113,19 @@ app.post('/api/generate', async (req, res) => {
     console.log(`[Job ${jobId}] [${payload.progress || 0}%] ${payload.message}`);
   };
 
-  updateProgress({ step: 'start', message: 'Initiating local affiliate video generation pipeline...', progress: 5, status: 'running' });
+  updateProgress({
+    step: 'start',
+    message: 'Initiating Ad Advisor & Video Pipeline...',
+    progress: 5,
+    status: 'running'
+  });
 
-  // Array of temp files to be cleaned up
   const filesToDelete = [];
   const dirsToDelete = [sessionFramesDir, sessionTempDir];
 
   try {
     // --- Step 1: Download YouTube Video at 720p (yt-dlp) ---
-    updateProgress({ step: 'download', message: 'Downloading source video (720p) via yt-dlp...', progress: 10, status: 'running' });
+    updateProgress({ step: 'download', message: 'Downloading source video (720p) via yt-dlp...', progress: 12, status: 'running' });
     const { filePath: rawVideoPath, metadata: videoMeta } = await downloadYouTubeVideo(
       youtubeUrl,
       sessionTempDir,
@@ -138,57 +142,73 @@ app.post('/api/generate', async (req, res) => {
       updateProgress
     );
 
-    // --- Step 3: AI Vision Analysis with Aivene (gemini-1.5-flash) ---
-    updateProgress({ step: 'ai_vision', message: 'Analyzing visual frames with Aivene AI (gemini-1.5-flash)...', progress: 52, status: 'running' });
+    // --- Step 3: Ad Advisor Analysis with Aivene (gpt-4o-mini / gemini-1.5-flash) ---
+    updateProgress({
+      step: 'ai_vision',
+      message: `Analyzing visual frames with Aivene (${model}) for Scene Breakdown & Scripting...`,
+      progress: 55,
+      status: 'running'
+    });
     const aiAnalysis = await analyzeVideoWithAivene({
       apiKey,
+      model,
       frames,
       videoMetadata: videoMeta,
       shopeeLink: shopeeLink || '',
       onProgress: updateProgress,
     });
 
-    // --- Step 4: Indonesian TTS Audio Generation ---
-    updateProgress({ step: 'tts', message: 'Generating Indonesian voiceover narration...', progress: 70, status: 'running' });
-    const ttsAudioPath = path.join(sessionTempDir, `voiceover_${jobId}.mp3`);
-    const { audioPath: generatedAudio } = await generateVoiceoverAudio({
-      apiKey,
-      voiceoverScript: aiAnalysis.voiceoverScript,
-      outputPath: ttsAudioPath,
-      voice: options.voice || 'alloy',
-      onProgress: updateProgress,
-    });
-    if (generatedAudio) filesToDelete.push(generatedAudio);
+    // Optional TTS if requested in options
+    let generatedAudio = null;
+    if (options.enableTts) {
+      updateProgress({ step: 'tts', message: 'Generating Indonesian voiceover narration...', progress: 75, status: 'running' });
+      const ttsAudioPath = path.join(sessionTempDir, `voiceover_${jobId}.mp3`);
+      const ttsResult = await generateVoiceoverAudio({
+        apiKey,
+        voiceoverScript: aiAnalysis.voiceoverScript,
+        outputPath: ttsAudioPath,
+        voice: options.voice || 'alloy',
+        onProgress: updateProgress,
+      });
+      if (ttsResult.audioPath) {
+        generatedAudio = ttsResult.audioPath;
+        filesToDelete.push(generatedAudio);
+      }
+    }
 
-    // --- Step 5: Generate Auto-Timed Subtitles (SRT) ---
-    updateProgress({ step: 'subtitles', message: 'Generating synchronized subtitle captions...', progress: 78, status: 'running' });
-    const srtPath = path.join(sessionTempDir, `subtitles_${jobId}.srt`);
-    generateSrtSubtitles(aiAnalysis.voiceoverScript, aiAnalysis.duration, srtPath);
-    filesToDelete.push(srtPath);
+    // --- Step 4: Subtitles Preparation (Optional) ---
+    let srtPath = null;
+    if (options.enableSubtitles) {
+      updateProgress({ step: 'subtitles', message: 'Generating synchronized subtitles...', progress: 80, status: 'running' });
+      srtPath = path.join(sessionTempDir, `subtitles_${jobId}.srt`);
+      generateSrtSubtitles(aiAnalysis.voiceoverScript, aiAnalysis.duration, srtPath);
+      filesToDelete.push(srtPath);
+    }
 
-    // --- Step 6: Anti-Detection FFmpeg Rendering Pipeline ---
-    // (9:16 720x1280, 1.03x speed, color alteration, hflip, TTS audio overlay, burned subtitles)
-    updateProgress({ step: 'render', message: 'Rendering 9:16 Anti-Detection vertical reel...', progress: 82, status: 'running' });
+    // --- Step 5: Anti-Detection FFmpeg Rendering Pipeline ---
+    // (9:16 vertical crop 720x1280, 1.03x speed, color alteration, hflip, pitch-sync)
+    updateProgress({ step: 'render', message: 'Rendering 9:16 Anti-Detection vertical video...', progress: 85, status: 'running' });
     await renderAntiDetectionVideo({
       inputVideo: rawVideoPath,
       startTime: aiAnalysis.startTime,
       endTime: aiAnalysis.endTime,
       outputVideo: finalOutputPath,
-      ttsAudio: generatedAudio,
-      srtPath: options.enableSubtitles !== false ? srtPath : null,
+      customAudio: generatedAudio,
+      srtPath: options.enableSubtitles ? srtPath : null,
       hflip: options.hflip !== undefined ? options.hflip : true,
       speedMultiplier: options.speedMultiplier || 1.03,
       onProgress: updateProgress,
     });
 
-    // --- Step 7: Cleanup Temp Files ---
+    // --- Step 6: Cleanup Temp Files ---
     updateProgress({ step: 'cleanup', message: 'Cleaning up temporary frame images and raw downloads...', progress: 98, status: 'running' });
     cleanupTempFiles(filesToDelete, dirsToDelete);
 
-    // Build final response
+    // Build final response with Ad Advisor assets
     const result = {
       success: true,
       jobId,
+      modelUsed: model,
       filename: outputFileName,
       videoUrl: `/api/video/${outputFileName}`,
       downloadUrl: `/api/download/${outputFileName}`,
@@ -199,7 +219,10 @@ app.post('/api/generate', async (req, res) => {
         duration: aiAnalysis.duration,
       },
       productHook: aiAnalysis.productHook,
+      sampleContext: aiAnalysis.sampleContext,
+      scenes: aiAnalysis.scenes,
       voiceoverScript: aiAnalysis.voiceoverScript,
+      aiStudioPrompt: aiAnalysis.aiStudioPrompt,
       caption: aiAnalysis.caption,
       shopeeLink: shopeeLink || '',
       videoTitle: videoMeta.title,
@@ -207,7 +230,7 @@ app.post('/api/generate', async (req, res) => {
 
     updateProgress({
       step: 'completed',
-      message: 'Local 9:16 Affiliate Reel generated successfully!',
+      message: 'Local 9:16 Affiliate Reel & Ad Advisor Assets Generated Successfully!',
       progress: 100,
       status: 'completed',
       result
@@ -216,7 +239,6 @@ app.post('/api/generate', async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error(`[Job ${jobId}] Pipeline Error:`, error);
-    // Cleanup on error
     cleanupTempFiles(filesToDelete, dirsToDelete);
 
     updateProgress({

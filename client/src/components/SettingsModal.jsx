@@ -1,23 +1,15 @@
 import React from 'react';
-import { X, Shield, Sliders, Volume2, Film, RefreshCw, Check } from 'lucide-react';
+import { X, Shield, Sliders, Volume2, Film, RefreshCw, Check, Bot } from 'lucide-react';
 
 export default function SettingsModal({ isOpen, onClose, settings, setSettings }) {
   if (!isOpen) return null;
-
-  const voices = [
-    { id: 'alloy', name: 'Alloy (Neutral & Clear)' },
-    { id: 'nova', name: 'Nova (Warm & Energetic)' },
-    { id: 'shimmer', name: 'Shimmer (Bright & Expressive)' },
-    { id: 'fable', name: 'Fable (Engaging Narration)' },
-    { id: 'echo', name: 'Echo (Smooth & Balanced)' },
-    { id: 'onyx', name: 'Onyx (Deep & Authoritative)' },
-  ];
 
   const resetDefaults = () => {
     setSettings({
       hflip: true,
       speedMultiplier: 1.03,
-      enableSubtitles: true,
+      enableSubtitles: false,
+      enableTts: false,
       voice: 'alloy',
     });
   };
@@ -75,7 +67,7 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              Slightly speeds up frame presentation (1.03x recommended) to evade copyright hash.
+              Slightly speeds up video & audio tempo (1.03x recommended) to evade copyright hash.
             </p>
             <div className="grid grid-cols-4 gap-2 pt-1">
               {[1.00, 1.03, 1.05, 1.08].map((spd) => (
@@ -95,12 +87,12 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
             </div>
           </div>
 
-          {/* Subtitles Burning */}
+          {/* Optional Burn Subtitles */}
           <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-950/60 border border-slate-800">
             <div>
-              <div className="font-semibold text-slate-200">Auto-Burn Subtitles</div>
+              <div className="font-semibold text-slate-200">Burn Subtitles on Video</div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Renders synchronized yellow/white caption subtitles directly into video.
+                Burn yellow/white script subtitles directly onto the rendered video frame.
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -114,23 +106,12 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
             </label>
           </div>
 
-          {/* Voiceover Voice Selection */}
-          <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2">
-            <div className="flex items-center gap-1.5 font-semibold text-slate-200">
-              <Volume2 className="w-4 h-4 text-indigo-400" />
-              <span>Voiceover Voice Profile</span>
-            </div>
-            <select
-              value={settings.voice}
-              onChange={(e) => setSettings({ ...settings, voice: e.target.value })}
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-shopee-500"
-            >
-              {voices.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name}
-                </option>
-              ))}
-            </select>
+          {/* API Endpoint Note */}
+          <div className="p-3 rounded-xl bg-indigo-950/30 border border-indigo-500/30 text-xs text-indigo-300">
+            <span className="font-bold block mb-1">Aivene Base URL:</span>
+            <code className="bg-slate-900 px-2 py-0.5 rounded font-mono text-[11px] text-slate-200">
+              https://api.aivene.com/v1
+            </code>
           </div>
 
         </div>

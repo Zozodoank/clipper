@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, Film, Sparkles, Mic, Layers, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Download, Film, Sparkles, Clapperboard, Layers, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 
 export default function ProgressCard({ progressState }) {
   const { step, message, progress = 0, status, error } = progressState;
@@ -7,13 +7,11 @@ export default function ProgressCard({ progressState }) {
   const steps = [
     { id: 'download', label: '1. Download 720p Video', icon: Download, desc: 'yt-dlp engine fetching max 720p' },
     { id: 'frames', label: '2. Frame Extraction', icon: Film, desc: 'FFmpeg sampling 1 frame / 2s & Base64' },
-    { id: 'ai_vision', label: '3. Aivene AI Vision', icon: Sparkles, desc: 'gemini-1.5-flash highlight & script' },
-    { id: 'tts', label: '4. Voiceover Synthesis', icon: Mic, desc: 'Indonesian promotional TTS audio' },
-    { id: 'render', label: '5. Anti-Detection Render', icon: Layers, desc: '9:16 crop, 1.03x speed, color tweak, subs' },
-    { id: 'completed', label: '6. Ready & Complete', icon: CheckCircle2, desc: 'Output MP4 prepared for download' },
+    { id: 'ai_vision', label: '3. Ad Advisor Analysis', icon: Sparkles, desc: 'gpt-4o-mini scene breakdown & script' },
+    { id: 'render', label: '4. Anti-Detection 9:16', icon: Layers, desc: '720x1280 crop, 1.03x speed & color shift' },
+    { id: 'completed', label: '5. Ready & Complete', icon: CheckCircle2, desc: 'Output MP4, scenes & scripts ready' },
   ];
 
-  // Helper to determine stage status: 'completed' | 'current' | 'pending'
   const getStepStatus = (stepId, index) => {
     if (status === 'error') {
       if (step === stepId) return 'error';
@@ -29,7 +27,7 @@ export default function ProgressCard({ progressState }) {
     }
 
     if (thisIndex < currentIndex) return 'completed';
-    if (thisIndex === currentIndex || (stepId === 'render' && step === 'subtitles')) return 'current';
+    if (thisIndex === currentIndex || (stepId === 'render' && (step === 'subtitles' || step === 'tts'))) return 'current';
     return 'pending';
   };
 
@@ -59,7 +57,7 @@ export default function ProgressCard({ progressState }) {
                 ? 'Processing Finished!'
                 : status === 'error'
                 ? 'Generation Failed'
-                : 'Local Generation Pipeline Running'}
+                : 'Ad Advisor & Video Pipeline Running'}
             </h3>
             <p className="text-xs text-slate-400 font-mono">
               {message || 'Executing automated workflow...'}
@@ -87,7 +85,7 @@ export default function ProgressCard({ progressState }) {
       </div>
 
       {/* Grid of Steps */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {steps.map((s, idx) => {
           const stepStatus = getStepStatus(s.id, idx);
           const Icon = s.icon;
@@ -95,7 +93,7 @@ export default function ProgressCard({ progressState }) {
           return (
             <div
               key={s.id}
-              className={`p-3.5 rounded-xl border transition-all flex items-start gap-3 ${
+              className={`p-3 rounded-xl border transition-all flex items-start gap-3 ${
                 stepStatus === 'completed'
                   ? 'bg-slate-900/90 border-emerald-500/30 text-slate-200'
                   : stepStatus === 'current'

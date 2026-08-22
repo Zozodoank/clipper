@@ -146,23 +146,40 @@ app.post('/api/generate', async (req, res) => {
   const dirsToDelete = [rawFramesDir, trimmedFramesDir, sessionTempDir];
 
   try {
-    // --- Step 1: Download YouTube Video at 720p (yt-dlp) ---
-    updateProgress({ step: 'download', message: 'Downloading source video (720p) via yt-dlp...', progress: 12, status: 'running' });
-    const { filePath: rawVideoPath, metadata: videoMeta } = await downloadYouTubeVideo(
-      youtubeUrl,
-      sessionTempDir,
-      jobId,
-      updateProgress
-    );
+    // --- Step 1: Download YouTube Video at 720p (with Smart Cache / Resume support) ---
+    let rawVideoPath = path.join(sessionTempDir, `raw_${jobId}.mp4`);
+    let videoMeta = { title: productTitle || 'Product Video', duration: 60 };
+
+    if (fs.existsSync(rawVideoPath) && fs.statSync(rawVideoPath).size > 10000) {
+      updateProgress({ step: 'download', message: 'Using cached downloaded video from previous run...', progress: 30, status: 'running' });
+    } else {
+      updateProgress({ step: 'download', message: 'Downloading source video (720p) via yt-dlp...', progress: 12, status: 'running' });
+      const dlResult = await downloadYouTubeVideo(
+        youtubeUrl,
+        sessionTempDir,
+        jobId,
+        updateProgress
+      );
+      rawVideoPath = dlResult.filePath;
+      videoMeta = dlResult.metadata;
+    }
     filesToDelete.push(rawVideoPath);
 
-    // --- Step 2: Extract Keyframes from Raw Video ---
-    updateProgress({ step: 'frames_raw', message: 'Extracting source frames for Gemini 2.5 Flash...', progress: 35, status: 'running' });
-    const { frames: rawFrames } = await extractFrames(
-      rawVideoPath,
-      rawFramesDir,
-      updateProgress
-    );
+    // --- Step 2: Extract Keyframes from Raw Video (or reuse existing cache) ---
+    let rawFrames;
+    const existingRawFrameFiles = fs.existsSync(rawFramesDir)
+      ? fs.readdirSync(rawFramesDir).filter(f => f.endsWith('.jpg'))
+      : [];
+
+    if (existingRawFrameFiles.length > 5) {
+      updateProgress({ step: 'frames_raw', message: 'Using existing extracted frames...', progress: 42, status: 'running' });
+      const reExtracted = await extractFrames(rawVideoPath, rawFramesDir, updateProgress);
+      rawFrames = reExtracted.frames;
+    } else {
+      updateProgress({ step: 'frames_raw', message: 'Extracting source frames for Gemini 2.5 Flash...', progress: 35, status: 'running' });
+      const extracted = await extractFrames(rawVideoPath, rawFramesDir, updateProgress);
+      rawFrames = extracted.frames;
+    }
 
     // --- Step 3: Gemini 2.5 Flash Highlight Selection (30-60s) ---
     updateProgress({
@@ -230,8 +247,8 @@ app.post('/api/generate', async (req, res) => {
       onProgress: updateProgress,
     });
 
-    // Clean up temporary frame folders and raw downloads
-    cleanupTempFiles(filesToDelete, dirsToDelete);
+    // Clean up temporary raw frames
+    cleanupTempFiles(filesToDelete, [rawFramesDir, trimmedFramesDir]);
 
     // Store Job State in Memory for Stage 2
     const stage1Result = {
@@ -261,7 +278,7 @@ app.post('/api/generate', async (req, res) => {
 
     updateProgress({
       step: 'awaiting_voiceover',
-      message: 'Stage 1 Complete! Kotak Scene, Naskah, and Muted 9:16 Video Ready. Upload your voiceover to finalize.',
+      message: 'Tahap 1 Selesai! Kotak Scene, Naskah, dan Muted 9:16 Video Ready. Upload your voiceover to finalize.',
       progress: 100,
       status: 'awaiting_voiceover',
       result: stage1Result
@@ -270,17 +287,31 @@ app.post('/api/generate', async (req, res) => {
     res.json(stage1Result);
   } catch (error) {
     console.error(`[Job ${jobId}] Stage 1 Pipeline Error:`, error);
-    cleanupTempFiles(filesToDelete, dirsToDelete);
+    // Note: Do not delete downloaded video immediately on error so user can retry without re-downloading!
+
+    const isQuotaError = error.message.toLowerCase().includes('saldo') ||
+      error.message.toLowerCase().includes('insufficient') ||
+      error.message.toLowerCase().includes('balance') ||
+      error.message.toLowerCase().includes('quota') ||
+      error.message.toLowerCase().includes('credit');
 
     updateProgress({
       step: 'error',
       message: error.message || 'An error occurred during video processing.',
       progress: 0,
       status: 'error',
-      error: error.message
+      error: error.message,
+      isQuotaError,
+      canRetry: true
     });
 
-    res.status(500).json({ success: false, error: error.message, jobId });
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      isQuotaError,
+      canRetry: true,
+      jobId
+    });
   }
 });
 

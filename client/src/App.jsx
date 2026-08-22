@@ -7,7 +7,7 @@ import VideoPlayer from './components/VideoPlayer';
 import CaptionCard from './components/CaptionCard';
 import VoiceoverUploader from './components/VoiceoverUploader';
 import SettingsModal from './components/SettingsModal';
-import { Sparkles, Video, ShieldCheck, Zap, Layers, RefreshCw, Clapperboard, CheckCircle2, Music } from 'lucide-react';
+import { Sparkles, Clapperboard } from 'lucide-react';
 
 export default function App() {
   // Form State (persisting API key in localStorage)
@@ -39,12 +39,17 @@ export default function App() {
     progress: 0,
     status: 'idle',
     error: null,
+    isQuotaError: false,
+    canRetry: false,
   });
 
   const [result, setResult] = useState(null);
   const [engineStatus, setEngineStatus] = useState(null);
   const [checkingEngine, setCheckingEngine] = useState(false);
 
+  // Persist last jobId and form snapshot for retry
+  const lastJobIdRef = useRef(null);
+  const lastFormDataRef = useRef(null);
   const eventSourceRef = useRef(null);
 
   // Save API key to localStorage
@@ -74,35 +79,25 @@ export default function App() {
     fetchEngineHealth();
   }, []);
 
-  // STAGE 1: Generate 30-60s Silent Clip + AI Scripting
-  const handleGenerate = async () => {
-    if (!formData.productTitle) {
-      alert('Silakan masukkan Judul / Nama Produk.');
-      return;
-    }
-    if (!formData.youtubeUrl) {
-      alert('Silakan masukkan link YouTube Video URL.');
-      return;
-    }
-    if (!formData.shopeeLink) {
-      alert('Silakan masukkan link Shopee Affiliate Anda.');
-      return;
-    }
-    if (!formData.apiKey) {
-      alert('Silakan masukkan Aivene API Key Anda.');
-      return;
-    }
+  // Core generation logic (shared between fresh runs and retries)
+  const runGeneratePipeline = async (overrideJobId = null) => {
+    const currentForm = lastFormDataRef.current || formData;
+    const jobId = overrideJobId || Math.random().toString(36).substring(2, 10);
+    lastJobIdRef.current = jobId;
 
     setIsLoading(true);
     setResult(null);
-    const jobId = Math.random().toString(36).substring(2, 10);
 
     setProgressState({
       step: 'start',
-      message: 'Memulai Tahap 1: Analisis Gemini 2.5 Flash & GPT-4o-mini...',
+      message: overrideJobId
+        ? '🔄 Melanjutkan job sebelumnya (Retry)... Video yang sudah diunduh akan digunakan kembali.'
+        : 'Memulai Tahap 1: Analisis Gemini 2.5 Flash & GPT-4o-mini...',
       progress: 5,
       status: 'running',
       error: null,
+      isQuotaError: false,
+      canRetry: false,
     });
 
     if (eventSourceRef.current) {
@@ -122,6 +117,8 @@ export default function App() {
           progress: data.progress !== undefined ? data.progress : prev.progress,
           status: data.status || prev.status,
           error: data.error || null,
+          isQuotaError: data.isQuotaError || false,
+          canRetry: data.canRetry || false,
         }));
 
         if ((data.status === 'awaiting_voiceover' || data.status === 'completed') && data.result) {
@@ -144,30 +141,29 @@ export default function App() {
     try {
       const response = await fetch('/api/generate', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           jobId,
-          youtubeUrl: formData.youtubeUrl,
-          shopeeLink: formData.shopeeLink,
-          productTitle: formData.productTitle,
-          productDescription: formData.productDescription,
-          apiKey: formData.apiKey,
+          youtubeUrl: currentForm.youtubeUrl,
+          shopeeLink: currentForm.shopeeLink,
+          productTitle: currentForm.productTitle,
+          productDescription: currentForm.productDescription,
+          apiKey: formData.apiKey, // Always use latest API key (may be updated before retry)
           options: settings,
         }),
       });
 
-      // Safe JSON parsing with fallback
-      let data;
+      // Safe JSON parsing
       const rawText = await response.text();
+      let data;
       try {
         data = JSON.parse(rawText);
       } catch (jsonErr) {
-        if (!response.ok) {
-          throw new Error(`Server Backend Error (${response.status}): Pastikan Backend Server (Port 5000) sedang berjalan via 'npm run dev'.`);
-        }
-        throw new Error(`Respon server tidak valid (${response.status}): ${rawText.slice(0, 150)}`);
+        throw new Error(
+          response.ok
+            ? `Respon server tidak valid: ${rawText.slice(0, 200)}`
+            : `Server Backend Error (${response.status}): Pastikan Backend Server (Port 5000) berjalan via 'npm run dev'.`
+        );
       }
 
       if (!response.ok || !data.jobId) {
@@ -175,28 +171,81 @@ export default function App() {
       }
 
       setResult(data);
-      setProgressState({
+      setProgressState((prev) => ({
+        ...prev,
         step: 'awaiting_voiceover',
         message: 'Tahap 1 Selesai! Kotak Scene, Naskah & Video 9:16 Tanpa Suara Siap. Upload voiceover Anda di Tahap 2.',
         progress: 100,
         status: 'awaiting_voiceover',
         error: null,
-      });
+        canRetry: false,
+      }));
     } catch (err) {
       console.error('Generation failed:', err);
-      setProgressState({
+      const isQuotaError =
+        err.message.toLowerCase().includes('saldo') ||
+        err.message.toLowerCase().includes('insufficient') ||
+        err.message.toLowerCase().includes('balance') ||
+        err.message.toLowerCase().includes('quota') ||
+        err.message.toLowerCase().includes('credit');
+
+      setProgressState((prev) => ({
+        ...prev,
         step: 'error',
         message: err.message || 'Proses gagal.',
-        progress: 0,
+        progress: prev.progress, // Keep previous progress visible
         status: 'error',
         error: err.message,
-      });
+        isQuotaError,
+        canRetry: true,
+      }));
     } finally {
       setIsLoading(false);
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
       }
     }
+  };
+
+  // STAGE 1: Fresh Generate
+  const handleGenerate = async () => {
+    if (!formData.productTitle) {
+      alert('Silakan masukkan Judul / Nama Produk.');
+      return;
+    }
+    if (!formData.youtubeUrl) {
+      alert('Silakan masukkan link YouTube Video URL.');
+      return;
+    }
+    if (!formData.shopeeLink) {
+      alert('Silakan masukkan link Shopee Affiliate Anda.');
+      return;
+    }
+    if (!formData.apiKey) {
+      alert('Silakan masukkan Aivene API Key Anda.');
+      return;
+    }
+
+    // Save form snapshot for potential retry
+    lastFormDataRef.current = { ...formData };
+
+    await runGeneratePipeline(null);
+  };
+
+  // RETRY: Reuse the same jobId so the backend can skip the already-downloaded video
+  const handleRetry = async () => {
+    if (!formData.apiKey) {
+      alert('Silakan perbarui Aivene API Key Anda terlebih dahulu, lalu klik Retry.');
+      return;
+    }
+    const existingJobId = lastJobIdRef.current;
+    if (!existingJobId) {
+      // No previous job, just run fresh
+      await handleGenerate();
+      return;
+    }
+    // Re-run with same jobId — server will reuse cached downloaded video
+    await runGeneratePipeline(existingJobId);
   };
 
   // STAGE 2: Handle Audio Upload Success
@@ -208,12 +257,13 @@ export default function App() {
       progress: 100,
       status: 'completed',
       error: null,
+      canRetry: false,
     });
   };
 
   return (
     <div className="min-h-screen flex flex-col bg-[#080d1a] text-slate-100">
-      
+
       {/* Top Navbar */}
       <Navbar
         onOpenSettings={() => setIsSettingsOpen(true)}
@@ -222,7 +272,7 @@ export default function App() {
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        
+
         {/* Engine dependencies status bar */}
         <DependenciesStatus
           status={engineStatus}
@@ -232,8 +282,8 @@ export default function App() {
 
         {/* Two-column layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          
-          {/* Left Column: Form & Live Pipeline Progress (6 cols on lg) */}
+
+          {/* Left Column */}
           <div className="lg:col-span-6 space-y-6">
             <InputCard
               formData={formData}
@@ -245,10 +295,14 @@ export default function App() {
             />
 
             {(isLoading || progressState.status !== 'idle') && (
-              <ProgressCard progressState={progressState} />
+              <ProgressCard
+                progressState={progressState}
+                onRetry={handleRetry}
+                isLoading={isLoading}
+              />
             )}
 
-            {/* Stage 2 Voiceover Upload Box (Visible once Stage 1 finishes) */}
+            {/* Stage 2 Voiceover Upload */}
             {result && result.jobId && (
               <VoiceoverUploader
                 jobId={result.jobId}
@@ -259,23 +313,18 @@ export default function App() {
             )}
           </div>
 
-          {/* Right Column: Video Preview, Scene Breakdown & Scripts (6 cols on lg) */}
+          {/* Right Column */}
           <div className="lg:col-span-6 space-y-6">
             {result ? (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                {/* 9:16 Video Player & Direct Download Button */}
                 <VideoPlayer result={result} />
-
-                {/* Ad Advisor Kotak Scene, Context, Voiceover Script & AI Studio Prompt */}
                 <CaptionCard result={result} />
               </div>
             ) : (
-              /* Idle Empty State Showcase */
               <div className="glass-panel rounded-2xl p-8 text-center flex flex-col items-center justify-center min-h-[480px] border-dashed border-slate-800">
                 <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-shopee-500/20 via-orange-500/20 to-amber-500/20 border border-shopee-500/30 flex items-center justify-center text-shopee-500 mb-4 shadow-xl">
                   <Clapperboard className="w-8 h-8 stroke-[1.75]" />
                 </div>
-
                 <h3 className="text-lg font-bold text-white mb-2">
                   Alur 2-Tahap: Gemini 2.5 Flash + GPT-4o-mini
                 </h3>
@@ -285,8 +334,6 @@ export default function App() {
                   3. <strong className="text-indigo-400">GPT-4o-mini</strong> membuat Kotak Scene & Naskah Ad Advisor berbasis konteks produk.<br />
                   4. Upload audio voiceover dari AI Studio untuk menghasilkan <strong className="text-emerald-400">Video Final + Subtitle</strong>.
                 </p>
-
-                {/* Feature highlight badges */}
                 <div className="grid grid-cols-2 gap-3 w-full max-w-sm text-left">
                   <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
                     <div className="font-bold text-slate-200 flex items-center gap-1.5 mb-1">
@@ -295,7 +342,6 @@ export default function App() {
                     </div>
                     <p className="text-[11px] text-slate-400">Deteksi highlight visual 30-60s akurat</p>
                   </div>
-
                   <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
                     <div className="font-bold text-slate-200 flex items-center gap-1.5 mb-1">
                       <Clapperboard className="w-3.5 h-3.5 text-indigo-400" />
@@ -309,10 +355,8 @@ export default function App() {
           </div>
 
         </div>
-
       </main>
 
-      {/* Settings Modal */}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
@@ -320,11 +364,9 @@ export default function App() {
         setSettings={setSettings}
       />
 
-      {/* Footer */}
       <footer className="border-t border-slate-800/60 py-4 bg-slate-950/40 text-center text-xs text-slate-500">
         <p>Local AI Affiliate Clipper &bull; React + Node.js + FFmpeg &bull; Gemini 2.5 Flash + GPT-4o-mini &bull; 2-Stage Ad Advisor Pipeline</p>
       </footer>
-
     </div>
   );
 }

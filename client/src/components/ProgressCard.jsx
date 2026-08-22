@@ -1,8 +1,8 @@
 import React from 'react';
-import { Download, Film, Sparkles, Clapperboard, Layers, CheckCircle2, AlertCircle, Loader2, Music } from 'lucide-react';
+import { Download, Film, Sparkles, Clapperboard, Layers, CheckCircle2, AlertCircle, Loader2, Music, RefreshCw, ExternalLink, Key, CreditCard } from 'lucide-react';
 
-export default function ProgressCard({ progressState }) {
-  const { step, message, progress = 0, status, error } = progressState;
+export default function ProgressCard({ progressState, onRetry, isLoading }) {
+  const { step, message, progress = 0, status, error, isQuotaError } = progressState;
 
   const steps = [
     { id: 'download', label: '1. Download 720p Video', icon: Download, desc: 'yt-dlp engine fetching max 720p' },
@@ -29,8 +29,19 @@ export default function ProgressCard({ progressState }) {
     return 'pending';
   };
 
+  const detectedQuotaError = isQuotaError ||
+    (error && (
+      error.toLowerCase().includes('saldo') ||
+      error.toLowerCase().includes('insufficient') ||
+      error.toLowerCase().includes('balance') ||
+      error.toLowerCase().includes('quota') ||
+      error.toLowerCase().includes('credit')
+    ));
+
   return (
-    <div className="glass-panel-glow rounded-2xl p-6 shadow-2xl relative overflow-hidden transition-all duration-300">
+    <div className={`glass-panel-glow rounded-2xl p-6 shadow-2xl relative overflow-hidden transition-all duration-300 ${
+      status === 'error' ? 'border-red-500/40 shadow-red-500/10' : ''
+    }`}>
       
       {/* Header & Percentage */}
       <div className="flex items-center justify-between mb-4">
@@ -50,14 +61,21 @@ export default function ProgressCard({ progressState }) {
           )}
 
           <div>
-            <h3 className="text-base font-bold text-white">
-              {status === 'completed' || status === 'awaiting_voiceover'
-                ? 'Tahap 1 Selesai!'
-                : status === 'error'
-                ? 'Proses Gagal'
-                : 'Pipeline Video Sedang Berjalan'}
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <span>
+                {status === 'completed' || status === 'awaiting_voiceover'
+                  ? 'Tahap 1 Selesai!'
+                  : status === 'error'
+                  ? 'Proses Berhenti (Dapat Diulang)'
+                  : 'Pipeline Video Sedang Berjalan'}
+              </span>
+              {status === 'error' && (
+                <span className="text-[10px] uppercase font-bold bg-red-500/20 text-red-300 px-2 py-0.5 rounded-full border border-red-500/30">
+                  Gagal
+                </span>
+              )}
             </h3>
-            <p className="text-xs text-slate-400 font-mono">
+            <p className="text-xs text-slate-400 font-mono truncate max-w-md">
               {message || 'Menjalankan ekstraksi dan analisis AI...'}
             </p>
           </div>
@@ -132,16 +150,59 @@ export default function ProgressCard({ progressState }) {
         })}
       </div>
 
-      {/* Error Message Box */}
-      {status === 'error' && error && (
-        <div className="mt-4 p-4 rounded-xl bg-red-950/40 border border-red-500/40 text-red-200 text-xs font-mono">
-          <div className="font-bold flex items-center gap-1.5 mb-1 text-red-400">
-            <AlertCircle className="w-4 h-4" />
-            Error Details:
+      {/* Error Box & Retry Options */}
+      {status === 'error' && (
+        <div className="mt-5 space-y-3 animate-in fade-in duration-300">
+          
+          {/* Quota / Balance Specific Banner */}
+          {detectedQuotaError ? (
+            <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-200 text-xs">
+              <div className="font-bold flex items-center justify-between text-amber-300 mb-1.5">
+                <span className="flex items-center gap-1.5">
+                  <CreditCard className="w-4 h-4 text-amber-400" />
+                  Saldo / Kuota Aivene API Tidak Mencukupi
+                </span>
+                <a
+                  href="https://aistudio.google.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] underline text-amber-300 hover:text-white flex items-center gap-1"
+                >
+                  <span>Cek Akun Aivene</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                Panggilan AI berhenti karena saldo kredit Aivene habis. Data formulir (Judul, Deskripsi, Link) dan video yang sudah diunduh <strong>tidak hilang dan tersimpan aman</strong>.
+                Silakan top-up saldo atau perbarui API Key pada kolom di atas, lalu klik <strong>"Coba Lagi (Retry)"</strong>.
+              </p>
+            </div>
+          ) : (
+            <div className="p-4 rounded-xl bg-red-950/40 border border-red-500/40 text-red-200 text-xs font-mono">
+              <div className="font-bold flex items-center gap-1.5 mb-1 text-red-400">
+                <AlertCircle className="w-4 h-4" />
+                Detail Error:
+              </div>
+              <p className="break-all whitespace-pre-wrap">{error || 'Terjadi kendala pada server backend.'}</p>
+            </div>
+          )}
+
+          {/* Retry Action Button Bar */}
+          <div className="flex items-center gap-3 pt-1">
+            <button
+              type="button"
+              onClick={onRetry}
+              disabled={isLoading}
+              className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg shadow-orange-500/20 hover:scale-[1.01] active:scale-[0.99]"
+            >
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+              <span>Coba Lagi (Retry Job)</span>
+            </button>
           </div>
-          <p className="break-all whitespace-pre-wrap">{error}</p>
+
         </div>
       )}
+
     </div>
   );
 }

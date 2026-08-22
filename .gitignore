@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Production builds
+dist/
+build/
+
+# Local temp, cache, and rendered outputs
+server/temp/
+server/output/
+server/bin/
+*.mp4
+*.mp3
+*.jpg
+*.jpeg
+*.png
+*.srt
+
+# Environment variables
+.env
+.env.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS Files
+.DS_Store
+Thumbs.db

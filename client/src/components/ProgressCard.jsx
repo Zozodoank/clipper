@@ -1,33 +1,31 @@
 import React from 'react';
-import { Download, Film, Sparkles, Clapperboard, Layers, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Download, Film, Sparkles, Clapperboard, Layers, CheckCircle2, AlertCircle, Loader2, Music } from 'lucide-react';
 
 export default function ProgressCard({ progressState }) {
   const { step, message, progress = 0, status, error } = progressState;
 
   const steps = [
     { id: 'download', label: '1. Download 720p Video', icon: Download, desc: 'yt-dlp engine fetching max 720p' },
-    { id: 'frames', label: '2. Frame Extraction', icon: Film, desc: 'FFmpeg sampling 1 frame / 2s & Base64' },
-    { id: 'ai_vision', label: '3. Ad Advisor Analysis', icon: Sparkles, desc: 'gpt-4o-mini scene breakdown & script' },
-    { id: 'render', label: '4. Anti-Detection 9:16', icon: Layers, desc: '720x1280 crop, 1.03x speed & color shift' },
-    { id: 'completed', label: '5. Ready & Complete', icon: CheckCircle2, desc: 'Output MP4, scenes & scripts ready' },
+    { id: 'gemini_vision', label: '2. Gemini 2.5 Flash Highlight', icon: Sparkles, desc: 'Detects 30-60s viral segment' },
+    { id: 'render_silent', label: '3. Silent 9:16 Render', icon: Layers, desc: 'Muted 720x1280 video without subs' },
+    { id: 'gpt_scripting', label: '4. GPT-4o-mini Scripting', icon: Clapperboard, desc: 'Kotak Scene, Context & Naskah' },
+    { id: 'awaiting_voiceover', label: '5. Ready for Voiceover', icon: Music, desc: 'Paste naskah to AI Studio & upload' },
   ];
 
   const getStepStatus = (stepId, index) => {
     if (status === 'error') {
       if (step === stepId) return 'error';
     }
-    if (status === 'completed') return 'completed';
+    if (status === 'completed' || status === 'awaiting_voiceover') {
+      if (stepId === 'awaiting_voiceover') return 'completed';
+    }
 
-    const stepOrder = ['start', 'download', 'frames', 'ai_vision', 'tts', 'subtitles', 'render', 'cleanup', 'completed'];
+    const stepOrder = ['start', 'download', 'frames_raw', 'gemini_vision', 'render_silent', 'frames_trimmed', 'gpt_scripting', 'awaiting_voiceover', 'completed'];
     const currentIndex = stepOrder.indexOf(step);
     const thisIndex = stepOrder.indexOf(stepId);
 
-    if (stepId === 'completed') {
-      return status === 'completed' ? 'completed' : 'pending';
-    }
-
     if (thisIndex < currentIndex) return 'completed';
-    if (thisIndex === currentIndex || (stepId === 'render' && (step === 'subtitles' || step === 'tts'))) return 'current';
+    if (thisIndex === currentIndex || (stepId === 'gemini_vision' && step === 'frames_raw') || (stepId === 'gpt_scripting' && step === 'frames_trimmed')) return 'current';
     return 'pending';
   };
 
@@ -41,7 +39,7 @@ export default function ProgressCard({ progressState }) {
             <div className="w-9 h-9 rounded-xl bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400">
               <AlertCircle className="w-5 h-5" />
             </div>
-          ) : status === 'completed' ? (
+          ) : status === 'completed' || status === 'awaiting_voiceover' ? (
             <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
               <CheckCircle2 className="w-5 h-5" />
             </div>
@@ -53,14 +51,14 @@ export default function ProgressCard({ progressState }) {
 
           <div>
             <h3 className="text-base font-bold text-white">
-              {status === 'completed'
-                ? 'Processing Finished!'
+              {status === 'completed' || status === 'awaiting_voiceover'
+                ? 'Tahap 1 Selesai!'
                 : status === 'error'
-                ? 'Generation Failed'
-                : 'Ad Advisor & Video Pipeline Running'}
+                ? 'Proses Gagal'
+                : 'Pipeline Video Sedang Berjalan'}
             </h3>
             <p className="text-xs text-slate-400 font-mono">
-              {message || 'Executing automated workflow...'}
+              {message || 'Menjalankan ekstraksi dan analisis AI...'}
             </p>
           </div>
         </div>
@@ -76,7 +74,7 @@ export default function ProgressCard({ progressState }) {
           className={`h-full rounded-full transition-all duration-500 ${
             status === 'error'
               ? 'bg-red-500'
-              : status === 'completed'
+              : status === 'completed' || status === 'awaiting_voiceover'
               ? 'bg-emerald-500'
               : 'bg-gradient-to-r from-shopee-500 via-orange-500 to-amber-400 animate-pulse'
           }`}

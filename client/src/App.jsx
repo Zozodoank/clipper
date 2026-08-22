@@ -5,11 +5,12 @@ import InputCard from './components/InputCard';
 import ProgressCard from './components/ProgressCard';
 import VideoPlayer from './components/VideoPlayer';
 import CaptionCard from './components/CaptionCard';
+import VoiceoverUploader from './components/VoiceoverUploader';
 import SettingsModal from './components/SettingsModal';
-import { Sparkles, Video, ShieldCheck, Zap, Layers, RefreshCw, Clapperboard } from 'lucide-react';
+import { Sparkles, Video, ShieldCheck, Zap, Layers, RefreshCw, Clapperboard, CheckCircle2, Music } from 'lucide-react';
 
 export default function App() {
-  // Form State (persisting API key in localStorage for convenience)
+  // Form State (persisting API key in localStorage)
   const [formData, setFormData] = useState(() => ({
     youtubeUrl: '',
     shopeeLink: '',
@@ -21,13 +22,13 @@ export default function App() {
   const [settings, setSettings] = useState({
     hflip: true,
     speedMultiplier: 1.03,
-    enableSubtitles: false,
-    enableTts: false,
+    enableSubtitles: true,
     voice: 'alloy',
   });
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   // Live Progress & Results State
   const [progressState, setProgressState] = useState({
@@ -44,7 +45,7 @@ export default function App() {
 
   const eventSourceRef = useRef(null);
 
-  // Save API key to localStorage when updated
+  // Save API key to localStorage
   useEffect(() => {
     if (formData.apiKey) {
       localStorage.setItem('AIVENE_API_KEY', formData.apiKey);
@@ -71,7 +72,7 @@ export default function App() {
     fetchEngineHealth();
   }, []);
 
-  // Main Pipeline Trigger
+  // STAGE 1: Generate 30-60s Silent Clip + AI Scripting
   const handleGenerate = async () => {
     if (!formData.youtubeUrl) {
       alert('Please enter a YouTube video URL.');
@@ -92,13 +93,12 @@ export default function App() {
 
     setProgressState({
       step: 'start',
-      message: 'Initializing Gemini 2.5 Flash Vision & Video Engine...',
+      message: 'Memulai Tahap 1: Analisis Gemini 2.5 Flash & GPT-4o-mini...',
       progress: 5,
       status: 'running',
       error: null,
     });
 
-    // Start SSE stream for real-time progress updates
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
     }
@@ -118,7 +118,7 @@ export default function App() {
           error: data.error || null,
         }));
 
-        if (data.status === 'completed' && data.result) {
+        if ((data.status === 'awaiting_voiceover' || data.status === 'completed') && data.result) {
           setResult(data.result);
           setIsLoading(false);
           sse.close();
@@ -146,30 +146,29 @@ export default function App() {
           youtubeUrl: formData.youtubeUrl,
           shopeeLink: formData.shopeeLink,
           apiKey: formData.apiKey,
-          model: formData.model || 'gemini-2.5-flash',
           options: settings,
         }),
       });
 
       const data = await response.json();
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to generate affiliate clip.');
+      if (!response.ok || !data.jobId) {
+        throw new Error(data.error || 'Gagal memproses Tahap 1.');
       }
 
       setResult(data);
       setProgressState({
-        step: 'completed',
-        message: 'Generation complete! Kotak Scene, Ad Advisor Script, and 9:16 Video ready.',
+        step: 'awaiting_voiceover',
+        message: 'Tahap 1 Selesai! Kotak Scene, Naskah & Video 9:16 Tanpa Suara Siap. Upload voiceover Anda di Tahap 2.',
         progress: 100,
-        status: 'completed',
+        status: 'awaiting_voiceover',
         error: null,
       });
     } catch (err) {
-      console.error('Generation request failed:', err);
+      console.error('Generation failed:', err);
       setProgressState({
         step: 'error',
-        message: err.message || 'Generation failed.',
+        message: err.message || 'Proses gagal.',
         progress: 0,
         status: 'error',
         error: err.message,
@@ -180,6 +179,18 @@ export default function App() {
         eventSourceRef.current.close();
       }
     }
+  };
+
+  // STAGE 2: Handle Audio Upload Success
+  const handleVoiceoverUploadSuccess = (finalData) => {
+    setResult(finalData);
+    setProgressState({
+      step: 'completed',
+      message: 'Tahap 2 Selesai! Video Final dengan Voiceover & Subtitle Siap Diunduh.',
+      progress: 100,
+      status: 'completed',
+      error: null,
+    });
   };
 
   return (
@@ -218,6 +229,16 @@ export default function App() {
             {(isLoading || progressState.status !== 'idle') && (
               <ProgressCard progressState={progressState} />
             )}
+
+            {/* Stage 2 Voiceover Upload Box (Visible once Stage 1 finishes) */}
+            {result && result.jobId && (
+              <VoiceoverUploader
+                jobId={result.jobId}
+                onUploadSuccess={handleVoiceoverUploadSuccess}
+                isUploading={isUploading}
+                setIsUploading={setIsUploading}
+              />
+            )}
           </div>
 
           {/* Right Column: Video Preview, Scene Breakdown & Scripts (6 cols on lg) */}
@@ -238,28 +259,31 @@ export default function App() {
                 </div>
 
                 <h3 className="text-lg font-bold text-white mb-2">
-                  Ready to Generate Ad Advisor Clip
+                  Alur 2-Tahap: Gemini 2.5 Flash + GPT-4o-mini
                 </h3>
                 <p className="text-xs text-slate-400 max-w-md leading-relaxed mb-6">
-                  Input link YouTube dan link Shopee Affiliate Anda di sebelah kiri. Model <strong className="text-amber-400 font-mono">gemini-2.5-flash</strong> akan menganalisis visual frame untuk membuat <strong className="text-slate-200">Kotak Scene</strong>, <strong className="text-slate-200">Sample Context</strong>, <strong className="text-slate-200">Script Voice Over (Ad Advisor)</strong>, serta merender video vertikal 9:16 anti-detection.
+                  1. Masukkan URL YouTube & Shopee Affiliate.<br />
+                  2. <strong className="text-amber-400">Gemini 2.5 Flash</strong> memilih highlight 30-60 detik & merender video 9:16 tanpa suara.<br />
+                  3. <strong className="text-indigo-400">GPT-4o-mini</strong> membuat Kotak Scene & Naskah Ad Advisor.<br />
+                  4. Upload audio voiceover dari AI Studio untuk menghasilkan <strong className="text-emerald-400">Video Final + Subtitle</strong>.
                 </p>
 
                 {/* Feature highlight badges */}
                 <div className="grid grid-cols-2 gap-3 w-full max-w-sm text-left">
                   <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
                     <div className="font-bold text-slate-200 flex items-center gap-1.5 mb-1">
-                      <Clapperboard className="w-3.5 h-3.5 text-shopee-400" />
-                      <span>Kotak Scene AI</span>
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Gemini 2.5 Flash</span>
                     </div>
-                    <p className="text-[11px] text-slate-400">Scene breakdown + visual cues + spoken narration</p>
+                    <p className="text-[11px] text-slate-400">Deteksi highlight visual 30-60s akurat</p>
                   </div>
 
                   <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
                     <div className="font-bold text-slate-200 flex items-center gap-1.5 mb-1">
-                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                      <span>AI Studio Prompt</span>
+                      <Clapperboard className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>GPT-4o-mini</span>
                     </div>
-                    <p className="text-[11px] text-slate-400">Siap copy-paste ke Gemini / Google AI Studio</p>
+                    <p className="text-[11px] text-slate-400">Kotak Scene & Naskah Ad Advisor</p>
                   </div>
                 </div>
               </div>
@@ -280,7 +304,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-slate-800/60 py-4 bg-slate-950/40 text-center text-xs text-slate-500">
-        <p>Local AI Affiliate Clipper &bull; React + Node.js + FFmpeg + Aivene AI (gemini-2.5-flash / gpt-4o-mini) &bull; Ad Advisor Standard</p>
+        <p>Local AI Affiliate Clipper &bull; React + Node.js + FFmpeg &bull; Gemini 2.5 Flash + GPT-4o-mini &bull; 2-Stage Ad Advisor Pipeline</p>
       </footer>
 
     </div>

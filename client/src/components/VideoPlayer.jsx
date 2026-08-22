@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Download, Play, Pause, Volume2, VolumeX, Maximize2, Sparkles, Clock, Check, Folder } from 'lucide-react';
+import { Download, Play, Pause, Volume2, VolumeX, Maximize2, Sparkles, Clock, Check, Folder, VolumeX as MuteIcon, CheckCircle2 } from 'lucide-react';
 
 export default function VideoPlayer({ result }) {
   const videoRef = useRef(null);
@@ -7,7 +7,13 @@ export default function VideoPlayer({ result }) {
   const [isMuted, setIsMuted] = useState(false);
   const [isCopiedPath, setIsCopiedPath] = useState(false);
 
-  if (!result || !result.videoUrl) return null;
+  if (!result) return null;
+
+  const isFinal = result.stage === 'completed' || !!result.finalFileName;
+  const currentVideoUrl = result.videoUrl || result.silentVideoUrl;
+  const currentDownloadUrl = result.downloadUrl || result.silentVideoUrl;
+  const currentLocalPath = result.finalLocalPath || result.silentLocalPath || result.localPath;
+  const currentFilename = result.finalFileName || result.silentFileName || result.filename || 'affiliate_clip.mp4';
 
   const togglePlay = () => {
     if (!videoRef.current) return;
@@ -34,8 +40,8 @@ export default function VideoPlayer({ result }) {
   };
 
   const copyLocalPath = () => {
-    if (result.localPath) {
-      navigator.clipboard.writeText(result.localPath);
+    if (currentLocalPath) {
+      navigator.clipboard.writeText(currentLocalPath);
       setIsCopiedPath(true);
       setTimeout(() => setIsCopiedPath(false), 2000);
     }
@@ -45,20 +51,35 @@ export default function VideoPlayer({ result }) {
     <div className="glass-panel rounded-2xl p-6 shadow-xl flex flex-col items-center">
       
       {/* Header */}
-      <div className="w-full flex items-center justify-between mb-4">
+      <div className="w-full flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-orange-500/20 border border-orange-500/30 flex items-center justify-center text-orange-400">
-            <Sparkles className="w-4 h-4" />
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+            isFinal
+              ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400'
+              : 'bg-orange-500/20 border border-orange-500/30 text-orange-400'
+          }`}>
+            {isFinal ? <CheckCircle2 className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
           </div>
           <div>
-            <h3 className="text-base font-bold text-white">9:16 Output Preview</h3>
-            <p className="text-xs text-slate-400 font-mono">Anti-detection altered frame</p>
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <span>{isFinal ? 'Video Final Siap Upload' : 'Preview 9:16 (Tanpa Suara)'}</span>
+              <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
+                isFinal
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                  : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+              }`}>
+                {isFinal ? 'Subtitles Burned' : 'Stage 1 Output'}
+              </span>
+            </h3>
+            <p className="text-xs text-slate-400 font-mono">
+              {isFinal ? 'Voiceover + Subtitle aktif' : 'Menunggu upload voiceover di Tahap 2'}
+            </p>
           </div>
         </div>
 
         {/* Timestamps badge */}
         {result.highlight && (
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-xs font-mono text-amber-400">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-xs font-mono text-amber-400 ml-auto">
             <Clock className="w-3.5 h-3.5" />
             <span>{result.highlight.startTime} - {result.highlight.endTime}</span>
             <span className="text-slate-500">({result.highlight.duration}s)</span>
@@ -70,8 +91,9 @@ export default function VideoPlayer({ result }) {
       <div className="relative w-full max-w-[320px] aspect-[9/16] bg-black rounded-3xl overflow-hidden border-4 border-slate-800 shadow-2xl shadow-black/80 group">
         
         <video
+          key={currentVideoUrl}
           ref={videoRef}
-          src={result.videoUrl}
+          src={currentVideoUrl}
           playsInline
           loop
           onPlay={() => setIsPlaying(true)}
@@ -106,26 +128,30 @@ export default function VideoPlayer({ result }) {
           </button>
         </div>
 
-        {/* Anti-Detection Verified Badge */}
-        <div className="absolute top-3 left-3 bg-emerald-950/80 backdrop-blur-md border border-emerald-500/40 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-          1.03x + Color Shift
+        {/* Stage Status Badge Overlay */}
+        <div className="absolute top-3 left-3 bg-slate-950/80 backdrop-blur-md border border-slate-700/60 text-slate-200 text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1.5">
+          <span className={`w-1.5 h-1.5 rounded-full ${isFinal ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
+          <span>{isFinal ? '9:16 Subtitled Reel' : '9:16 Muted Clip'}</span>
         </div>
       </div>
 
       {/* Download Action Button */}
       <div className="w-full mt-5 space-y-2.5">
         <a
-          href={result.downloadUrl || result.videoUrl}
-          download={result.filename || 'affiliate_clip.mp4'}
-          className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-600/20 hover:scale-[1.01] active:scale-[0.99]"
+          href={currentDownloadUrl}
+          download={currentFilename}
+          className={`w-full py-3.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-lg hover:scale-[1.01] active:scale-[0.99] ${
+            isFinal
+              ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-600/25'
+              : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+          }`}
         >
           <Download className="w-4 h-4" />
-          <span>Download 9:16 Video (.mp4)</span>
+          <span>Download Video .mp4 {isFinal ? '(Final with Subtitles)' : '(Silent Preview)'}</span>
         </a>
 
         {/* Local disk path info & copy */}
-        {result.localPath && (
+        {currentLocalPath && (
           <button
             onClick={copyLocalPath}
             className="w-full py-2 px-3 rounded-lg bg-slate-900/80 hover:bg-slate-800/80 border border-slate-800 text-[11px] text-slate-400 hover:text-slate-200 font-mono flex items-center justify-between transition-colors text-left"
@@ -133,7 +159,7 @@ export default function VideoPlayer({ result }) {
           >
             <span className="truncate flex items-center gap-1.5 max-w-[85%]">
               <Folder className="w-3 h-3 text-slate-500 flex-shrink-0" />
-              <span className="truncate">{result.localPath}</span>
+              <span className="truncate">{currentLocalPath}</span>
             </span>
             <span className="text-[10px] text-shopee-400 font-sans flex items-center gap-1">
               {isCopiedPath ? <Check className="w-3 h-3 text-emerald-400" /> : 'Copy Path'}

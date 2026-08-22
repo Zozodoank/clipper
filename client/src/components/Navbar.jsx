@@ -27,7 +27,7 @@ export default function Navbar({ onOpenSettings, engineStatus }) {
               </span>
             </div>
             <p className="text-xs text-slate-400 hidden sm:block">
-              Auto-generate viral Shopee Affiliate clips via Aivene AI & FFmpeg
+              Auto-generate viral Shopee Affiliate clips via Gemini 2.5 Flash & FFmpeg
             </p>
           </div>
         </div>
@@ -39,7 +39,7 @@ export default function Navbar({ onOpenSettings, engineStatus }) {
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
             <span>Aivene</span>
             <span className="text-slate-500">|</span>
-            <span className="text-indigo-400 font-mono">gemini-1.5-flash</span>
+            <span className="text-amber-400 font-mono">gemini-2.5-flash</span>
           </div>
 
           {/* Anti-detection badge */}

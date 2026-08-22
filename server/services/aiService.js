@@ -4,13 +4,13 @@ import path from 'path';
 import fetch from 'node-fetch';
 
 /**
- * Calls Aivene API (using model 'gpt-4o-mini' or 'gemini-1.5-flash') using OpenAI SDK with multimodal Base64 image frames.
+ * Calls Aivene API using model 'gemini-2.5-flash' using OpenAI SDK with multimodal Base64 image frames.
  * Generates Ad Advisor standard affiliate creative assets: Scene Breakdown (Kotak Scene), Sample Context,
  * Voiceover Script (ID), AI Studio / Gemini prompt template, and Reels Caption with Shopee Affiliate link.
  * 
  * @param {object} params
  * @param {string} params.apiKey - Aivene API Key
- * @param {string} [params.model='gpt-4o-mini'] - Target AI model
+ * @param {string} [params.model='gemini-2.5-flash'] - Target AI model (gemini-2.5-flash, gpt-4o-mini, etc.)
  * @param {Array<object>} params.frames - Array of { timestamp, timeFormatted, base64 }
  * @param {object} params.videoMetadata - { title, duration, description }
  * @param {string} params.shopeeLink - Affiliate URL
@@ -19,15 +19,17 @@ import fetch from 'node-fetch';
  */
 export async function analyzeVideoWithAivene({
   apiKey,
-  model = 'gpt-4o-mini',
+  model = 'gemini-2.5-flash',
   frames,
   videoMetadata,
   shopeeLink,
   onProgress = () => {}
 }) {
+  const primaryModel = model || 'gemini-2.5-flash';
+
   onProgress({
     step: 'ai_vision',
-    message: `Sending visual frames to Aivene (${model}) for Ad Advisor analysis...`,
+    message: `Sending visual frames to Aivene (${primaryModel}) for Ad Advisor analysis...`,
     progress: 55
   });
 
@@ -123,8 +125,6 @@ Return strict JSON in this format:
     })),
   ];
 
-  const primaryModel = model || 'gpt-4o-mini';
-
   try {
     const response = await client.chat.completions.create({
       model: primaryModel,
@@ -179,13 +179,11 @@ Return strict JSON in this format:
       caption += `\n\n🛒 Link Shopee: ${shopeeLink}`;
     }
 
-    // Fallback for AI Studio Prompt if empty
     let aiStudioPrompt = (parsedResult.aiStudioPrompt || '').trim();
     if (!aiStudioPrompt) {
       aiStudioPrompt = `Bertindaklah sebagai Senior Ad Advisor untuk konten Shopee Affiliate Indonesia.\nKonteks Produk: "${videoTitle}"\nBuat variasi script voiceover 20-30 detik dengan formula Hook (0-3s), Story/Problem (3-15s), dan Call To Action ke link Shopee: ${shopeeLink || 'https://shope.ee/link'}`;
     }
 
-    // Fallback for Scenes if empty
     let scenes = Array.isArray(parsedResult.scenes) && parsedResult.scenes.length > 0
       ? parsedResult.scenes
       : [
@@ -239,7 +237,7 @@ Return strict JSON in this format:
     };
   } catch (error) {
     console.error('[AIService] Aivene API error:', error);
-    throw new Error(`Aivene API Ad Advisor analysis failed: ${error.message}`);
+    throw new Error(`Aivene API Ad Advisor analysis failed (${primaryModel}): ${error.message}`);
   }
 }
 

@@ -14,7 +14,7 @@ export default function App() {
     youtubeUrl: '',
     shopeeLink: '',
     apiKey: localStorage.getItem('AIVENE_API_KEY') || '',
-    model: 'gpt-4o-mini',
+    model: 'gemini-2.5-flash',
   }));
 
   // Anti-Detection & Pipeline Settings
@@ -92,7 +92,7 @@ export default function App() {
 
     setProgressState({
       step: 'start',
-      message: 'Initializing Ad Advisor & Local Video Engine...',
+      message: 'Initializing Gemini 2.5 Flash Vision & Video Engine...',
       progress: 5,
       status: 'running',
       error: null,
@@ -146,7 +146,7 @@ export default function App() {
           youtubeUrl: formData.youtubeUrl,
           shopeeLink: formData.shopeeLink,
           apiKey: formData.apiKey,
-          model: formData.model || 'gpt-4o-mini',
+          model: formData.model || 'gemini-2.5-flash',
           options: settings,
         }),
       });
@@ -241,7 +241,7 @@ export default function App() {
                   Ready to Generate Ad Advisor Clip
                 </h3>
                 <p className="text-xs text-slate-400 max-w-md leading-relaxed mb-6">
-                  Input link YouTube dan link Shopee Affiliate Anda di sebelah kiri. Model <strong className="text-indigo-400 font-mono">gpt-4o-mini</strong> akan menganalisis visual frame untuk membuat <strong className="text-slate-200">Kotak Scene</strong>, <strong className="text-slate-200">Sample Context</strong>, <strong className="text-slate-200">Script Voice Over (Ad Advisor)</strong>, serta merender video vertikal 9:16 anti-detection.
+                  Input link YouTube dan link Shopee Affiliate Anda di sebelah kiri. Model <strong className="text-amber-400 font-mono">gemini-2.5-flash</strong> akan menganalisis visual frame untuk membuat <strong className="text-slate-200">Kotak Scene</strong>, <strong className="text-slate-200">Sample Context</strong>, <strong className="text-slate-200">Script Voice Over (Ad Advisor)</strong>, serta merender video vertikal 9:16 anti-detection.
                 </p>
 
                 {/* Feature highlight badges */}
@@ -280,7 +280,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-slate-800/60 py-4 bg-slate-950/40 text-center text-xs text-slate-500">
-        <p>Local AI Affiliate Clipper &bull; React + Node.js + FFmpeg + Aivene AI (gpt-4o-mini / gemini-1.5-flash) &bull; Ad Advisor Standard</p>
+        <p>Local AI Affiliate Clipper &bull; React + Node.js + FFmpeg + Aivene AI (gemini-2.5-flash / gpt-4o-mini) &bull; Ad Advisor Standard</p>
       </footer>
 
     </div>

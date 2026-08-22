@@ -88,7 +88,7 @@ app.post('/api/generate', async (req, res) => {
     youtubeUrl,
     shopeeLink,
     apiKey,
-    model = 'gpt-4o-mini',
+    model = 'gemini-2.5-flash',
     options = {},
     jobId: clientJobId
   } = req.body;
@@ -142,7 +142,7 @@ app.post('/api/generate', async (req, res) => {
       updateProgress
     );
 
-    // --- Step 3: Ad Advisor Analysis with Aivene (gpt-4o-mini / gemini-1.5-flash) ---
+    // --- Step 3: Ad Advisor Analysis with Aivene (gemini-2.5-flash / gpt-4o-mini) ---
     updateProgress({
       step: 'ai_vision',
       message: `Analyzing visual frames with Aivene (${model}) for Scene Breakdown & Scripting...`,

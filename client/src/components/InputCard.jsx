@@ -16,6 +16,8 @@ export default function InputCard({
     onGenerate();
   };
 
+  const currentModel = formData.model || 'gemini-2.5-flash';
+
   return (
     <div className="glass-panel rounded-2xl p-6 shadow-xl relative overflow-hidden">
       {/* Decorative gradient blur */}
@@ -32,7 +34,7 @@ export default function InputCard({
               Source Video & Affiliate Campaign
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Generates Ad Advisor Scene Breakdown, Context, Voiceover Script & 9:16 Video.
+              Powered by Gemini 2.5 Flash Vision & Ad Advisor Scripting.
             </p>
           </div>
 
@@ -50,45 +52,45 @@ export default function InputCard({
         <div>
           <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5 flex items-center justify-between">
             <span className="flex items-center gap-1.5">
-              <Bot className="w-4 h-4 text-indigo-400" />
-              AI Scripting & Vision Model <span className="text-shopee-500">*</span>
+              <Bot className="w-4 h-4 text-amber-400" />
+              Vision & Scripting Model <span className="text-shopee-500">*</span>
             </span>
-            <span className="text-[11px] font-normal text-emerald-400 font-medium">Ad Advisor Powered</span>
+            <span className="text-[11px] font-normal text-emerald-400 font-medium">Gemini 2.5 Vision Active</span>
           </label>
           <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
+              onClick={() => setFormData({ ...formData, model: 'gemini-2.5-flash' })}
+              className={`p-3 rounded-xl border text-left transition-all ${
+                currentModel === 'gemini-2.5-flash'
+                  ? 'bg-amber-950/60 border-amber-500/80 ring-1 ring-amber-500/50 text-white'
+                  : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:bg-slate-900'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-bold text-xs font-mono text-amber-400">gemini-2.5-flash</span>
+                <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-semibold">Recommended</span>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-tight">
+                Super fast multimodal vision reasoning & high-converting Indonesian script.
+              </p>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setFormData({ ...formData, model: 'gpt-4o-mini' })}
               className={`p-3 rounded-xl border text-left transition-all ${
-                (formData.model || 'gpt-4o-mini') === 'gpt-4o-mini'
+                currentModel === 'gpt-4o-mini'
                   ? 'bg-indigo-950/60 border-indigo-500/80 ring-1 ring-indigo-500/50 text-white'
                   : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:bg-slate-900'
               }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <span className="font-bold text-xs font-mono">gpt-4o-mini</span>
-                <span className="text-[9px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded font-semibold">Recommended</span>
+                <span className="text-[9px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded font-semibold">Ad Advisor</span>
               </div>
               <p className="text-[11px] text-slate-400 leading-tight">
-                Scene breakdown, context, and high-converting Ad Advisor voiceover.
-              </p>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFormData({ ...formData, model: 'gemini-1.5-flash' })}
-              className={`p-3 rounded-xl border text-left transition-all ${
-                formData.model === 'gemini-1.5-flash'
-                  ? 'bg-amber-950/60 border-amber-500/80 ring-1 ring-amber-500/50 text-white'
-                  : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:bg-slate-900'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-bold text-xs font-mono">gemini-1.5-flash</span>
-                <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-semibold">Vision Fast</span>
-              </div>
-              <p className="text-[11px] text-slate-400 leading-tight">
-                High-speed visual reasoning via Google Gemini vision endpoint.
+                Scene breakdown and structured Ad Advisor prompt format.
               </p>
             </button>
           </div>
@@ -195,7 +197,7 @@ export default function InputCard({
             {isLoading ? (
               <>
                 <div className="w-5 h-5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
-                <span>Generating Scene Breakdown & Video...</span>
+                <span>Analyzing Frames & Generating Clip...</span>
               </>
             ) : (
               <>

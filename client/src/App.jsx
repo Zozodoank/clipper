@@ -14,6 +14,8 @@ export default function App() {
   const [formData, setFormData] = useState(() => ({
     youtubeUrl: '',
     shopeeLink: '',
+    productTitle: '',
+    productDescription: '',
     apiKey: localStorage.getItem('AIVENE_API_KEY') || '',
     model: 'gemini-2.5-flash',
   }));
@@ -74,16 +76,20 @@ export default function App() {
 
   // STAGE 1: Generate 30-60s Silent Clip + AI Scripting
   const handleGenerate = async () => {
+    if (!formData.productTitle) {
+      alert('Silakan masukkan Judul / Nama Produk.');
+      return;
+    }
     if (!formData.youtubeUrl) {
-      alert('Please enter a YouTube video URL.');
+      alert('Silakan masukkan link YouTube Video URL.');
       return;
     }
     if (!formData.shopeeLink) {
-      alert('Please enter your Shopee Affiliate link.');
+      alert('Silakan masukkan link Shopee Affiliate Anda.');
       return;
     }
     if (!formData.apiKey) {
-      alert('Please enter your Aivene API Key.');
+      alert('Silakan masukkan Aivene API Key Anda.');
       return;
     }
 
@@ -145,6 +151,8 @@ export default function App() {
           jobId,
           youtubeUrl: formData.youtubeUrl,
           shopeeLink: formData.shopeeLink,
+          productTitle: formData.productTitle,
+          productDescription: formData.productDescription,
           apiKey: formData.apiKey,
           options: settings,
         }),
@@ -262,9 +270,9 @@ export default function App() {
                   Alur 2-Tahap: Gemini 2.5 Flash + GPT-4o-mini
                 </h3>
                 <p className="text-xs text-slate-400 max-w-md leading-relaxed mb-6">
-                  1. Masukkan URL YouTube & Shopee Affiliate.<br />
+                  1. Masukkan Judul Produk, Deskripsi, URL YouTube, & Link Shopee.<br />
                   2. <strong className="text-amber-400">Gemini 2.5 Flash</strong> memilih highlight 30-60 detik & merender video 9:16 tanpa suara.<br />
-                  3. <strong className="text-indigo-400">GPT-4o-mini</strong> membuat Kotak Scene & Naskah Ad Advisor.<br />
+                  3. <strong className="text-indigo-400">GPT-4o-mini</strong> membuat Kotak Scene & Naskah Ad Advisor berbasis konteks produk.<br />
                   4. Upload audio voiceover dari AI Studio untuk menghasilkan <strong className="text-emerald-400">Video Final + Subtitle</strong>.
                 </p>
 

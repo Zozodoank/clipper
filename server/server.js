@@ -107,6 +107,8 @@ app.post('/api/generate', async (req, res) => {
   const {
     youtubeUrl,
     shopeeLink,
+    productTitle,
+    productDescription,
     apiKey,
     options = {},
     jobId: clientJobId
@@ -173,6 +175,8 @@ app.post('/api/generate', async (req, res) => {
       apiKey,
       frames: rawFrames,
       videoMetadata: videoMeta,
+      productTitle,
+      productDescription,
       shopeeLink,
       onProgress: updateProgress,
     });
@@ -218,6 +222,8 @@ app.post('/api/generate', async (req, res) => {
       apiKey,
       trimmedFrames,
       videoMetadata: videoMeta,
+      productTitle,
+      productDescription,
       shopeeLink,
       productHook: highlight.productHook,
       segmentDuration: highlight.duration,
@@ -234,6 +240,8 @@ app.post('/api/generate', async (req, res) => {
       silentFileName,
       silentVideoUrl: `/api/video/${silentFileName}`,
       silentLocalPath: silentOutputPath,
+      productTitle: productTitle || videoMeta.title,
+      productDescription: productDescription || '',
       highlight: {
         startTime: highlight.startTime,
         endTime: highlight.endTime,

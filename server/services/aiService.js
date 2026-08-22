@@ -10,6 +10,8 @@ import path from 'path';
  * @param {string} params.apiKey - Aivene API Key
  * @param {Array<object>} params.frames - Sampled video frames
  * @param {object} params.videoMetadata - { title, duration, description }
+ * @param {string} params.productTitle - User provided product title
+ * @param {string} params.productDescription - User provided product description
  * @param {string} params.shopeeLink - Affiliate URL
  * @param {Function} params.onProgress - Progress callback
  * @returns {Promise<{ startTime: string, endTime: string, startSeconds: number, endSeconds: number, duration: number, productHook: string }>}
@@ -18,6 +20,8 @@ export async function selectHighlightWithGemini25Flash({
   apiKey,
   frames,
   videoMetadata,
+  productTitle,
+  productDescription,
   shopeeLink,
   onProgress = () => {}
 }) {
@@ -38,7 +42,8 @@ export async function selectHighlightWithGemini25Flash({
   });
 
   const totalDuration = videoMetadata?.duration || 60;
-  const videoTitle = videoMetadata?.title || 'Product Showcase Video';
+  const effectiveTitle = productTitle || videoMetadata?.title || 'Product Showcase Video';
+  const effectiveDesc = productDescription || videoMetadata?.description || '';
 
   const systemPrompt = `You are an Expert Video Editor & Viral Short-Form Producer.
 Your task is to analyze the sequence of video frames and select the SINGLE most captivating, action-packed continuous highlight window of 30 to 60 seconds suitable for an Indonesian Shopee Affiliate vertical reel.
@@ -46,11 +51,13 @@ Your task is to analyze the sequence of video frames and select the SINGLE most 
 Rules:
 1. Choose a continuous segment strictly between 30 and 60 seconds in length (e.g. 30s, 45s, or up to 60s).
 2. The segment MUST show the product in action, unboxing, key demonstration, or exciting moments.
-3. Output exact 'startTime' and 'endTime' in format "MM:SS" (e.g. "00:15" to "00:55") within 00:00 to ${formatSeconds(totalDuration)}.
+3. Output exact 'startTime' and 'endTime' in format "MM:SS" within 00:00 to ${formatSeconds(totalDuration)}.
 4. Provide a catchy short Indonesian hook headline ('productHook').
 5. Output MUST be valid JSON only.`;
 
-  const userPrompt = `Video Title: "${videoTitle}"
+  const userPrompt = `Product Title: "${effectiveTitle}"
+${effectiveDesc ? `Product Description / Key Features: "${effectiveDesc}"` : ''}
+Video Title: "${videoMetadata?.title || effectiveTitle}"
 Total Video Duration: ${totalDuration} seconds (${formatSeconds(totalDuration)})
 Product Link: ${shopeeLink || 'https://shope.ee/link'}
 
@@ -137,7 +144,7 @@ Return strict JSON in this format:
 
 /**
  * Stage 1, Step B: Calls Aivene API with model 'gpt-4o-mini'
- * to analyze frames from the trimmed 30-60s silent 9:16 video and generate:
+ * using explicit user provided Product Title and Product Description to generate:
  * - Kotak Scene (Scene Breakdown)
  * - Sample Context (USPs, Target Audience, Core Problem)
  * - Naskah Voiceover (Ad Advisor Standard in Indonesian)
@@ -148,6 +155,8 @@ Return strict JSON in this format:
  * @param {string} params.apiKey - Aivene API Key
  * @param {Array<object>} params.trimmedFrames - Frames from the 30-60s trimmed vertical video
  * @param {object} params.videoMetadata - { title, duration }
+ * @param {string} [params.productTitle] - Explicit product name / title entered by user
+ * @param {string} [params.productDescription] - Explicit product description entered by user
  * @param {string} params.shopeeLink - Affiliate URL
  * @param {string} params.productHook - Hook from Gemini
  * @param {number} params.segmentDuration - Duration of segment (30-60s)
@@ -158,6 +167,8 @@ export async function generateAdAdvisorScriptWithGpt4oMini({
   apiKey,
   trimmedFrames,
   videoMetadata,
+  productTitle,
+  productDescription,
   shopeeLink,
   productHook,
   segmentDuration = 45,
@@ -179,17 +190,18 @@ export async function generateAdAdvisorScriptWithGpt4oMini({
     baseURL: 'https://api.aivene.com/v1',
   });
 
-  const videoTitle = videoMetadata?.title || 'Product Showcase Video';
+  const effectiveTitle = (productTitle || '').trim() || videoMetadata?.title || 'Produk Viral Shopee';
+  const effectiveDesc = (productDescription || '').trim();
 
   const systemPrompt = `You are a Senior Creative Director and Ad Advisor specializing in Indonesian Short-Form Affiliate Video Marketing (TikTok Shop, Shopee Video, Instagram Reels).
 
-You will analyze the sampled frames of a 30-60 second trimmed video and generate 5 comprehensive, high-converting creative assets:
+You will receive the explicit Product Title, Product Description, and the sampled frames of a ${segmentDuration}-second video clip. Use this precise product knowledge together with the visual frames to generate 5 high-converting marketing assets without making incorrect assumptions:
 
 1. 'sampleContext':
-   - 'productName': Product identity and what it is.
+   - 'productName': Explicit product name.
    - 'targetAudience': Specific target audience profile in Indonesia.
-   - 'coreProblem': The primary pain point this product solves.
-   - 'keyFeatures': List of 3-4 key USPs (Unique Selling Propositions) visible in the frames.
+   - 'coreProblem': The primary pain point this product solves based on description & visual.
+   - 'keyFeatures': List of 3-4 key USPs (Unique Selling Propositions).
    - 'buyingTrigger': Psychological trigger (FOMO, convenience, discount, viral trend).
 
 2. 'scenes' (Kotak Scene / Scene-by-Scene Breakdown):
@@ -203,9 +215,9 @@ You will analyze the sampled frames of a 30-60 second trimmed video and generate
 
 3. 'voiceoverScript' (Naskah Voiceover Lengkap):
    - A complete Indonesian spoken narration formatted cleanly with sections:
-     [HOOK 0-3s]: Bold, curiosity-inducing hook line.
-     [PROBLEM & DEMO 3-20s]: Story / problem and benefit demonstration seen in the video.
-     [VALUE PROPOSITION 20-35s]: Key advantages and quality assurance.
+     [HOOK 0-3s]: Bold, curiosity-inducing hook line mentioning the product.
+     [PROBLEM & DEMO 3-20s]: Story / problem and benefit demonstration based on product description and video visual.
+     [VALUE PROPOSITION 20-35s]: Key advantages, specifications, and quality assurance.
      [CALL TO ACTION 35-${segmentDuration}s]: Direct CTA directing viewer to checkout via Shopee link in bio/caption.
 
 4. 'aiStudioPrompt':
@@ -216,20 +228,23 @@ You will analyze the sampled frames of a 30-60 second trimmed video and generate
 
 Output MUST be strictly valid JSON matching the requested schema.`;
 
-  const userPrompt = `Product Video Title: "${videoTitle}"
-Video Segment Duration: ${segmentDuration} seconds
-Visual Hook: "${productHook || 'Racun Shopee Viral!'}"
+  const userPrompt = `=== INFORMASI PRODUK UTAMA ===
+Judul / Nama Produk: "${effectiveTitle}"
+${effectiveDesc ? `Deskripsi & Spesifikasi Produk: "${effectiveDesc}"` : 'Deskripsi: (Analisis dari visual frame video)'}
 Shopee Affiliate Link: ${shopeeLink || 'https://shope.ee/link'}
+Visual Hook: "${productHook || 'Racun Shopee Viral!'}"
+Durasi Video Potongan: ${segmentDuration} detik
 
 Visual Frames of the 30-60s Trimmed Video (${trimmedFrames.length} frames):
 ${trimmedFrames.map((f, i) => `Frame #${i + 1} at timestamp ${f.timeFormatted} (${f.timestamp}s)`).join('\n')}
 
-Generate the complete Kotak Scene, Sample Context, Naskah Voiceover, and AI Studio prompt.
+Gunakan informasi judul dan deskripsi produk di atas agar naskah sangat relevan dan akurat.
+Buat Kotak Scene, Sample Context, Naskah Voiceover Ad Advisor, dan AI Studio prompt.
 
 Return strict JSON in this format:
 {
   "sampleContext": {
-    "productName": "Nama Produk",
+    "productName": "${effectiveTitle}",
     "targetAudience": "Target audiens",
     "coreProblem": "Masalah utama",
     "keyFeatures": ["Fitur 1", "Fitur 2", "Fitur 3"],
@@ -281,19 +296,19 @@ Return strict JSON in this format:
 
     let voiceoverScript = (parsed.voiceoverScript || '').trim();
     if (!voiceoverScript) {
-      voiceoverScript = `[HOOK]\nStop scroll! Barang yang satu ini bener-bener lagi viral dan wajib banget kamu punya di Shopee!\n\n[DEMO & BENEFIT]\nKualitasnya kokoh, desainnya elegan, dan praktis banget buat dipakai sehari-hari tanpa ribet.\n\n[VALUE PROPOSITION]\nUdah banyak yang review bagus dan terbukti awet buat jangka panjang.\n\n[CALL TO ACTION]\nMumpung lagi ada diskon spesial dan promo gratis ongkir, buruan checkout di link Shopee sekarang sebelum kehabisan!`;
+      voiceoverScript = `[HOOK]\nStop scroll! ${effectiveTitle} yang satu ini bener-bener lagi viral dan wajib banget kamu punya di Shopee!\n\n[DEMO & BENEFIT]\n${effectiveDesc ? effectiveDesc.slice(0, 100) : 'Kualitasnya kokoh, desainnya elegan, dan praktis banget buat dipakai sehari-hari tanpa ribet.'}\n\n[VALUE PROPOSITION]\nUdah banyak yang review bagus dan terbukti awet buat jangka panjang.\n\n[CALL TO ACTION]\nMumpung lagi ada diskon spesial dan promo gratis ongkir, buruan checkout di link Shopee sekarang sebelum kehabisan!`;
     }
 
     let caption = (parsed.caption || '').trim();
     if (!caption) {
-      caption = `🔥 Racun Shopee Viral Wajib Punya!\n\nBarang impian yang lagi viral banget! Buruan checkout sekarang mumpung lagi diskon & promo gratis ongkir!\n\n🛒 Link Pembelian Shopee: ${shopeeLink || 'https://shope.ee/link-disini'}\n\n#racunshopee #shopeehaul #racuntiktok #reelsviral #affiliateindonesia #spillracunshopee`;
+      caption = `🔥 Racun Shopee Viral: ${effectiveTitle}!\n\n${effectiveDesc ? effectiveDesc + '\n\n' : ''}Buruan checkout sekarang mumpung lagi diskon & promo gratis ongkir!\n\n🛒 Link Pembelian Shopee: ${shopeeLink || 'https://shope.ee/link-disini'}\n\n#racunshopee #shopeehaul #racuntiktok #reelsviral #affiliateindonesia #spillracunshopee`;
     } else if (shopeeLink && !caption.includes(shopeeLink)) {
       caption += `\n\n🛒 Link Shopee: ${shopeeLink}`;
     }
 
     let aiStudioPrompt = (parsed.aiStudioPrompt || '').trim();
     if (!aiStudioPrompt) {
-      aiStudioPrompt = `Bertindaklah sebagai Senior Ad Advisor untuk konten Shopee Affiliate Indonesia.\nKonteks Produk: "${videoTitle}"\nNaskah Spoken Voiceover:\n${voiceoverScript}\n\nHasilkan pembacaan audio voiceover dengan intonasi ramah, antusias, dan persuasif.`;
+      aiStudioPrompt = `Bertindaklah sebagai Senior Ad Advisor untuk konten Shopee Affiliate Indonesia.\nKonteks Produk: "${effectiveTitle}"\n${effectiveDesc ? `Deskripsi: ${effectiveDesc}\n` : ''}Naskah Spoken Voiceover:\n${voiceoverScript}\n\nHasilkan pembacaan audio voiceover dengan intonasi ramah, antusias, dan persuasif.`;
     }
 
     onProgress({
@@ -304,7 +319,7 @@ Return strict JSON in this format:
 
     return {
       sampleContext: parsed.sampleContext || {
-        productName: videoTitle,
+        productName: effectiveTitle,
         targetAudience: "Pengguna Shopee & pencari produk viral",
         coreProblem: "Mencari produk berkualitas dengan harga terjangkau",
         keyFeatures: ["Praktis & Multifungsi", "Bahan Berkualitas", "Harga Terjangkau"],
@@ -316,8 +331,8 @@ Return strict JSON in this format:
             {
               sceneNumber: 1,
               timeRange: "00:00 - 00:10",
-              visualDescription: "Tampilan visual hook produk di awal video.",
-              voiceover: "Stop scroll! Barang yang satu ini beneran lagi rame banget di Shopee!",
+              visualDescription: `Tampilan visual ${effectiveTitle} di awal video.`,
+              voiceover: `Stop scroll! ${effectiveTitle} ini beneran lagi rame banget di Shopee!`,
               adAdvisorNotes: "Gunakan hook visual dinamis & teks 'Wajib Punya!' di layar."
             },
             {

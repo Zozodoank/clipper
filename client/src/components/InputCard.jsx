@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Youtube, ShoppingBag, Key, Sparkles, Eye, EyeOff, Shield, Sliders, Zap, Bot, Clapperboard } from 'lucide-react';
+import { Youtube, ShoppingBag, Key, Sparkles, Eye, EyeOff, Shield, Sliders, Zap, Bot, Tag, AlignLeft, Info } from 'lucide-react';
 
 export default function InputCard({
   formData,
@@ -16,25 +16,23 @@ export default function InputCard({
     onGenerate();
   };
 
-  const currentModel = formData.model || 'gemini-2.5-flash';
-
   return (
     <div className="glass-panel rounded-2xl p-6 shadow-xl relative overflow-hidden">
       {/* Decorative gradient blur */}
       <div className="absolute top-0 right-0 -mr-16 -mt-16 w-48 h-48 bg-orange-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
 
-      <form onSubmit={handleSubmit} className="relative z-10 space-y-5">
+      <form onSubmit={handleSubmit} className="relative z-10 space-y-4">
         
         {/* Section Header */}
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
               <Zap className="w-5 h-5 text-shopee-500" />
-              Source Video & Affiliate Campaign
+              Source Video & Informasi Produk
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Powered by Gemini 2.5 Flash Vision & Ad Advisor Scripting.
+              Masukkan detail produk agar GPT-4o-mini menghasilkan naskah yang akurat dan persuasif.
             </p>
           </div>
 
@@ -48,97 +46,82 @@ export default function InputCard({
           </button>
         </div>
 
-        {/* AI Model Selection */}
+        {/* 1. Judul / Nama Produk */}
         <div>
           <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5 flex items-center justify-between">
             <span className="flex items-center gap-1.5">
-              <Bot className="w-4 h-4 text-amber-400" />
-              Vision & Scripting Model <span className="text-shopee-500">*</span>
+              <Tag className="w-4 h-4 text-amber-400" />
+              Judul / Nama Produk <span className="text-shopee-500">*</span>
             </span>
-            <span className="text-[11px] font-normal text-emerald-400 font-medium">Gemini 2.5 Vision Active</span>
+            <span className="text-[11px] font-normal text-amber-300">Konteks Utama GPT-4o-mini</span>
           </label>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              onClick={() => setFormData({ ...formData, model: 'gemini-2.5-flash' })}
-              className={`p-3 rounded-xl border text-left transition-all ${
-                currentModel === 'gemini-2.5-flash'
-                  ? 'bg-amber-950/60 border-amber-500/80 ring-1 ring-amber-500/50 text-white'
-                  : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:bg-slate-900'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-bold text-xs font-mono text-amber-400">gemini-2.5-flash</span>
-                <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-semibold">Recommended</span>
-              </div>
-              <p className="text-[11px] text-slate-400 leading-tight">
-                Super fast multimodal vision reasoning & high-converting Indonesian script.
-              </p>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFormData({ ...formData, model: 'gpt-4o-mini' })}
-              className={`p-3 rounded-xl border text-left transition-all ${
-                currentModel === 'gpt-4o-mini'
-                  ? 'bg-indigo-950/60 border-indigo-500/80 ring-1 ring-indigo-500/50 text-white'
-                  : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:bg-slate-900'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-bold text-xs font-mono">gpt-4o-mini</span>
-                <span className="text-[9px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded font-semibold">Ad Advisor</span>
-              </div>
-              <p className="text-[11px] text-slate-400 leading-tight">
-                Scene breakdown and structured Ad Advisor prompt format.
-              </p>
-            </button>
-          </div>
+          <input
+            type="text"
+            required
+            placeholder="Contoh: Mini Portable Blender USB 350ml Rechargeable"
+            value={formData.productTitle || ''}
+            onChange={(e) => setFormData({ ...formData, productTitle: e.target.value })}
+            className="w-full bg-slate-900/90 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 transition-all font-sans"
+          />
         </div>
 
-        {/* YouTube Video URL Input */}
+        {/* 2. Deskripsi & Keunggulan Produk */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              <AlignLeft className="w-4 h-4 text-indigo-400" />
+              Deskripsi & Spesifikasi Produk (Opsional / Rekomendasi)
+            </span>
+            <span className="text-[11px] font-normal text-slate-400">Poin penting naskah</span>
+          </label>
+          <textarea
+            rows={3}
+            placeholder="Contoh: Kapasitas 350ml, 4 mata pisau stainless steel, baterai tahan 15x pemakaian, waterproof, praktis buat jus & smoothie, mudah dicuci."
+            value={formData.productDescription || ''}
+            onChange={(e) => setFormData({ ...formData, productDescription: e.target.value })}
+            className="w-full bg-slate-900/90 border border-slate-700 rounded-xl px-4 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all font-sans resize-none"
+          />
+        </div>
+
+        {/* 3. YouTube Video URL Input */}
         <div>
           <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5 flex items-center justify-between">
             <span className="flex items-center gap-1.5">
               <Youtube className="w-4 h-4 text-red-500" />
               YouTube Video URL <span className="text-shopee-500">*</span>
             </span>
-            <span className="text-[11px] font-normal text-slate-400">Target video (Reviews, Unboxing, ASMR)</span>
+            <span className="text-[11px] font-normal text-slate-400">Gemini 2.5 Flash Highlight</span>
           </label>
-          <div className="relative">
-            <input
-              type="url"
-              required
-              placeholder="https://www.youtube.com/watch?v=..."
-              value={formData.youtubeUrl}
-              onChange={(e) => setFormData({ ...formData, youtubeUrl: e.target.value })}
-              className="w-full bg-slate-900/90 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-shopee-500/50 focus:border-shopee-500 transition-all font-mono"
-            />
-          </div>
+          <input
+            type="url"
+            required
+            placeholder="https://www.youtube.com/watch?v=..."
+            value={formData.youtubeUrl}
+            onChange={(e) => setFormData({ ...formData, youtubeUrl: e.target.value })}
+            className="w-full bg-slate-900/90 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-shopee-500/50 focus:border-shopee-500 transition-all font-mono"
+          />
         </div>
 
-        {/* Shopee Affiliate Link Input */}
+        {/* 4. Shopee Affiliate Link Input */}
         <div>
           <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5 flex items-center justify-between">
             <span className="flex items-center gap-1.5">
               <ShoppingBag className="w-4 h-4 text-shopee-500" />
               Shopee Affiliate Link <span className="text-shopee-500">*</span>
             </span>
-            <span className="text-[11px] font-normal text-slate-400">Embedded in AI script & caption</span>
+            <span className="text-[11px] font-normal text-slate-400">CTA di caption & naskah</span>
           </label>
-          <div className="relative">
-            <input
-              type="text"
-              required
-              placeholder="https://shope.ee/abcdef..."
-              value={formData.shopeeLink}
-              onChange={(e) => setFormData({ ...formData, shopeeLink: e.target.value })}
-              className="w-full bg-slate-900/90 border border-slate-700 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-shopee-500/50 focus:border-shopee-500 transition-all font-mono"
-            />
-          </div>
+          <input
+            type="text"
+            required
+            placeholder="https://shope.ee/abcdef..."
+            value={formData.shopeeLink}
+            onChange={(e) => setFormData({ ...formData, shopeeLink: e.target.value })}
+            className="w-full bg-slate-900/90 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-shopee-500/50 focus:border-shopee-500 transition-all font-mono"
+          />
         </div>
 
-        {/* Aivene API Key Input */}
+        {/* 5. Aivene API Key Input */}
         <div>
           <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5 flex items-center justify-between">
             <span className="flex items-center gap-1.5">
@@ -154,7 +137,7 @@ export default function InputCard({
               placeholder="aivene-xxxxxxxxxxxxxxxxxxxxxxxxx"
               value={formData.apiKey}
               onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-              className="w-full bg-slate-900/90 border border-slate-700 rounded-xl pl-4 pr-11 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 transition-all font-mono"
+              className="w-full bg-slate-900/90 border border-slate-700 rounded-xl pl-4 pr-11 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 transition-all font-mono"
             />
             <button
               type="button"
@@ -197,12 +180,12 @@ export default function InputCard({
             {isLoading ? (
               <>
                 <div className="w-5 h-5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
-                <span>Analyzing Frames & Generating Clip...</span>
+                <span>Memproses Tahap 1 (Clipping & Scripting)...</span>
               </>
             ) : (
               <>
                 <Sparkles className="w-5 h-5 fill-current" />
-                <span>Generate Local Clip & Script</span>
+                <span>Generate Kotak Scene & Video 9:16</span>
               </>
             )}
           </button>

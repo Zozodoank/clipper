@@ -33,6 +33,7 @@ const PORT = process.env.PORT || 5000;
 const tempDir = path.join(__dirname, 'temp');
 const outputDir = path.join(__dirname, 'output');
 const uploadsDir = path.join(tempDir, 'uploads');
+const jobsFilePath = path.join(__dirname, 'jobs.json');
 
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
@@ -52,9 +53,113 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// ─── Persistent Job Store ────────────────────────────────────────────────────
+
+/** Load jobs from disk into memory */
+function loadJobsFromDisk() {
+  try {
+    if (fs.existsSync(jobsFilePath)) {
+      const raw = fs.readFileSync(jobsFilePath, 'utf-8');
+      const obj = JSON.parse(raw);
+      for (const [jobId, jobData] of Object.entries(obj)) {
+        activeJobs.set(jobId, jobData);
+      }
+      console.log(`[Jobs] Loaded ${Object.keys(obj).length} persisted job(s) from disk.`);
+    }
+  } catch (err) {
+    console.warn('[Jobs] Could not load jobs.json:', err.message);
+  }
+}
+
+/** Save a single job entry to disk */
+function persistJob(jobId, jobData) {
+  try {
+    let existing = {};
+    if (fs.existsSync(jobsFilePath)) {
+      existing = JSON.parse(fs.readFileSync(jobsFilePath, 'utf-8'));
+    }
+    existing[jobId] = jobData;
+    fs.writeFileSync(jobsFilePath, JSON.stringify(existing, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('[Jobs] Could not persist job to disk:', err.message);
+  }
+}
+
+/** Delete a job from disk */
+function deletePersistedJob(jobId) {
+  try {
+    if (fs.existsSync(jobsFilePath)) {
+      const existing = JSON.parse(fs.readFileSync(jobsFilePath, 'utf-8'));
+      delete existing[jobId];
+      fs.writeFileSync(jobsFilePath, JSON.stringify(existing, null, 2), 'utf-8');
+    }
+  } catch (err) {
+    console.warn('[Jobs] Could not delete job from disk:', err.message);
+  }
+}
+
+/**
+ * Scan temp/ directory for orphaned downloaded videos from interrupted jobs.
+ * These are jobs that downloaded the video but failed before stage 1 completed.
+ * We reconstruct a minimal job stub so user can retry them.
+ */
+function scanOrphanedJobs() {
+  try {
+    const jobDirs = fs.readdirSync(tempDir).filter(name => name.startsWith('job_'));
+    let found = 0;
+
+    for (const dirName of jobDirs) {
+      const jobId = dirName.replace('job_', '');
+
+      // Skip if already tracked
+      if (activeJobs.has(jobId)) continue;
+
+      const jobTempDir = path.join(tempDir, dirName);
+      const videoFiles = fs.readdirSync(jobTempDir).filter(f => f.endsWith('.mp4') || f.endsWith('.webm') || f.endsWith('.mkv'));
+
+      if (videoFiles.length === 0) continue;
+
+      const videoPath = path.join(jobTempDir, videoFiles[0]);
+      const stat = fs.statSync(videoPath);
+
+      // Only consider files larger than 5MB as valid partial downloads
+      if (stat.size < 5 * 1024 * 1024) continue;
+
+      const stub = {
+        jobId,
+        stage: 'interrupted',
+        downloadedVideoPath: videoPath,
+        downloadedAt: stat.mtime.toISOString(),
+        productTitle: '',
+        productDescription: '',
+        youtubeUrl: '',
+        shopeeLink: '',
+        isOrphan: true,
+      };
+
+      activeJobs.set(jobId, stub);
+      persistJob(jobId, stub);
+      found++;
+    }
+
+    if (found > 0) {
+      console.log(`[Jobs] Found ${found} orphaned job(s) with downloaded video in temp/.`);
+    }
+  } catch (err) {
+    console.warn('[Jobs] Could not scan orphaned jobs:', err.message);
+  }
+}
+
 // In-memory active jobs registry and progress tracker
 const jobProgress = new Map();
 const activeJobs = new Map();
+
+// Load existing jobs from disk on startup
+loadJobsFromDisk();
+// Detect any interrupted jobs that still have videos in temp/
+scanOrphanedJobs();
+
+// ─── Routes ──────────────────────────────────────────────────────────────────
 
 // 1. Health & Dependency Check
 app.get('/api/health', async (req, res) => {
@@ -70,7 +175,76 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// 2. SSE endpoint for live progress streaming
+// 2. List all persisted jobs (for Job History UI)
+app.get('/api/jobs', (req, res) => {
+  const jobs = [];
+  for (const [jobId, job] of activeJobs.entries()) {
+    // Enrich with disk check: does the downloaded video or silent clip still exist?
+    const silentClipPath = path.join(outputDir, `silent_clip_${jobId}.mp4`);
+    const hasSilentClip = fs.existsSync(silentClipPath);
+    const finalClipPath = path.join(outputDir, `final_clip_${jobId}.mp4`);
+    const hasFinalClip = fs.existsSync(finalClipPath);
+    const tempJobDir = path.join(tempDir, `job_${jobId}`);
+    const hasDownloadedVideo = (() => {
+      try {
+        if (job.downloadedVideoPath && fs.existsSync(job.downloadedVideoPath)) return true;
+        if (fs.existsSync(tempJobDir)) {
+          const files = fs.readdirSync(tempJobDir).filter(f =>
+            f.endsWith('.mp4') || f.endsWith('.webm') || f.endsWith('.mkv')
+          );
+          return files.length > 0;
+        }
+      } catch {}
+      return false;
+    })();
+
+    jobs.push({
+      jobId,
+      stage: hasFinalClip ? 'completed' : hasSilentClip ? 'awaiting_voiceover' : job.stage || 'unknown',
+      productTitle: job.productTitle || '(Tidak diketahui)',
+      productDescription: job.productDescription || '',
+      youtubeUrl: job.youtubeUrl || '',
+      shopeeLink: job.shopeeLink || '',
+      createdAt: job.createdAt || job.downloadedAt || null,
+      hasDownloadedVideo,
+      hasSilentClip,
+      hasFinalClip,
+      isOrphan: job.isOrphan || false,
+      silentVideoUrl: hasSilentClip ? `/api/video/silent_clip_${jobId}.mp4` : null,
+      videoUrl: hasFinalClip ? `/api/video/final_clip_${jobId}.mp4` : null,
+      downloadUrl: hasFinalClip ? `/api/download/final_clip_${jobId}.mp4` : null,
+      // Include full job data if stage 1 completed
+      ...(hasSilentClip ? {
+        scenes: job.scenes,
+        voiceoverScript: job.voiceoverScript,
+        aiStudioPrompt: job.aiStudioPrompt,
+        sampleContext: job.sampleContext,
+        caption: job.caption,
+        highlight: job.highlight,
+        productHook: job.productHook,
+      } : {}),
+    });
+  }
+
+  // Sort newest first
+  jobs.sort((a, b) => {
+    if (!a.createdAt) return 1;
+    if (!b.createdAt) return -1;
+    return new Date(b.createdAt) - new Date(a.createdAt);
+  });
+
+  res.json({ jobs });
+});
+
+// 3. Delete a specific job
+app.delete('/api/jobs/:jobId', (req, res) => {
+  const { jobId } = req.params;
+  activeJobs.delete(jobId);
+  deletePersistedJob(jobId);
+  res.json({ success: true, jobId });
+});
+
+// 4. SSE endpoint for live progress streaming
 app.get('/api/progress/:jobId', (req, res) => {
   const { jobId } = req.params;
 
@@ -102,7 +276,7 @@ app.get('/api/progress/:jobId', (req, res) => {
   });
 });
 
-// 3. STAGE 1: Video Clipping & AI Scripting (Gemini 2.5 Flash + GPT-4o Mini)
+// 5. STAGE 1: Video Clipping & AI Scripting
 app.post('/api/generate', async (req, res) => {
   const {
     youtubeUrl,
@@ -135,6 +309,20 @@ app.post('/api/generate', async (req, res) => {
     console.log(`[Job ${jobId}] [${payload.progress || 0}%] ${payload.message}`);
   };
 
+  // Persist job metadata early so it survives interruptions
+  const jobMeta = {
+    jobId,
+    stage: 'running',
+    productTitle: productTitle || '',
+    productDescription: productDescription || '',
+    youtubeUrl: youtubeUrl || '',
+    shopeeLink: shopeeLink || '',
+    createdAt: new Date().toISOString(),
+    isOrphan: false,
+  };
+  activeJobs.set(jobId, jobMeta);
+  persistJob(jobId, jobMeta);
+
   updateProgress({
     step: 'start',
     message: 'Starting Stage 1: Video Clipping & AI Scripting Pipeline...',
@@ -142,152 +330,137 @@ app.post('/api/generate', async (req, res) => {
     status: 'running'
   });
 
-  const filesToDelete = [];
-  const dirsToDelete = [rawFramesDir, trimmedFramesDir, sessionTempDir];
-
   try {
-    // --- Step 1: Download YouTube Video at 720p (with Smart Cache / Resume support) ---
-    let rawVideoPath = path.join(sessionTempDir, `raw_${jobId}.mp4`);
+    // --- Step 1: Download with Smart Cache ---
+    let rawVideoPath;
     let videoMeta = { title: productTitle || 'Product Video', duration: 60 };
 
-    if (fs.existsSync(rawVideoPath) && fs.statSync(rawVideoPath).size > 10000) {
-      updateProgress({ step: 'download', message: 'Using cached downloaded video from previous run...', progress: 30, status: 'running' });
+    // Look for already-downloaded video files in session temp dir
+    const existingVideoInTemp = (() => {
+      try {
+        if (fs.existsSync(sessionTempDir)) {
+          const files = fs.readdirSync(sessionTempDir).filter(f =>
+            (f.endsWith('.mp4') || f.endsWith('.webm') || f.endsWith('.mkv')) &&
+            !f.startsWith('voiceover')
+          );
+          if (files.length > 0) {
+            const fullPath = path.join(sessionTempDir, files[0]);
+            if (fs.statSync(fullPath).size > 5 * 1024 * 1024) return fullPath;
+          }
+        }
+      } catch {}
+      return null;
+    })();
+
+    // Also check if a persisted job stored the path
+    const existingJob = activeJobs.get(jobId);
+    const cachedVideoPath = existingVideoInTemp ||
+      (existingJob?.downloadedVideoPath && fs.existsSync(existingJob.downloadedVideoPath)
+        ? existingJob.downloadedVideoPath
+        : null);
+
+    if (cachedVideoPath) {
+      rawVideoPath = cachedVideoPath;
+      updateProgress({
+        step: 'download',
+        message: `♻️ Video sudah ada (${(fs.statSync(rawVideoPath).size / 1024 / 1024).toFixed(1)} MB). Skip download, langsung proses.`,
+        progress: 30,
+        status: 'running'
+      });
     } else {
       updateProgress({ step: 'download', message: 'Downloading source video (720p) via yt-dlp...', progress: 12, status: 'running' });
-      const dlResult = await downloadYouTubeVideo(
-        youtubeUrl,
-        sessionTempDir,
-        jobId,
-        updateProgress
-      );
+      const dlResult = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress);
       rawVideoPath = dlResult.filePath;
       videoMeta = dlResult.metadata;
-    }
-    filesToDelete.push(rawVideoPath);
 
-    // --- Step 2: Extract Keyframes from Raw Video (or reuse existing cache) ---
-    let rawFrames;
-    const existingRawFrameFiles = fs.existsSync(rawFramesDir)
-      ? fs.readdirSync(rawFramesDir).filter(f => f.endsWith('.jpg'))
-      : [];
-
-    if (existingRawFrameFiles.length > 5) {
-      updateProgress({ step: 'frames_raw', message: 'Using existing extracted frames...', progress: 42, status: 'running' });
-      const reExtracted = await extractFrames(rawVideoPath, rawFramesDir, updateProgress);
-      rawFrames = reExtracted.frames;
-    } else {
-      updateProgress({ step: 'frames_raw', message: 'Extracting source frames for Gemini 2.5 Flash...', progress: 35, status: 'running' });
-      const extracted = await extractFrames(rawVideoPath, rawFramesDir, updateProgress);
-      rawFrames = extracted.frames;
+      // Update persisted job with video path
+      const updatedMeta = { ...jobMeta, downloadedVideoPath: rawVideoPath, stage: 'downloaded' };
+      activeJobs.set(jobId, updatedMeta);
+      persistJob(jobId, updatedMeta);
     }
 
-    // --- Step 3: Gemini 2.5 Flash Highlight Selection (30-60s) ---
-    updateProgress({
-      step: 'gemini_vision',
-      message: 'Gemini 2.5 Flash analyzing frames to identify best 30-60s highlight...',
-      progress: 48,
-      status: 'running'
-    });
+    // --- Step 2: Extract frames ---
+    updateProgress({ step: 'frames_raw', message: 'Extracting source frames for Gemini 2.5 Flash...', progress: 38, status: 'running' });
+    const { frames: rawFrames } = await extractFrames(rawVideoPath, rawFramesDir, updateProgress);
+
+    // --- Step 3: Gemini 2.5 Flash ---
+    updateProgress({ step: 'gemini_vision', message: 'Gemini 2.5 Flash analyzing frames...', progress: 48, status: 'running' });
     const highlight = await selectHighlightWithGemini25Flash({
-      apiKey,
-      frames: rawFrames,
-      videoMetadata: videoMeta,
-      productTitle,
-      productDescription,
-      shopeeLink,
-      onProgress: updateProgress,
+      apiKey, frames: rawFrames, videoMetadata: videoMeta,
+      productTitle, productDescription, shopeeLink, onProgress: updateProgress,
     });
 
-    // --- Step 4: Render 30-60s Silent 9:16 Anti-Detection Video (-an, no subs) ---
-    updateProgress({
-      step: 'render_silent',
-      message: `Rendering 9:16 Silent Vertical Video (${highlight.startTime} - ${highlight.endTime})...`,
-      progress: 62,
-      status: 'running'
-    });
+    // --- Step 4: Render Silent 9:16 ---
+    updateProgress({ step: 'render_silent', message: `Rendering 9:16 Silent Video (${highlight.startTime} - ${highlight.endTime})...`, progress: 62, status: 'running' });
     await renderSilentAntiDetectionVideo({
-      inputVideo: rawVideoPath,
-      startTime: highlight.startTime,
-      endTime: highlight.endTime,
-      outputVideo: silentOutputPath,
+      inputVideo: rawVideoPath, startTime: highlight.startTime,
+      endTime: highlight.endTime, outputVideo: silentOutputPath,
       hflip: options.hflip !== undefined ? options.hflip : true,
-      speedMultiplier: options.speedMultiplier || 1.03,
-      onProgress: updateProgress,
+      speedMultiplier: options.speedMultiplier || 1.03, onProgress: updateProgress,
     });
 
-    // --- Step 5: Extract Frames from the Trimmed 30-60s Silent Video for GPT-4o-mini ---
-    updateProgress({
-      step: 'frames_trimmed',
-      message: 'Sampling frames from trimmed 30-60s video for GPT-4o-mini...',
-      progress: 72,
-      status: 'running'
-    });
-    const { frames: trimmedFrames } = await extractFrames(
-      silentOutputPath,
-      trimmedFramesDir,
-      updateProgress
-    );
+    // --- Step 5: Extract trimmed frames ---
+    updateProgress({ step: 'frames_trimmed', message: 'Sampling frames from trimmed video for GPT-4o-mini...', progress: 72, status: 'running' });
+    const { frames: trimmedFrames } = await extractFrames(silentOutputPath, trimmedFramesDir, updateProgress);
 
-    // --- Step 6: GPT-4o-mini Generates Kotak Scene, Context & Naskah ---
-    updateProgress({
-      step: 'gpt_scripting',
-      message: 'GPT-4o-mini generating Kotak Scene, Sample Context, and Naskah Voiceover...',
-      progress: 80,
-      status: 'running'
-    });
+    // --- Step 6: GPT-4o-mini scripting ---
+    updateProgress({ step: 'gpt_scripting', message: 'GPT-4o-mini generating Kotak Scene, Context, Naskah...', progress: 80, status: 'running' });
     const scriptData = await generateAdAdvisorScriptWithGpt4oMini({
-      apiKey,
-      trimmedFrames,
-      videoMetadata: videoMeta,
-      productTitle,
-      productDescription,
-      shopeeLink,
-      productHook: highlight.productHook,
-      segmentDuration: highlight.duration,
+      apiKey, trimmedFrames, videoMetadata: videoMeta, productTitle, productDescription,
+      shopeeLink, productHook: highlight.productHook, segmentDuration: highlight.duration,
       onProgress: updateProgress,
     });
 
-    // Clean up temporary raw frames
-    cleanupTempFiles(filesToDelete, [rawFramesDir, trimmedFramesDir]);
+    // Cleanup raw frames only (keep downloaded video for future voiceover merge)
+    cleanupTempFiles([], [rawFramesDir, trimmedFramesDir]);
 
-    // Store Job State in Memory for Stage 2
+    // Full Stage 1 result
     const stage1Result = {
       jobId,
       stage: 'awaiting_voiceover',
+      createdAt: jobMeta.createdAt,
       silentFileName,
       silentVideoUrl: `/api/video/${silentFileName}`,
       silentLocalPath: silentOutputPath,
+      downloadedVideoPath: rawVideoPath,
       productTitle: productTitle || videoMeta.title,
       productDescription: productDescription || '',
-      highlight: {
-        startTime: highlight.startTime,
-        endTime: highlight.endTime,
-        duration: highlight.duration,
-      },
+      youtubeUrl,
+      shopeeLink: shopeeLink || '',
+      highlight: { startTime: highlight.startTime, endTime: highlight.endTime, duration: highlight.duration },
       productHook: highlight.productHook,
       sampleContext: scriptData.sampleContext,
       scenes: scriptData.scenes,
       voiceoverScript: scriptData.voiceoverScript,
       aiStudioPrompt: scriptData.aiStudioPrompt,
       caption: scriptData.caption,
-      shopeeLink: shopeeLink || '',
       videoTitle: videoMeta.title,
+      isOrphan: false,
     };
 
     activeJobs.set(jobId, stage1Result);
+    persistJob(jobId, stage1Result);
 
     updateProgress({
       step: 'awaiting_voiceover',
-      message: 'Tahap 1 Selesai! Kotak Scene, Naskah, dan Muted 9:16 Video Ready. Upload your voiceover to finalize.',
-      progress: 100,
-      status: 'awaiting_voiceover',
-      result: stage1Result
+      message: 'Tahap 1 Selesai! Kotak Scene, Naskah, dan Muted 9:16 Video Ready.',
+      progress: 100, status: 'awaiting_voiceover', result: stage1Result
     });
 
     res.json(stage1Result);
   } catch (error) {
     console.error(`[Job ${jobId}] Stage 1 Pipeline Error:`, error);
-    // Note: Do not delete downloaded video immediately on error so user can retry without re-downloading!
+
+    // Persist error state (keep downloadedVideoPath so retry works)
+    const currentJob = activeJobs.get(jobId) || {};
+    const errorJob = {
+      ...currentJob,
+      stage: 'error',
+      lastError: error.message,
+      errorAt: new Date().toISOString(),
+    };
+    activeJobs.set(jobId, errorJob);
+    persistJob(jobId, errorJob);
 
     const isQuotaError = error.message.toLowerCase().includes('saldo') ||
       error.message.toLowerCase().includes('insufficient') ||
@@ -298,37 +471,25 @@ app.post('/api/generate', async (req, res) => {
     updateProgress({
       step: 'error',
       message: error.message || 'An error occurred during video processing.',
-      progress: 0,
-      status: 'error',
-      error: error.message,
-      isQuotaError,
-      canRetry: true
+      progress: 0, status: 'error', error: error.message, isQuotaError, canRetry: true
     });
 
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      isQuotaError,
-      canRetry: true,
-      jobId
-    });
+    res.status(500).json({ success: false, error: error.message, isQuotaError, canRetry: true, jobId });
   }
 });
 
-// 4. STAGE 2: Upload Voiceover Audio & Merge Subtitles (Final Video)
+// 6. STAGE 2: Upload Voiceover & Merge Subtitles
 app.post('/api/upload-voiceover', upload.single('audio'), async (req, res) => {
   const { jobId } = req.body;
   const audioFile = req.file;
 
-  if (!jobId) {
-    return res.status(400).json({ error: 'Job ID is required.' });
-  }
-  if (!audioFile) {
-    return res.status(400).json({ error: 'Voiceover audio file is required (.mp3, .wav, .m4a).' });
-  }
+  if (!jobId) return res.status(400).json({ error: 'Job ID is required.' });
+  if (!audioFile) return res.status(400).json({ error: 'Voiceover audio file is required.' });
 
   const job = activeJobs.get(jobId);
-  if (!job || !fs.existsSync(job.silentLocalPath)) {
+  const silentPath = job?.silentLocalPath || path.join(outputDir, `silent_clip_${jobId}.mp4`);
+
+  if (!job || !fs.existsSync(silentPath)) {
     return res.status(404).json({ error: 'Job session expired or silent video not found. Please regenerate Stage 1.' });
   }
 
@@ -344,29 +505,18 @@ app.post('/api/upload-voiceover', upload.single('audio'), async (req, res) => {
     console.log(`[Job ${jobId}] [${payload.progress || 0}%] ${payload.message}`);
   };
 
-  updateProgress({
-    step: 'merge_start',
-    message: 'Starting Stage 2: Merging voiceover & burning synchronized subtitles...',
-    progress: 20,
-    status: 'running'
-  });
+  updateProgress({ step: 'merge_start', message: 'Merging voiceover & burning subtitles...', progress: 20, status: 'running' });
 
   try {
-    // 1. Generate Synchronized Subtitles (.srt) from Naskah
     updateProgress({ step: 'subtitles', message: 'Generating synchronized subtitle captions...', progress: 40, status: 'running' });
     generateSrtSubtitles(job.voiceoverScript, job.highlight?.duration || 45, srtPath);
 
-    // 2. FFmpeg Merge Audio + Burn Subtitles
     updateProgress({ step: 'render_final', message: 'Rendering final 9:16 video with Voiceover & Subtitles...', progress: 60, status: 'running' });
     await mergeVoiceoverAndBurnSubtitles({
-      silentVideoPath: job.silentLocalPath,
-      voiceoverAudioPath: audioFile.path,
-      srtPath,
-      outputVideoPath: finalOutputPath,
-      onProgress: updateProgress,
+      silentVideoPath: silentPath, voiceoverAudioPath: audioFile.path,
+      srtPath, outputVideoPath: finalOutputPath, onProgress: updateProgress,
     });
 
-    // 3. Clean up uploaded voiceover and srt
     cleanupTempFiles([audioFile.path, srtPath]);
 
     const finalResult = {
@@ -379,43 +529,23 @@ app.post('/api/upload-voiceover', upload.single('audio'), async (req, res) => {
     };
 
     activeJobs.set(jobId, finalResult);
+    persistJob(jobId, finalResult);
 
-    updateProgress({
-      step: 'completed',
-      message: 'Final 9:16 Video with Voiceover & Subtitles Ready for Upload!',
-      progress: 100,
-      status: 'completed',
-      result: finalResult
-    });
+    updateProgress({ step: 'completed', message: 'Final 9:16 Video Ready!', progress: 100, status: 'completed', result: finalResult });
 
-    res.json({
-      success: true,
-      ...finalResult
-    });
+    res.json({ success: true, ...finalResult });
   } catch (error) {
     console.error(`[Job ${jobId}] Stage 2 Error:`, error);
     cleanupTempFiles([audioFile?.path, srtPath]);
-
-    updateProgress({
-      step: 'error',
-      message: error.message || 'Failed to merge voiceover audio.',
-      progress: 0,
-      status: 'error',
-      error: error.message
-    });
-
+    updateProgress({ step: 'error', message: error.message, progress: 0, status: 'error', error: error.message });
     res.status(500).json({ success: false, error: error.message, jobId });
   }
 });
 
-// 5. Stream output video for HTML5 Player
+// 7. Stream output video
 app.get('/api/video/:filename', (req, res) => {
   const filePath = path.join(outputDir, req.params.filename);
-
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).send('Video not found.');
-  }
-
+  if (!fs.existsSync(filePath)) return res.status(404).send('Video not found.');
   const stat = fs.statSync(filePath);
   const fileSize = stat.size;
   const range = req.headers.range;
@@ -425,44 +555,27 @@ app.get('/api/video/:filename', (req, res) => {
     const start = parseInt(parts[0], 10);
     const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
     const chunksize = end - start + 1;
-    const file = fs.createReadStream(filePath, { start, end });
-    const head = {
+    res.writeHead(206, {
       'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-      'Accept-Ranges': 'bytes',
-      'Content-Length': chunksize,
-      'Content-Type': 'video/mp4',
-    };
-    res.writeHead(206, head);
-    file.pipe(res);
+      'Accept-Ranges': 'bytes', 'Content-Length': chunksize, 'Content-Type': 'video/mp4',
+    });
+    fs.createReadStream(filePath, { start, end }).pipe(res);
   } else {
-    const head = {
-      'Content-Length': fileSize,
-      'Content-Type': 'video/mp4',
-    };
-    res.writeHead(200, head);
+    res.writeHead(200, { 'Content-Length': fileSize, 'Content-Type': 'video/mp4' });
     fs.createReadStream(filePath).pipe(res);
   }
 });
 
-// 6. Download endpoint with forced attachment
+// 8. Download endpoint
 app.get('/api/download/:filename', (req, res) => {
   const filePath = path.join(outputDir, req.params.filename);
-
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'File not found.' });
-  }
-
-  res.download(filePath, req.params.filename, (err) => {
-    if (err) {
-      console.error('[Download] Error downloading file:', err);
-    }
-  });
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found.' });
+  res.download(filePath, req.params.filename);
 });
 
 app.listen(PORT, () => {
   console.log(`\n======================================================`);
   console.log(`🎬 Local AI Affiliate Clipper Backend Server`);
-  console.log(`🌐 Server running at: http://localhost:${PORT}`);
-  console.log(`📡 Health endpoint: http://localhost:${PORT}/api/health`);
+  console.log(`🌐 Running at: http://localhost:${PORT}`);
   console.log(`======================================================\n`);
 });

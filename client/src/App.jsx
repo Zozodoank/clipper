@@ -7,10 +7,10 @@ import VideoPlayer from './components/VideoPlayer';
 import CaptionCard from './components/CaptionCard';
 import VoiceoverUploader from './components/VoiceoverUploader';
 import SettingsModal from './components/SettingsModal';
+import JobHistoryPanel from './components/JobHistoryPanel';
 import { Sparkles, Clapperboard } from 'lucide-react';
 
 export default function App() {
-  // Form State (persisting API key in localStorage)
   const [formData, setFormData] = useState(() => ({
     youtubeUrl: '',
     shopeeLink: '',
@@ -20,7 +20,6 @@ export default function App() {
     model: 'gemini-2.5-flash',
   }));
 
-  // Anti-Detection & Pipeline Settings
   const [settings, setSettings] = useState({
     hflip: true,
     speedMultiplier: 1.03,
@@ -32,42 +31,28 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
-  // Live Progress & Results State
   const [progressState, setProgressState] = useState({
-    step: 'idle',
-    message: '',
-    progress: 0,
-    status: 'idle',
-    error: null,
-    isQuotaError: false,
-    canRetry: false,
+    step: 'idle', message: '', progress: 0, status: 'idle',
+    error: null, isQuotaError: false, canRetry: false,
   });
 
   const [result, setResult] = useState(null);
   const [engineStatus, setEngineStatus] = useState(null);
   const [checkingEngine, setCheckingEngine] = useState(false);
 
-  // Persist last jobId and form snapshot for retry
   const lastJobIdRef = useRef(null);
   const lastFormDataRef = useRef(null);
   const eventSourceRef = useRef(null);
 
-  // Save API key to localStorage
   useEffect(() => {
-    if (formData.apiKey) {
-      localStorage.setItem('AIVENE_API_KEY', formData.apiKey);
-    }
+    if (formData.apiKey) localStorage.setItem('AIVENE_API_KEY', formData.apiKey);
   }, [formData.apiKey]);
 
-  // Check Engine Health on Load
   const fetchEngineHealth = async () => {
     setCheckingEngine(true);
     try {
       const res = await fetch('/api/health');
-      if (res.ok) {
-        const data = await res.json();
-        setEngineStatus(data);
-      }
+      if (res.ok) setEngineStatus(await res.json());
     } catch (err) {
       console.warn('Could not fetch backend health:', err.message);
     } finally {
@@ -75,13 +60,11 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    fetchEngineHealth();
-  }, []);
+  useEffect(() => { fetchEngineHealth(); }, []);
 
-  // Core generation logic (shared between fresh runs and retries)
-  const runGeneratePipeline = async (overrideJobId = null) => {
-    const currentForm = lastFormDataRef.current || formData;
+  // Core pipeline runner (used by fresh runs, retries, and history resumes)
+  const runGeneratePipeline = async (overrideJobId = null, overrideFormData = null) => {
+    const currentForm = overrideFormData || lastFormDataRef.current || formData;
     const jobId = overrideJobId || Math.random().toString(36).substring(2, 10);
     lastJobIdRef.current = jobId;
 
@@ -91,18 +74,12 @@ export default function App() {
     setProgressState({
       step: 'start',
       message: overrideJobId
-        ? '🔄 Melanjutkan job sebelumnya (Retry)... Video yang sudah diunduh akan digunakan kembali.'
+        ? '🔄 Melanjutkan job sebelumnya (Retry)... Video yang sudah diunduh digunakan kembali.'
         : 'Memulai Tahap 1: Analisis Gemini 2.5 Flash & GPT-4o-mini...',
-      progress: 5,
-      status: 'running',
-      error: null,
-      isQuotaError: false,
-      canRetry: false,
+      progress: 5, status: 'running', error: null, isQuotaError: false, canRetry: false,
     });
 
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-    }
+    if (eventSourceRef.current) eventSourceRef.current.close();
 
     const sse = new EventSource(`/api/progress/${jobId}`);
     eventSourceRef.current = sse;
@@ -120,7 +97,6 @@ export default function App() {
           isQuotaError: data.isQuotaError || false,
           canRetry: data.canRetry || false,
         }));
-
         if ((data.status === 'awaiting_voiceover' || data.status === 'completed') && data.result) {
           setResult(data.result);
           setIsLoading(false);
@@ -133,10 +109,7 @@ export default function App() {
         console.error('Error parsing SSE event:', e);
       }
     };
-
-    sse.onerror = () => {
-      sse.close();
-    };
+    sse.onerror = () => sse.close();
 
     try {
       const response = await fetch('/api/generate', {
@@ -153,138 +126,119 @@ export default function App() {
         }),
       });
 
-      // Safe JSON parsing
       const rawText = await response.text();
       let data;
       try {
         data = JSON.parse(rawText);
-      } catch (jsonErr) {
+      } catch {
         throw new Error(
           response.ok
             ? `Respon server tidak valid: ${rawText.slice(0, 200)}`
-            : `Server Backend Error (${response.status}): Pastikan Backend Server (Port 5000) berjalan via 'npm run dev'.`
+            : `Server Backend Error (${response.status}): Pastikan 'npm run dev' berjalan.`
         );
       }
 
-      if (!response.ok || !data.jobId) {
-        throw new Error(data.error || 'Gagal memproses Tahap 1.');
-      }
+      if (!response.ok || !data.jobId) throw new Error(data.error || 'Gagal memproses Tahap 1.');
 
       setResult(data);
       setProgressState((prev) => ({
-        ...prev,
-        step: 'awaiting_voiceover',
-        message: 'Tahap 1 Selesai! Kotak Scene, Naskah & Video 9:16 Tanpa Suara Siap. Upload voiceover Anda di Tahap 2.',
-        progress: 100,
-        status: 'awaiting_voiceover',
-        error: null,
-        canRetry: false,
+        ...prev, step: 'awaiting_voiceover',
+        message: 'Tahap 1 Selesai! Upload voiceover dari AI Studio untuk finalisasi.',
+        progress: 100, status: 'awaiting_voiceover', error: null, canRetry: false,
       }));
     } catch (err) {
-      console.error('Generation failed:', err);
-      const isQuotaError =
-        err.message.toLowerCase().includes('saldo') ||
-        err.message.toLowerCase().includes('insufficient') ||
-        err.message.toLowerCase().includes('balance') ||
-        err.message.toLowerCase().includes('quota') ||
-        err.message.toLowerCase().includes('credit');
-
+      const isQuotaError = ['saldo', 'insufficient', 'balance', 'quota', 'credit'].some(k =>
+        err.message.toLowerCase().includes(k)
+      );
       setProgressState((prev) => ({
-        ...prev,
-        step: 'error',
-        message: err.message || 'Proses gagal.',
-        progress: prev.progress, // Keep previous progress visible
-        status: 'error',
-        error: err.message,
-        isQuotaError,
-        canRetry: true,
+        ...prev, step: 'error', message: err.message || 'Proses gagal.',
+        progress: prev.progress, status: 'error', error: err.message, isQuotaError, canRetry: true,
       }));
     } finally {
       setIsLoading(false);
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
+      if (eventSourceRef.current) eventSourceRef.current.close();
     }
   };
 
-  // STAGE 1: Fresh Generate
+  // Fresh generate
   const handleGenerate = async () => {
-    if (!formData.productTitle) {
-      alert('Silakan masukkan Judul / Nama Produk.');
-      return;
-    }
-    if (!formData.youtubeUrl) {
-      alert('Silakan masukkan link YouTube Video URL.');
-      return;
-    }
-    if (!formData.shopeeLink) {
-      alert('Silakan masukkan link Shopee Affiliate Anda.');
-      return;
-    }
-    if (!formData.apiKey) {
-      alert('Silakan masukkan Aivene API Key Anda.');
-      return;
-    }
-
-    // Save form snapshot for potential retry
+    if (!formData.productTitle) return alert('Silakan masukkan Judul / Nama Produk.');
+    if (!formData.youtubeUrl) return alert('Silakan masukkan YouTube Video URL.');
+    if (!formData.shopeeLink) return alert('Silakan masukkan link Shopee Affiliate Anda.');
+    if (!formData.apiKey) return alert('Silakan masukkan Aivene API Key Anda.');
     lastFormDataRef.current = { ...formData };
-
     await runGeneratePipeline(null);
   };
 
-  // RETRY: Reuse the same jobId so the backend can skip the already-downloaded video
+  // Retry with same jobId (server reuses cached video)
   const handleRetry = async () => {
-    if (!formData.apiKey) {
-      alert('Silakan perbarui Aivene API Key Anda terlebih dahulu, lalu klik Retry.');
-      return;
-    }
-    const existingJobId = lastJobIdRef.current;
-    if (!existingJobId) {
-      // No previous job, just run fresh
-      await handleGenerate();
-      return;
-    }
-    // Re-run with same jobId — server will reuse cached downloaded video
-    await runGeneratePipeline(existingJobId);
+    if (!formData.apiKey) return alert('Silakan perbarui Aivene API Key sebelum retry.');
+    await runGeneratePipeline(lastJobIdRef.current);
   };
 
-  // STAGE 2: Handle Audio Upload Success
+  // Select a job from Job History Panel (retry / resume / view)
+  const handleSelectJob = (job) => {
+    if (!formData.apiKey) {
+      alert('Silakan masukkan Aivene API Key terlebih dahulu sebelum retry job ini.');
+      return;
+    }
+
+    lastJobIdRef.current = job.jobId;
+
+    // Restore form data from persisted job
+    const restoredForm = {
+      ...formData,
+      youtubeUrl: job.youtubeUrl || formData.youtubeUrl,
+      shopeeLink: job.shopeeLink || formData.shopeeLink,
+      productTitle: job.productTitle || formData.productTitle,
+      productDescription: job.productDescription || formData.productDescription,
+    };
+    setFormData(restoredForm);
+    lastFormDataRef.current = restoredForm;
+
+    // If job is already done (awaiting_voiceover or completed), just restore the result
+    if (job.stage === 'completed' || job.stage === 'awaiting_voiceover') {
+      setResult({
+        ...job,
+        silentVideoUrl: job.silentVideoUrl || `/api/video/silent_clip_${job.jobId}.mp4`,
+        silentLocalPath: `server/output/silent_clip_${job.jobId}.mp4`,
+      });
+      setProgressState({
+        step: job.stage === 'completed' ? 'completed' : 'awaiting_voiceover',
+        message: job.stage === 'completed'
+          ? 'Video Final siap. Pilih dari Riwayat Job untuk unduh.'
+          : 'Kotak Scene & Naskah tersedia. Upload voiceover untuk finalisasi.',
+        progress: 100, status: job.stage, error: null, canRetry: false,
+      });
+      return;
+    }
+
+    // Otherwise retry the pipeline
+    runGeneratePipeline(job.jobId, restoredForm);
+  };
+
   const handleVoiceoverUploadSuccess = (finalData) => {
     setResult(finalData);
     setProgressState({
-      step: 'completed',
-      message: 'Tahap 2 Selesai! Video Final dengan Voiceover & Subtitle Siap Diunduh.',
-      progress: 100,
-      status: 'completed',
-      error: null,
-      canRetry: false,
+      step: 'completed', message: 'Tahap 2 Selesai! Video Final siap diunduh.',
+      progress: 100, status: 'completed', error: null, canRetry: false,
     });
   };
 
   return (
     <div className="min-h-screen flex flex-col bg-[#080d1a] text-slate-100">
+      <Navbar onOpenSettings={() => setIsSettingsOpen(true)} engineStatus={engineStatus} />
 
-      {/* Top Navbar */}
-      <Navbar
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        engineStatus={engineStatus}
-      />
-
-      {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        <DependenciesStatus status={engineStatus} onRefresh={fetchEngineHealth} loading={checkingEngine} />
 
-        {/* Engine dependencies status bar */}
-        <DependenciesStatus
-          status={engineStatus}
-          onRefresh={fetchEngineHealth}
-          loading={checkingEngine}
-        />
-
-        {/* Two-column layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
           {/* Left Column */}
           <div className="lg:col-span-6 space-y-6">
+            {/* Job History Panel — above the form */}
+            <JobHistoryPanel onSelectJob={handleSelectJob} currentJobId={lastJobIdRef.current} />
+
             <InputCard
               formData={formData}
               setFormData={setFormData}
@@ -295,14 +249,9 @@ export default function App() {
             />
 
             {(isLoading || progressState.status !== 'idle') && (
-              <ProgressCard
-                progressState={progressState}
-                onRetry={handleRetry}
-                isLoading={isLoading}
-              />
+              <ProgressCard progressState={progressState} onRetry={handleRetry} isLoading={isLoading} />
             )}
 
-            {/* Stage 2 Voiceover Upload */}
             {result && result.jobId && (
               <VoiceoverUploader
                 jobId={result.jobId}
@@ -325,9 +274,7 @@ export default function App() {
                 <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-shopee-500/20 via-orange-500/20 to-amber-500/20 border border-shopee-500/30 flex items-center justify-center text-shopee-500 mb-4 shadow-xl">
                   <Clapperboard className="w-8 h-8 stroke-[1.75]" />
                 </div>
-                <h3 className="text-lg font-bold text-white mb-2">
-                  Alur 2-Tahap: Gemini 2.5 Flash + GPT-4o-mini
-                </h3>
+                <h3 className="text-lg font-bold text-white mb-2">Alur 2-Tahap: Gemini 2.5 Flash + GPT-4o-mini</h3>
                 <p className="text-xs text-slate-400 max-w-md leading-relaxed mb-6">
                   1. Masukkan Judul Produk, Deskripsi, URL YouTube, & Link Shopee.<br />
                   2. <strong className="text-amber-400">Gemini 2.5 Flash</strong> memilih highlight 30-60 detik & merender video 9:16 tanpa suara.<br />

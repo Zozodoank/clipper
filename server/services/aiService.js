@@ -3,18 +3,30 @@ import fs from 'fs';
 import path from 'path';
 
 /**
+ * Helper to format Aivene / OpenAI API errors into clear Indonesian messages.
+ */
+function formatApiError(err, modelName = 'AI') {
+  const status = err.status || err.statusCode;
+  const message = err.message || '';
+
+  if (status === 402 || message.toLowerCase().includes('insufficient') || message.toLowerCase().includes('balance') || message.toLowerCase().includes('quota') || message.toLowerCase().includes('credit')) {
+    return `Saldo / Kuota Aivene API Anda tidak mencukupi (Insufficient Credits/Balance). Silakan periksa atau isi ulang saldo akun Aivene Anda di https://aivene.com.`;
+  }
+  if (status === 401 || message.toLowerCase().includes('invalid api key') || message.toLowerCase().includes('unauthorized')) {
+    return `Aivene API Key tidak valid atau tidak memiliki izin akses. Silakan periksa kembali API Key Anda.`;
+  }
+  if (status === 429 || message.toLowerCase().includes('rate limit')) {
+    return `Batas frekuensi permintaan (Rate Limit) Aivene tercapai. Silakan tunggu beberapa saat dan coba lagi.`;
+  }
+  if (status === 404 || message.toLowerCase().includes('model_not_found') || message.toLowerCase().includes('does not exist')) {
+    return `Model '${modelName}' tidak tersedia di akun Aivene Anda.`;
+  }
+  return `Aivene API Error (${modelName}): ${message}`;
+}
+
+/**
  * Stage 1, Step A: Calls Aivene API with model 'gemini-2.5-flash'
  * to analyze full video frames and select the optimal 30-60 second highlight window.
- * 
- * @param {object} params
- * @param {string} params.apiKey - Aivene API Key
- * @param {Array<object>} params.frames - Sampled video frames
- * @param {object} params.videoMetadata - { title, duration, description }
- * @param {string} params.productTitle - User provided product title
- * @param {string} params.productDescription - User provided product description
- * @param {string} params.shopeeLink - Affiliate URL
- * @param {Function} params.onProgress - Progress callback
- * @returns {Promise<{ startTime: string, endTime: string, startSeconds: number, endSeconds: number, duration: number, productHook: string }>}
  */
 export async function selectHighlightWithGemini25Flash({
   apiKey,
@@ -33,7 +45,7 @@ export async function selectHighlightWithGemini25Flash({
 
   const effectiveApiKey = apiKey || process.env.AIVENE_API_KEY;
   if (!effectiveApiKey) {
-    throw new Error('Aivene API Key is required. Please provide your Aivene API Key in the UI or .env file.');
+    throw new Error('Aivene API Key wajib diisi. Silakan masukkan API Key Anda di form.');
   }
 
   const client = new OpenAI({
@@ -138,7 +150,7 @@ Return strict JSON in this format:
     };
   } catch (err) {
     console.error('[AIService Gemini 2.5 Flash] Error:', err);
-    throw new Error(`Gemini 2.5 Flash highlight selection failed: ${err.message}`);
+    throw new Error(formatApiError(err, 'gemini-2.5-flash'));
   }
 }
 
@@ -150,18 +162,6 @@ Return strict JSON in this format:
  * - Naskah Voiceover (Ad Advisor Standard in Indonesian)
  * - Google AI Studio Prompt Template
  * - Reels Caption & Hashtags
- * 
- * @param {object} params
- * @param {string} params.apiKey - Aivene API Key
- * @param {Array<object>} params.trimmedFrames - Frames from the 30-60s trimmed vertical video
- * @param {object} params.videoMetadata - { title, duration }
- * @param {string} [params.productTitle] - Explicit product name / title entered by user
- * @param {string} [params.productDescription] - Explicit product description entered by user
- * @param {string} params.shopeeLink - Affiliate URL
- * @param {string} params.productHook - Hook from Gemini
- * @param {number} params.segmentDuration - Duration of segment (30-60s)
- * @param {Function} params.onProgress - Progress callback
- * @returns {Promise<object>} Structured Ad Advisor creative output
  */
 export async function generateAdAdvisorScriptWithGpt4oMini({
   apiKey,
@@ -182,7 +182,7 @@ export async function generateAdAdvisorScriptWithGpt4oMini({
 
   const effectiveApiKey = apiKey || process.env.AIVENE_API_KEY;
   if (!effectiveApiKey) {
-    throw new Error('Aivene API Key is required. Please provide your Aivene API Key in the UI or .env file.');
+    throw new Error('Aivene API Key wajib diisi. Silakan periksa input API Key.');
   }
 
   const client = new OpenAI({
@@ -356,7 +356,7 @@ Return strict JSON in this format:
     };
   } catch (err) {
     console.error('[AIService GPT-4o-mini] Error:', err);
-    throw new Error(`GPT-4o-mini scripting failed: ${err.message}`);
+    throw new Error(formatApiError(err, 'gpt-4o-mini'));
   }
 }
 

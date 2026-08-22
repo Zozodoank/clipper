@@ -158,7 +158,17 @@ export default function App() {
         }),
       });
 
-      const data = await response.json();
+      // Safe JSON parsing with fallback
+      let data;
+      const rawText = await response.text();
+      try {
+        data = JSON.parse(rawText);
+      } catch (jsonErr) {
+        if (!response.ok) {
+          throw new Error(`Server Backend Error (${response.status}): Pastikan Backend Server (Port 5000) sedang berjalan via 'npm run dev'.`);
+        }
+        throw new Error(`Respon server tidak valid (${response.status}): ${rawText.slice(0, 150)}`);
+      }
 
       if (!response.ok || !data.jobId) {
         throw new Error(data.error || 'Gagal memproses Tahap 1.');

@@ -18,7 +18,8 @@ import {
 import { generateSrtSubtitles } from './services/subtitleService.js';
 import {
   renderSilentAntiDetectionVideo,
-  mergeVoiceoverAndBurnSubtitles
+  mergeVoiceoverAndBurnSubtitles,
+  getMediaDurationSec
 } from './services/videoRenderer.js';
 import {
   cleanupTempFiles,
@@ -543,13 +544,18 @@ app.post('/api/upload-voiceover', upload.single('audio'), async (req, res) => {
   updateProgress({ step: 'merge_start', message: 'Merging voiceover & burning subtitles...', progress: 20, status: 'running' });
 
   try {
-    updateProgress({ step: 'subtitles', message: 'Generating synchronized subtitle captions...', progress: 40, status: 'running' });
-    generateSrtSubtitles(job.voiceoverScript, job.highlight?.duration || 45, srtPath);
+    const silentDurationSec = await getMediaDurationSec(silentPath) || job.highlight?.duration || 45;
+
+    updateProgress({ step: 'subtitles', message: `Generating synchronized subtitle captions for ${silentDurationSec.toFixed(1)}s video...`, progress: 40, status: 'running' });
+    generateSrtSubtitles(job.voiceoverScript, silentDurationSec, srtPath);
 
     updateProgress({ step: 'render_final', message: 'Rendering final 9:16 video with Voiceover & Subtitles...', progress: 60, status: 'running' });
     await mergeVoiceoverAndBurnSubtitles({
       silentVideoPath: silentPath, voiceoverAudioPath: audioFile.path,
-      srtPath, outputVideoPath: finalOutputPath, onProgress: updateProgress,
+      srtPath,
+      outputVideoPath: finalOutputPath,
+      targetDurationSec: silentDurationSec,
+      onProgress: updateProgress,
     });
 
     cleanupTempFiles([audioFile.path, srtPath]);

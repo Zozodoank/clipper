@@ -1,7 +1,15 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { getYtDlpPath, getFFmpegPath } from './binaryChecker.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const serverDir = path.resolve(__dirname, '..');
+
+const YOUTUBE_AUTH_ERROR_PATTERN = /(HTTP Error 429|Too Many Requests|Sign in to confirm|not a bot|cookies-from-browser|cookies for the authentication|confirm you)/i;
+const DEFAULT_BROWSER_COOKIE_SOURCES = ['chrome', 'edge', 'firefox', 'brave'];
 
 /**
  * Merge separate video and audio files using FFmpeg.
@@ -33,6 +41,145 @@ function mergeStreamsWithFfmpeg(videoFile, audioFile, outputFile) {
   });
 }
 
+function runYtDlp(ytDlpPath, args, { onStdout = null } = {}) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(ytDlpPath, args);
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', (chunk) => {
+      const text = chunk.toString();
+      stdout += text;
+      if (onStdout) onStdout(text);
+    });
+
+    proc.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    proc.on('close', (code) => {
+      resolve({ code, stdout, stderr });
+    });
+
+    proc.on('error', (err) => {
+      reject(new Error(`Failed to start yt-dlp: ${err.message}`));
+    });
+  });
+}
+
+function isYouTubeAuthError(stderr = '') {
+  return YOUTUBE_AUTH_ERROR_PATTERN.test(stderr);
+}
+
+function getCookiesFileArgs() {
+  const configuredPath = process.env.YTDLP_COOKIES_FILE?.trim();
+  const candidates = [
+    ...resolveCookieFileCandidates(configuredPath),
+    path.join(serverDir, 'cookies.txt'),
+    path.join(process.cwd(), 'cookies.txt'),
+  ].filter(Boolean);
+
+  const cookiesPath = candidates.find((candidate) => fs.existsSync(candidate));
+  return cookiesPath
+    ? { label: `cookies file (${cookiesPath})`, args: ['--cookies', cookiesPath] }
+    : null;
+}
+
+function resolveCookieFileCandidates(configuredPath) {
+  if (!configuredPath) return [];
+  if (path.isAbsolute(configuredPath)) return [configuredPath];
+  return [
+    path.resolve(serverDir, configuredPath),
+    path.resolve(process.cwd(), configuredPath),
+  ];
+}
+
+function getBrowserCookieSources() {
+  const configured = process.env.YTDLP_COOKIES_FROM_BROWSER?.trim();
+  if (configured && configured.toLowerCase() === 'none') return [];
+
+  const configuredBrowsers = configured
+    ? configured.split(',').map((item) => item.trim()).filter(Boolean)
+    : [];
+
+  const browsers = [...configuredBrowsers, ...DEFAULT_BROWSER_COOKIE_SOURCES]
+    .filter((browser, index, list) => list.indexOf(browser) === index);
+
+  return browsers.map((browser) => ({
+    label: `browser cookies (${browser})`,
+    args: ['--cookies-from-browser', browser],
+  }));
+}
+
+function getCookieSources() {
+  return [
+    getCookiesFileArgs(),
+    ...getBrowserCookieSources(),
+  ].filter(Boolean);
+}
+
+function buildYtDlpArgs(args, cookieSource = null) {
+  return [
+    ...(cookieSource?.args || []),
+    '--extractor-args',
+    'youtube:player_client=default,ios',
+    ...args,
+  ];
+}
+
+async function runWithCookieFallback({
+  ytDlpPath,
+  baseArgs,
+  onProgress,
+  onStdout,
+  actionLabel,
+}) {
+  let result = await runYtDlp(ytDlpPath, buildYtDlpArgs(baseArgs), { onStdout });
+  if (result.code === 0 || !isYouTubeAuthError(result.stderr)) {
+    return { ...result, cookieSource: null };
+  }
+
+  const cookieSources = getCookieSources();
+  for (const cookieSource of cookieSources) {
+    onProgress({
+      step: 'download',
+      message: `YouTube meminta verifikasi. Mencoba ${actionLabel} dengan ${cookieSource.label}...`,
+      progress: 18,
+    });
+
+    result = await runYtDlp(
+      ytDlpPath,
+      buildYtDlpArgs(baseArgs, cookieSource),
+      { onStdout }
+    );
+
+    if (result.code === 0) {
+      return { ...result, cookieSource };
+    }
+  }
+
+  return { ...result, cookieSource: null };
+}
+
+function formatYtDlpError(code, stderr) {
+  if (isYouTubeAuthError(stderr)) {
+    return [
+      `yt-dlp failed with code ${code}: YouTube meminta verifikasi anti-bot / login.`,
+      'Solusi cepat:',
+      '1. Login YouTube di Chrome atau Edge pada komputer ini.',
+      '2. Tutup browser tersebut agar cookies bisa dibaca.',
+      '3. Jalankan ulang generate.',
+      '',
+      'Opsional: set YTDLP_COOKIES_FROM_BROWSER=chrome atau edge di server/.env.',
+      'Alternatif: export cookies YouTube ke server/cookies.txt.',
+      '',
+      stderr.slice(-1200),
+    ].join('\n');
+  }
+
+  return `yt-dlp failed with code ${code}: ${stderr}`;
+}
+
 /**
  * Downloads a YouTube video at max 720p resolution using yt-dlp.
  * @param {string} url - YouTube URL
@@ -54,26 +201,20 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
   onProgress({ step: 'download', message: 'Fetching video metadata and starting 720p download...', progress: 10 });
 
   return new Promise((resolve, reject) => {
-    // 1. First fetch JSON metadata
-    const infoArgs = ['--dump-json', '--no-playlist', url];
-    const infoProc = spawn(ytDlpPath, infoArgs);
+    (async () => {
+      // 1. First fetch JSON metadata
+      const infoArgs = ['--dump-json', '--no-playlist', url];
+      const infoResult = await runWithCookieFallback({
+        ytDlpPath,
+        baseArgs: infoArgs,
+        onProgress,
+        actionLabel: 'metadata',
+      });
 
-    let infoData = '';
-    let infoErr = '';
-
-    infoProc.stdout.on('data', (data) => {
-      infoData += data.toString();
-    });
-
-    infoProc.stderr.on('data', (data) => {
-      infoErr += data.toString();
-    });
-
-    infoProc.on('close', async (infoCode) => {
       let metadata = { title: 'YouTube Video', duration: 60 };
-      if (infoCode === 0 && infoData) {
+      if (infoResult.code === 0 && infoResult.stdout) {
         try {
-          const parsed = JSON.parse(infoData);
+          const parsed = JSON.parse(infoResult.stdout);
           metadata = {
             title: parsed.title || 'YouTube Video',
             duration: parsed.duration || 60,
@@ -84,6 +225,8 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
         } catch (e) {
           console.warn('[Downloader] Warning: Could not parse video metadata JSON');
         }
+      } else if (isYouTubeAuthError(infoResult.stderr)) {
+        console.warn('[Downloader] Metadata requires cookies/auth; continuing to download fallback.');
       }
 
       // 2. Download the video file capped at 720p with explicit ffmpeg-location
@@ -103,26 +246,26 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
       console.log(`[Downloader] Spawning yt-dlp: ${ytDlpPath} ${dlArgs.join(' ')}`);
       onProgress({ step: 'download', message: `Downloading "${metadata.title}" (720p)...`, progress: 20 });
 
-      const dlProc = spawn(ytDlpPath, dlArgs);
+      const downloadResult = await runWithCookieFallback({
+        ytDlpPath,
+        baseArgs: dlArgs,
+        onProgress,
+        actionLabel: 'download',
+        onStdout: (text) => {
+          const match = text.match(/(\d+(\.\d+)?)%/);
+          if (match) {
+            const percent = parseFloat(match[1]);
+            const scaledProgress = 20 + Math.round(percent * 0.15); // scales 20% to 35%
+            onProgress({ step: 'download', message: `Downloading video: ${Math.round(percent)}%`, progress: scaledProgress });
+          }
+        },
+      });
 
-      dlProc.stdout.on('data', (chunk) => {
-        const text = chunk.toString();
-        // Parse download percentage if available
-        const match = text.match(/(\d+(\.\d+)?)%/);
-        if (match) {
-          const percent = parseFloat(match[1]);
-          const scaledProgress = 20 + Math.round(percent * 0.15); // scales 20% to 35%
-          onProgress({ step: 'download', message: `Downloading video: ${Math.round(percent)}%`, progress: scaledProgress });
+      if (downloadResult.code === 0) {
+        if (downloadResult.cookieSource) {
+          console.log(`[Downloader] yt-dlp succeeded with ${downloadResult.cookieSource.label}.`);
         }
-      });
 
-      let errOutput = '';
-      dlProc.stderr.on('data', (chunk) => {
-        errOutput += chunk.toString();
-      });
-
-      dlProc.on('close', async (code) => {
-        if (code === 0) {
           try {
             // Verify file exists
             let downloadedFile = finalExpectedPath;
@@ -170,18 +313,10 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
           } catch (resErr) {
             reject(resErr);
           }
-        } else {
-          reject(new Error(`yt-dlp failed with code ${code}: ${errOutput}`));
-        }
-      });
+          return;
+      }
 
-      dlProc.on('error', (err) => {
-        reject(new Error(`Failed to start yt-dlp: ${err.message}`));
-      });
-    });
-
-    infoProc.on('error', (err) => {
-      console.warn(`[Downloader] Metadata dump error: ${err.message}`);
-    });
+      reject(new Error(formatYtDlpError(downloadResult.code, downloadResult.stderr)));
+    })().catch(reject);
   });
 }

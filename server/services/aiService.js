@@ -236,12 +236,14 @@ You will receive the explicit Product Title, Product Description, and the sample
    - 'buyingTrigger': Psychological trigger (FOMO, convenience, discount, viral trend).
 
 2. 'scenes' (Kotak Scene / Scene-by-Scene Breakdown):
-   - Break the ${segmentDuration}-second video into 3 to 4 distinct sequential scenes.
+   - Break the ${segmentDuration}-second video into short editing beats of 4 to 5 seconds each.
+   - Produce enough scenes to cover the full clip duration, usually ${Math.ceil(segmentDuration / 5)} to ${Math.ceil(segmentDuration / 4)} scenes.
+   - No single scene may be longer than 5 seconds unless it is the final leftover scene.
    - For each scene provide:
      * 'sceneNumber': integer (1, 2, 3...)
-     * 'timeRange': e.g. "00:00 - 00:10"
+     * 'timeRange': e.g. "00:00 - 00:05"
      * 'visualDescription': What is happening visually in Indonesian.
-     * 'voiceover': The exact spoken narration line for this scene.
+     * 'voiceover': The exact spoken narration line for this scene, short enough to fit 4-5 seconds.
      * 'adAdvisorNotes': Director notes for sound effects (SFX), visual text overlays, or emotional pacing.
 
 3. 'voiceoverScript' (Naskah Voiceover Lengkap):
@@ -306,7 +308,7 @@ Return strict JSON in this format:
   "scenes": [
     {
       "sceneNumber": 1,
-      "timeRange": "00:00 - 00:10",
+      "timeRange": "00:00 - 00:05",
       "visualDescription": "Deskripsi visual",
       "voiceover": "Teks narasi scene 1",
       "adAdvisorNotes": "Tips sutradara (SFX / Text Overlay)"
@@ -378,31 +380,7 @@ Return strict JSON in this format:
         keyFeatures: ["Praktis & Multifungsi", "Bahan Berkualitas", "Harga Terjangkau"],
         buyingTrigger: "FOMO & Diskon Terbatas"
       },
-      scenes: Array.isArray(parsed.scenes) && parsed.scenes.length > 0
-        ? parsed.scenes
-        : [
-            {
-              sceneNumber: 1,
-              timeRange: "00:00 - 00:10",
-              visualDescription: `Tampilan visual ${effectiveTitle} di awal video.`,
-              voiceover: `Stop scroll! ${effectiveTitle} yang satu ini beneran lagi viral dan wajib kamu punya!`,
-              adAdvisorNotes: "Gunakan hook visual dinamis & teks 'Wajib Punya!' di layar."
-            },
-            {
-              sceneNumber: 2,
-              timeRange: "00:10 - 00:30",
-              visualDescription: "Demonstrasi fitur utama dan kepraktisan produk.",
-              voiceover: "Kualitasnya juara dan praktis banget buat kebutuhan sehari-hari.",
-              adAdvisorNotes: "Pacing suara antusias, sorot keunggulan produk secara detail."
-            },
-            {
-              sceneNumber: 3,
-              timeRange: `00:30 - 00:${segmentDuration.toString().padStart(2, '0')}`,
-              visualDescription: "Hasil akhir dan ajakan bertindak (CTA).",
-              voiceover: "Buruan checkout sekarang mumpung lagi diskon spesial, cek produk di bawah!",
-              adAdvisorNotes: "Munculkan panah animasi mengarah ke produk di bawah."
-            }
-          ],
+      scenes: normalizeShortScenes(parsed.scenes, effectiveTitle, segmentDuration),
       voiceoverScript,
       aiStudioPrompt,
       caption,
@@ -458,4 +436,84 @@ function clampNumber(value, min, max, fallback) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
   return Math.min(max, Math.max(min, number));
+}
+
+function buildFallbackScenes(productName, segmentDuration) {
+  const totalDuration = Math.max(5, Math.round(Number(segmentDuration) || 45));
+  const sceneLength = 5;
+  const sceneCount = Math.ceil(totalDuration / sceneLength);
+  const sceneTemplates = [
+    {
+      visualDescription: `Close-up produk ${productName} sebagai hook awal.`,
+      voiceover: `${productName} ini bikin penasaran dari awal.`,
+      adAdvisorNotes: 'Mulai dengan cut cepat dan teks hook singkat.'
+    },
+    {
+      visualDescription: 'Produk ditunjukkan dari jarak dekat.',
+      voiceover: 'Desainnya ringkas dan kelihatan premium.',
+      adAdvisorNotes: 'Sorot detail produk, hindari wajah creator.'
+    },
+    {
+      visualDescription: 'Tangan mulai mendemonstrasikan cara pakai produk.',
+      voiceover: 'Cara pakainya gampang banget.',
+      adAdvisorNotes: 'Pakai zoom ringan ke bagian produk yang bergerak.'
+    },
+    {
+      visualDescription: 'Fitur utama produk terlihat saat digunakan.',
+      voiceover: 'Fungsinya langsung terasa praktis.',
+      adAdvisorNotes: 'Tambahkan SFX ringan pada momen demo.'
+    },
+    {
+      visualDescription: 'Hasil penggunaan produk diperlihatkan jelas.',
+      voiceover: 'Hasilnya rapi dan cocok buat harian.',
+      adAdvisorNotes: 'Tahan visual hasil sebentar agar mudah dipahami.'
+    },
+    {
+      visualDescription: 'Produk kembali ditampilkan sebagai hero shot.',
+      voiceover: 'Ini tipe produk yang kepake terus.',
+      adAdvisorNotes: 'Gunakan cut pendek agar ritme tetap cepat.'
+    },
+    {
+      visualDescription: 'Detail material atau bagian penting produk disorot.',
+      voiceover: 'Detailnya juga terasa lebih niat.',
+      adAdvisorNotes: 'Fokus pada tekstur, bentuk, atau mekanisme.'
+    },
+    {
+      visualDescription: 'Produk ditunjukkan dalam konteks pemakaian sehari-hari.',
+      voiceover: 'Buat kebutuhan rumah, ini membantu banget.',
+      adAdvisorNotes: 'Jaga framing tetap produk dan tangan.'
+    },
+    {
+      visualDescription: 'Produk ditampilkan dengan angle penutup.',
+      voiceover: 'Cek produknya di bawah sebelum kehabisan.',
+      adAdvisorNotes: 'Akhiri dengan CTA singkat dan jelas.'
+    },
+  ];
+
+  return Array.from({ length: sceneCount }, (_, index) => {
+    const start = index * sceneLength;
+    const end = Math.min(totalDuration, start + sceneLength);
+    const template = sceneTemplates[Math.min(index, sceneTemplates.length - 1)];
+
+    return {
+      sceneNumber: index + 1,
+      timeRange: `${formatSeconds(start)} - ${formatSeconds(end)}`,
+      ...template,
+    };
+  });
+}
+
+function normalizeShortScenes(scenes, productName, segmentDuration) {
+  const fallbackScenes = buildFallbackScenes(productName, segmentDuration);
+  const sourceScenes = Array.isArray(scenes) ? scenes : [];
+
+  return fallbackScenes.map((fallback, index) => {
+    const source = sourceScenes[index] || {};
+    return {
+      ...fallback,
+      visualDescription: source.visualDescription || fallback.visualDescription,
+      voiceover: source.voiceover || fallback.voiceover,
+      adAdvisorNotes: source.adAdvisorNotes || fallback.adAdvisorNotes,
+    };
+  });
 }

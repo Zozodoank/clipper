@@ -127,30 +127,45 @@ export async function mergeVoiceoverAndBurnSubtitles({
   voiceoverAudioPath,
   srtPath,
   outputVideoPath,
+  targetDurationSec = null,
   onProgress = () => {}
 }) {
   const ffmpegPath = getFFmpegPath();
   const outDir = path.dirname(outputVideoPath);
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
+  const videoDuration = await getMediaDurationSec(silentVideoPath, ffmpegPath) || Number(targetDurationSec) || 45;
+  const audioDuration = await getMediaDurationSec(voiceoverAudioPath, ffmpegPath);
+  const atempoFactor = audioDuration && videoDuration
+    ? Math.max(0.1, audioDuration / videoDuration)
+    : 1;
+
   onProgress({
     step: 'merge_final',
-    message: 'Merging uploaded Voiceover & burning high-contrast synchronized subtitles...',
+    message: `Syncing voiceover to video duration (${videoDuration.toFixed(1)}s) and burning subtitles...`,
     progress: 50
   });
 
   return new Promise((resolve, reject) => {
-    const videoFilters = [];
+    const filterChains = [];
+    const mapArgs = [];
 
     if (srtPath && fs.existsSync(srtPath)) {
       const sanitizedSrt = path.resolve(srtPath)
         .replace(/\\/g, '/')
         .replace(/:/g, '\\:');
 
-      // Bottom-safe mobile subtitles: no center overlay, compact text, strong outline for readability.
-      const subtitleStyle = 'FontName=Arial,FontSize=19,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=1,Bold=1,Alignment=2,MarginV=52,MarginL=48,MarginR=48';
-      videoFilters.push(`subtitles='${sanitizedSrt}':force_style='${subtitleStyle}'`);
+      // Compact bottom subtitles: readable without covering product/action.
+      const subtitleStyle = 'FontName=Arial,FontSize=15,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Bold=1,Alignment=2,MarginV=70,MarginL=76,MarginR=76';
+      filterChains.push(`[0:v]subtitles='${sanitizedSrt}':force_style='${subtitleStyle}'[v]`);
+      mapArgs.push('-map', '[v]');
+    } else {
+      mapArgs.push('-map', '0:v:0');
     }
+
+    const audioFilter = buildAudioFitFilter(atempoFactor, videoDuration);
+    filterChains.push(`[1:a]${audioFilter}[a]`);
+    mapArgs.push('-map', '[a]');
 
     const args = [
       '-y',
@@ -158,9 +173,7 @@ export async function mergeVoiceoverAndBurnSubtitles({
       '-i', voiceoverAudioPath,
     ];
 
-    if (videoFilters.length > 0) {
-      args.push('-vf', videoFilters.join(','));
-    }
+    args.push('-filter_complex', filterChains.join(';'), ...mapArgs);
 
     args.push(
       '-c:v', 'libx264',
@@ -169,7 +182,7 @@ export async function mergeVoiceoverAndBurnSubtitles({
       '-c:a', 'aac',
       '-b:a', '192k',
       '-pix_fmt', 'yuv420p',
-      '-shortest',
+      '-t', videoDuration.toFixed(3),
       '-movflags', '+faststart',
       outputVideoPath
     );
@@ -198,6 +211,8 @@ export async function mergeVoiceoverAndBurnSubtitles({
             silentVideoPath,
             voiceoverAudioPath,
             outputVideoPath,
+            videoDuration,
+            atempoFactor,
             onProgress,
             resolve,
             reject
@@ -219,23 +234,74 @@ function clampNumber(value, min, max, fallback) {
   return Math.min(max, Math.max(min, number));
 }
 
+function buildAudioFitFilter(atempoFactor, targetDurationSec) {
+  return [
+    ...buildAtempoFilters(atempoFactor),
+    'apad',
+    `atrim=0:${targetDurationSec.toFixed(3)}`,
+    'asetpts=N/SR/TB',
+  ].join(',');
+}
+
+function buildAtempoFilters(factor) {
+  let remaining = Number.isFinite(factor) ? factor : 1;
+  if (Math.abs(remaining - 1) < 0.01) return [];
+
+  const filters = [];
+  while (remaining > 2) {
+    filters.push('atempo=2.0000');
+    remaining /= 2;
+  }
+  while (remaining < 0.5) {
+    filters.push('atempo=0.5000');
+    remaining /= 0.5;
+  }
+  if (Math.abs(remaining - 1) >= 0.01) {
+    filters.push(`atempo=${remaining.toFixed(4)}`);
+  }
+  return filters;
+}
+
+export function getMediaDurationSec(filePath, ffmpegPath = getFFmpegPath()) {
+  return new Promise((resolve) => {
+    const proc = spawn(ffmpegPath, ['-i', filePath]);
+    let stderr = '';
+    proc.stderr.on('data', (d) => stderr += d.toString());
+    proc.on('close', () => {
+      const match = stderr.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+      if (!match) return resolve(null);
+      const hours = Number(match[1]);
+      const minutes = Number(match[2]);
+      const seconds = Number(match[3]);
+      resolve((hours * 3600) + (minutes * 60) + seconds);
+    });
+    proc.on('error', () => resolve(null));
+  });
+}
+
 function mergeAudioOnlyFallback({
   ffmpegPath,
   silentVideoPath,
   voiceoverAudioPath,
   outputVideoPath,
+  videoDuration,
+  atempoFactor,
   onProgress,
   resolve,
   reject
 }) {
+  const audioFilter = buildAudioFitFilter(atempoFactor, videoDuration);
   const args = [
     '-y',
     '-i', silentVideoPath,
     '-i', voiceoverAudioPath,
+    '-filter_complex', `[1:a]${audioFilter}[a]`,
+    '-map', '0:v:0',
+    '-map', '[a]',
     '-c:v', 'copy',
     '-c:a', 'aac',
     '-b:a', '192k',
-    '-shortest',
+    '-t', videoDuration.toFixed(3),
     '-movflags', '+faststart',
     outputVideoPath
   ];

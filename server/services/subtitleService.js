@@ -23,17 +23,17 @@ export function generateSrtSubtitles(scriptText, totalDurationSec, srtOutputPath
     .replace(/\s+/g, ' ')
     .trim();
 
-  // Split into natural sentences or compact chunks so subtitles stay in the lower safe area.
+  // Split into compact spoken chunks; timing is proportional to word count for better VO sync.
   const rawSentences = cleaned.match(/[^.!?]+[.!?]+/g) || [cleaned];
   const phrases = [];
 
   for (const sentence of rawSentences) {
     const words = sentence.trim().split(/\s+/);
-    if (words.length <= 6) {
+    if (words.length <= 4) {
       if (words.join(' ').trim()) phrases.push(words.join(' ').trim());
     } else {
-      for (let i = 0; i < words.length; i += 4) {
-        const chunk = words.slice(i, i + 4).join(' ').trim();
+      for (let i = 0; i < words.length; i += 3) {
+        const chunk = words.slice(i, i + 3).join(' ').trim();
         if (chunk) phrases.push(chunk);
       }
     }
@@ -43,12 +43,18 @@ export function generateSrtSubtitles(scriptText, totalDurationSec, srtOutputPath
     phrases.push('Cek link Shopee sekarang!');
   }
 
-  const durationPerPhrase = totalDurationSec / phrases.length;
+  const wordCounts = phrases.map((phrase) => phrase.split(/\s+/).filter(Boolean).length);
+  const totalWords = wordCounts.reduce((sum, count) => sum + count, 0) || phrases.length;
   let srtContent = '';
+  let cursorSec = 0;
 
   for (let i = 0; i < phrases.length; i++) {
-    const startSec = i * durationPerPhrase;
-    const endSec = Math.min(totalDurationSec, (i + 1) * durationPerPhrase);
+    const startSec = cursorSec;
+    const proportionalDuration = totalDurationSec * (wordCounts[i] / totalWords);
+    const endSec = i === phrases.length - 1
+      ? totalDurationSec
+      : Math.min(totalDurationSec, startSec + proportionalDuration);
+    cursorSec = endSec;
 
     const startTimeFormatted = formatSrtTime(startSec);
     const endTimeFormatted = formatSrtTime(endSec);

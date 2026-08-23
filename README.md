@@ -76,3 +76,27 @@ npm run dev
    - Drag & drop file `.mp3` ke kotak **Tahap 2: Upload Voiceover AI Studio**.
    - Klik **"Gabungkan Voiceover & Bakar Subtitle (Final Video)"**.
    - Preview video final dengan subtitle dan klik **Download Video .mp4 (Final with Subtitles)**.
+
+---
+
+## YouTube 429 / Not-a-Bot Fix
+
+Jika yt-dlp gagal dengan pesan `HTTP Error 429`, `Too Many Requests`, atau `Sign in to confirm you're not a bot`, backend akan otomatis mencoba ulang memakai cookies browser lokal.
+
+Untuk hasil paling stabil:
+
+1. Login ke YouTube di Chrome atau Edge pada komputer ini.
+2. Tutup browser tersebut agar file cookies bisa dibaca yt-dlp.
+3. Jalankan ulang generate.
+
+Opsional, set browser tertentu di `server/.env`:
+
+```env
+YTDLP_COOKIES_FROM_BROWSER=chrome
+```
+
+Alternatif manual, export cookies YouTube format Netscape ke `server/cookies.txt` atau set:
+
+```env
+YTDLP_COOKIES_FILE=./cookies.txt
+```

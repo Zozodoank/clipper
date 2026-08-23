@@ -80,7 +80,7 @@ Rules:
 6. For every clip, decide the best vertical 9:16 treatment:
    - 'focusX' from 0.0 left to 1.0 right, centered on the product/action.
    - 'focusY' from 0.0 top to 1.0 bottom.
-   - Use renderMode 'preserve_full_product' when the complete product needs to stay visible. This uses a blurred 9:16 background instead of cutting the product.
+   - Use renderMode 'preserve_full_product' for most landscape sources. This places a large 720x720 product stage over a blurred 9:16 background, centered on the product/action.
    - Use renderMode 'vertical_crop' only when the source is already a clean 9:16 product shot with safe empty margins.
 7. FACELESS is absolute: a visible creator face means the clip is invalid. Never use crop as a reason to accept a face shot.
 8. Output MUST be valid JSON only.`;

@@ -247,11 +247,14 @@ function buildClipFilter({ inputIndex, outputLabel, reframe = {}, hflip, ptsFact
     ];
   }
 
-  // Keep the complete source frame visible over a 9:16 blurred fill so the product is not cut.
+  const focusX = clampNumber(reframe.focusX, 0, 1, 0.5).toFixed(3);
+  const focusY = clampNumber(reframe.focusY, 0, 1, 0.5).toFixed(3);
+
+  // Put the source into a larger central square stage, matching the visible product area users expect.
   return [
     `[${inputIndex}:v]${preFlip}split=2[bgsrc${inputIndex}][fgsrc${inputIndex}]`,
     `[bgsrc${inputIndex}]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,boxblur=18:8,eq=brightness=-0.12:saturation=0.85[bg${inputIndex}]`,
-    `[fgsrc${inputIndex}]scale=680:1200:force_original_aspect_ratio=decrease,setsar=1[fg${inputIndex}]`,
+    `[fgsrc${inputIndex}]scale=720:720:force_original_aspect_ratio=increase,crop=720:720:(iw-720)*${focusX}:(ih-720)*${focusY},setsar=1[fg${inputIndex}]`,
     `[bg${inputIndex}][fg${inputIndex}]overlay=(W-w)/2:(H-h)/2,${finish}[${outputLabel}]`,
   ];
 }

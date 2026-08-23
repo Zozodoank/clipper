@@ -226,7 +226,19 @@ STRICT RULES FOR VOICE OVER & CALL TO ACTION:
 - ALWAYS use direct calls like "Cek produk di bawah sekarang", "Klik produk di bawah", "Checkout produk di bawah mumpung promo", or "Cek selengkapnya di bawah".
 
 4. 'aiStudioPrompt':
-   - A copy-paste ready prompt template formatted for Google AI Studio / Gemini TTS to generate or refine the Indonesian voiceover audio.
+   - A copy-paste ready text block formatted EXACTLY for Google AI Studio TTS Playground (Composer view).
+   - It MUST follow this exact structure (with these exact section headers on separate lines):
+
+Scene
+[One sentence describing the setting/environment, e.g. "Studio rekaman energik dengan presenter Indonesia yang antusias."]
+
+Sample Context
+[One or two sentences describing tone, pacing, and style of the ad. e.g. "Iklan affiliate viral. Dimulai dengan hook yang menarik perhatian, membangun ke demonstrasi produk, diakhiri CTA yang meyakinkan. Nada suara hangat, antusias, dan persuasif."]
+
+Speaker 1 - Orus
+[voiceover script with emotion tags inline. Use ONLY these emotion tags: [intrigue] [desire] [information] [excited] [inspiration] [confident]. Each sentence or phrase should start with the most fitting emotion tag. Write the full Indonesian voiceover narration here from hook to CTA, using the product's actual name and details.]
+
+   - IMPORTANT: The output of 'aiStudioPrompt' must be a plain string (not JSON) ready to paste directly into AI Studio. Do NOT add any JSON object inside it.
 
 5. 'caption':
    - High-converting Instagram & Facebook Reels caption with emojis, Indonesian hashtags (#racunbelanja, #racuntiktok, #reelsviral, #affiliateindonesia, etc.), and the provided affiliate link.
@@ -318,7 +330,7 @@ Return strict JSON in this format:
 
     let aiStudioPrompt = (parsed.aiStudioPrompt || '').trim();
     if (!aiStudioPrompt) {
-      aiStudioPrompt = `Bertindaklah sebagai Senior Ad Advisor untuk konten Affiliate Video Indonesia.\nKonteks Produk: "${effectiveTitle}"\n${effectiveDesc ? `Deskripsi: ${effectiveDesc}\n` : ''}Naskah Spoken Voiceover:\n${voiceoverScript}\n\nHasilkan pembacaan audio voiceover dengan intonasi ramah, antusias, dan persuasif.`;
+      aiStudioPrompt = `Scene\nStudio rekaman energik dengan presenter Indonesia yang antusias dan percaya diri.\n\nSample Context\nIklan affiliate viral. Dimulai dengan hook yang mengejutkan, membangun ke demonstrasi manfaat produk, diakhiri CTA yang meyakinkan. Nada suara hangat, antusias, dan persuasif.\n\nSpeaker 1 - Orus\n[intrigue] Stop scroll dulu! [desire] ${effectiveTitle} yang satu ini beneran wajib kamu punya! [information] ${effectiveDesc ? effectiveDesc.slice(0, 120) + '.' : 'Produk ini hadir dengan kualitas premium dan desain yang praktis untuk kebutuhan sehari-hari.'} [excited] Udah ribuan orang pake dan reviewnya bagus semua! [inspiration] Kualitasnya terbukti awet dan terpercaya untuk jangka panjang. [confident] Buruan cek produk di bawah sekarang sebelum kehabisan!`;
     }
 
     onProgress({

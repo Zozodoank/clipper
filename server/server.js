@@ -6,6 +6,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import multer from 'multer';
+import { exec } from 'child_process';
 
 import { checkSystemDependencies } from './services/binaryChecker.js';
 import { downloadYouTubeVideo } from './services/downloader.js';
@@ -19,12 +20,30 @@ import {
   renderSilentAntiDetectionVideo,
   mergeVoiceoverAndBurnSubtitles
 } from './services/videoRenderer.js';
-import { cleanupTempFiles } from './services/cleaner.js';
-
-dotenv.config();
+import {
+  cleanupTempFiles,
+  deleteJobTempDirectory,
+  deleteJobFiles
+} from './services/cleaner.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Load .env from multiple candidate paths
+const envCandidates = [
+  path.join(__dirname, '.env'),
+  path.join(__dirname, '.env.txt'),
+  path.join(__dirname, '..', '.env'),
+  path.join(__dirname, '..', '.env.txt'),
+  path.join(process.cwd(), '.env'),
+  path.join(process.cwd(), '.env.txt')
+];
+
+for (const envPath of envCandidates) {
+  if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+  }
+}
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -165,10 +184,12 @@ scanOrphanedJobs();
 app.get('/api/health', async (req, res) => {
   try {
     const deps = await checkSystemDependencies();
+    const hasAiveneKey = Boolean(process.env.AIVENE_API_KEY && process.env.AIVENE_API_KEY.trim());
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
       dependencies: deps,
+      aiveneConfigured: hasAiveneKey,
     });
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message });
@@ -198,9 +219,15 @@ app.get('/api/jobs', (req, res) => {
       return false;
     })();
 
+    const effectiveStage = hasFinalClip
+      ? 'completed'
+      : hasSilentClip
+      ? 'awaiting_voiceover'
+      : job.stage || 'unknown';
+
     jobs.push({
       jobId,
-      stage: hasFinalClip ? 'completed' : hasSilentClip ? 'awaiting_voiceover' : job.stage || 'unknown',
+      stage: effectiveStage,
       productTitle: job.productTitle || '(Tidak diketahui)',
       productDescription: job.productDescription || '',
       youtubeUrl: job.youtubeUrl || '',
@@ -213,16 +240,19 @@ app.get('/api/jobs', (req, res) => {
       silentVideoUrl: hasSilentClip ? `/api/video/silent_clip_${jobId}.mp4` : null,
       videoUrl: hasFinalClip ? `/api/video/final_clip_${jobId}.mp4` : null,
       downloadUrl: hasFinalClip ? `/api/download/final_clip_${jobId}.mp4` : null,
-      // Include full job data if stage 1 completed
-      ...(hasSilentClip ? {
-        scenes: job.scenes,
-        voiceoverScript: job.voiceoverScript,
-        aiStudioPrompt: job.aiStudioPrompt,
-        sampleContext: job.sampleContext,
-        caption: job.caption,
-        highlight: job.highlight,
-        productHook: job.productHook,
-      } : {}),
+      finalFileName: job.finalFileName || (hasFinalClip ? `final_clip_${jobId}.mp4` : null),
+      silentFileName: job.silentFileName || (hasSilentClip ? `silent_clip_${jobId}.mp4` : null),
+      finalLocalPath: job.finalLocalPath || (hasFinalClip ? finalClipPath : null),
+      silentLocalPath: job.silentLocalPath || (hasSilentClip ? silentClipPath : null),
+      // Include full marketing & AI assets so user can resume/view anytime
+      scenes: job.scenes || [],
+      voiceoverScript: job.voiceoverScript || '',
+      aiStudioPrompt: job.aiStudioPrompt || '',
+      sampleContext: job.sampleContext || null,
+      caption: job.caption || '',
+      highlight: job.highlight || null,
+      productHook: job.productHook || '',
+      videoTitle: job.videoTitle || job.productTitle || '',
     });
   }
 
@@ -239,6 +269,8 @@ app.get('/api/jobs', (req, res) => {
 // 3. Delete a specific job
 app.delete('/api/jobs/:jobId', (req, res) => {
   const { jobId } = req.params;
+  // Permanently delete temp directory and associated output files
+  deleteJobFiles(jobId, outputDir, tempDir);
   activeJobs.delete(jobId);
   deletePersistedJob(jobId);
   res.json({ success: true, jobId });
@@ -519,6 +551,10 @@ app.post('/api/upload-voiceover', upload.single('audio'), async (req, res) => {
 
     cleanupTempFiles([audioFile.path, srtPath]);
 
+    // Permanently delete downloaded raw YouTube video and session temp directory
+    deleteJobTempDirectory(jobId, tempDir);
+    console.log(`[Cleaner] Raw YouTube video and temp files for job ${jobId} permanently removed.`);
+
     const finalResult = {
       ...job,
       stage: 'completed',
@@ -526,6 +562,8 @@ app.post('/api/upload-voiceover', upload.single('audio'), async (req, res) => {
       videoUrl: `/api/video/${finalFileName}`,
       downloadUrl: `/api/download/${finalFileName}`,
       finalLocalPath: finalOutputPath,
+      downloadedVideoPath: null,
+      hasDownloadedVideo: false,
     };
 
     activeJobs.set(jobId, finalResult);
@@ -573,9 +611,64 @@ app.get('/api/download/:filename', (req, res) => {
   res.download(filePath, req.params.filename);
 });
 
+// 9. Open output folder in native OS file explorer
+app.post('/api/open-folder', (req, res) => {
+  const { filename } = req.body || {};
+  let targetFile = null;
+
+  if (filename) {
+    const candidate = path.join(outputDir, filename);
+    if (fs.existsSync(candidate)) {
+      targetFile = candidate;
+    }
+  }
+
+  let command = '';
+  if (process.platform === 'win32') {
+    if (targetFile) {
+      command = `explorer.exe /select,"${targetFile.replace(/\//g, '\\')}"`;
+    } else {
+      command = `explorer.exe "${outputDir.replace(/\//g, '\\')}"`;
+    }
+  } else if (process.platform === 'darwin') {
+    if (targetFile) {
+      command = `open -R "${targetFile}"`;
+    } else {
+      command = `open "${outputDir}"`;
+    }
+  } else {
+    command = `xdg-open "${outputDir}"`;
+  }
+
+  console.log(`[System] Opening output folder in file manager: ${command}`);
+  exec(command, (err) => {
+    if (err) {
+      console.warn('[System] Could not open folder:', err.message);
+      return res.status(500).json({ success: false, error: err.message });
+    }
+    res.json({ success: true, folder: outputDir, target: targetFile });
+  });
+});
+
+app.get('/api/open-folder', (req, res) => {
+  let command = process.platform === 'win32'
+    ? `explorer.exe "${outputDir.replace(/\//g, '\\')}"`
+    : process.platform === 'darwin' ? `open "${outputDir}"` : `xdg-open "${outputDir}"`;
+  exec(command, (err) => {
+    if (err) return res.status(500).json({ success: false, error: err.message });
+    res.json({ success: true, folder: outputDir });
+  });
+});
+
 app.listen(PORT, () => {
+  const aiveneKey = process.env.AIVENE_API_KEY ? process.env.AIVENE_API_KEY.trim() : '';
+  const maskedKey = aiveneKey
+    ? `${aiveneKey.slice(0, 8)}...${aiveneKey.slice(-4)}`
+    : '❌ Not found (Please set AIVENE_API_KEY in server/.env)';
+
   console.log(`\n======================================================`);
   console.log(`🎬 Local AI Affiliate Clipper Backend Server`);
   console.log(`🌐 Running at: http://localhost:${PORT}`);
+  console.log(`🔑 Aivene API Key: ${maskedKey}`);
   console.log(`======================================================\n`);
 });

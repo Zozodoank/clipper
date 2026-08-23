@@ -1,7 +1,20 @@
-import React from 'react';
-import { Video, Sparkles, Settings, Cpu, ShieldCheck } from 'lucide-react';
+import React, { useState } from 'react';
+import { Video, Sparkles, Settings, Cpu, ShieldCheck, FolderOpen, Loader2 } from 'lucide-react';
 
 export default function Navbar({ onOpenSettings, engineStatus }) {
+  const [openingFolder, setOpeningFolder] = useState(false);
+
+  const handleOpenFolder = async () => {
+    setOpeningFolder(true);
+    try {
+      await fetch('/api/open-folder', { method: 'POST' });
+    } catch (err) {
+      console.warn('Could not open folder:', err);
+    } finally {
+      setTimeout(() => setOpeningFolder(false), 800);
+    }
+  };
+
   return (
     <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -34,6 +47,21 @@ export default function Navbar({ onOpenSettings, engineStatus }) {
 
         {/* Right side stats & settings */}
         <div className="flex items-center gap-3">
+          {/* Quick Open Output Folder Button */}
+          <button
+            onClick={handleOpenFolder}
+            disabled={openingFolder}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-semibold transition-all hover:scale-[1.02] active:scale-[0.98]"
+            title="Buka folder output video di File Explorer"
+          >
+            {openingFolder ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <FolderOpen className="w-3.5 h-3.5" />
+            )}
+            <span className="hidden sm:inline">Folder Video</span>
+          </button>
+
           {/* AI Model Badge */}
           <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300">
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />

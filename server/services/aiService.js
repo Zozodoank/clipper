@@ -45,7 +45,7 @@ export async function selectHighlightWithGemini25Flash({
 
   const effectiveApiKey = apiKey || process.env.AIVENE_API_KEY;
   if (!effectiveApiKey) {
-    throw new Error('Aivene API Key wajib diisi. Silakan masukkan API Key Anda di form.');
+    throw new Error('Aivene API Key tidak ditemukan. Pastikan AIVENE_API_KEY sudah disetel di file server/.env.');
   }
 
   const client = new OpenAI({
@@ -182,7 +182,7 @@ export async function generateAdAdvisorScriptWithGpt4oMini({
 
   const effectiveApiKey = apiKey || process.env.AIVENE_API_KEY;
   if (!effectiveApiKey) {
-    throw new Error('Aivene API Key wajib diisi. Silakan periksa input API Key.');
+    throw new Error('Aivene API Key tidak ditemukan. Pastikan AIVENE_API_KEY sudah disetel di file server/.env.');
   }
 
   const client = new OpenAI({

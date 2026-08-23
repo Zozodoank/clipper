@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   History, RefreshCw, Trash2, Film, CheckCircle2, AlertCircle,
-  Clock, Download, Music, ChevronRight, X, Info
+  Clock, Download, Music, ChevronRight, X, Info, FolderOpen, ExternalLink
 } from 'lucide-react';
 
 const STAGE_CONFIG = {
@@ -50,8 +50,22 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId }) {
     fetchJobs();
   }, []);
 
+  const handleOpenFolder = async (e, filename) => {
+    e.stopPropagation();
+    try {
+      await fetch('/api/open-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(filename ? { filename } : {}),
+      });
+    } catch (err) {
+      console.warn('Could not open folder:', err);
+    }
+  };
+
   const handleDelete = async (e, jobId) => {
     e.stopPropagation();
+    if (!confirm('Hapus job dan file terkait dari riwayat?')) return;
     setDeletingId(jobId);
     try {
       await fetch(`/api/jobs/${jobId}`, { method: 'DELETE' });
@@ -69,22 +83,33 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId }) {
 
   if (!isOpen) {
     return (
-      <button
-        onClick={() => { setIsOpen(true); fetchJobs(); }}
-        className={`relative flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold transition-all ${
-          hasNewItems
-            ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25'
-            : 'bg-slate-800/80 border-slate-700/60 text-slate-400 hover:text-slate-200'
-        }`}
-      >
-        <History className="w-4 h-4" />
-        <span>Riwayat Job</span>
-        {hasNewItems && (
-          <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-amber-500 text-black text-[10px] font-black rounded-full flex items-center justify-center">
-            {retryableJobs.length}
-          </span>
-        )}
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => { setIsOpen(true); fetchJobs(); }}
+          className={`relative flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold transition-all ${
+            hasNewItems
+              ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25'
+              : 'bg-slate-800/80 border-slate-700/60 text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <History className="w-4 h-4" />
+          <span>Riwayat Job & Output</span>
+          {hasNewItems && (
+            <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-amber-500 text-black text-[10px] font-black rounded-full flex items-center justify-center">
+              {retryableJobs.length}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={(e) => handleOpenFolder(e)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-700/60 bg-slate-800/80 text-amber-400 hover:text-amber-300 hover:bg-slate-800 text-xs font-semibold transition-all"
+          title="Buka folder output video di Windows Explorer"
+        >
+          <FolderOpen className="w-4 h-4" />
+          <span className="hidden sm:inline">Buka Folder Output</span>
+        </button>
+      </div>
     );
   }
 
@@ -94,10 +119,18 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId }) {
       <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700/60 bg-slate-900/60">
         <div className="flex items-center gap-2">
           <History className="w-4 h-4 text-amber-400" />
-          <h3 className="text-sm font-bold text-white">Riwayat Job</h3>
+          <h3 className="text-sm font-bold text-white">Riwayat Job & Video Output</h3>
           <span className="text-[11px] text-slate-400">({jobs.length} job)</span>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={(e) => handleOpenFolder(e)}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 text-xs font-semibold transition-colors"
+            title="Buka folder output di Windows Explorer"
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Buka Folder</span>
+          </button>
           <button
             onClick={fetchJobs}
             disabled={loading}
@@ -186,24 +219,35 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId }) {
                   <div className="flex-shrink-0 flex flex-col items-end gap-1.5">
                     {/* Action buttons */}
                     {(isRetryable || job.stage === 'awaiting_voiceover' || job.stage === 'completed') && (
-                      <button
-                        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
-                          job.stage === 'completed'
-                            ? 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30'
-                            : isRetryable
-                            ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30'
-                            : 'bg-purple-500/20 text-purple-300 hover:bg-purple-500/30'
-                        }`}
-                        onClick={(e) => { e.stopPropagation(); onSelectJob(job); }}
-                      >
-                        {isRetryable ? (
-                          <><RefreshCw className="w-3 h-3" /> Retry</>
-                        ) : job.stage === 'awaiting_voiceover' ? (
-                          <><Music className="w-3 h-3" /> Lanjut</>
-                        ) : (
-                          <><Download className="w-3 h-3" /> Unduh</>
+                      <div className="flex items-center gap-1">
+                        {job.stage === 'completed' && (
+                          <button
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-slate-800 transition-colors"
+                            title="Buka file ini di Windows Explorer"
+                            onClick={(e) => handleOpenFolder(e, job.finalFileName || `final_clip_${job.jobId}.mp4`)}
+                          >
+                            <FolderOpen className="w-3.5 h-3.5" />
+                          </button>
                         )}
-                      </button>
+                        <button
+                          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                            job.stage === 'completed'
+                              ? 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30'
+                              : isRetryable
+                              ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30'
+                              : 'bg-purple-500/20 text-purple-300 hover:bg-purple-500/30'
+                          }`}
+                          onClick={(e) => { e.stopPropagation(); onSelectJob(job); }}
+                        >
+                          {isRetryable ? (
+                            <><RefreshCw className="w-3 h-3" /> Retry</>
+                          ) : job.stage === 'awaiting_voiceover' ? (
+                            <><Music className="w-3 h-3" /> Lanjut</>
+                          ) : (
+                            <><Download className="w-3 h-3" /> Lihat & Unduh</>
+                          )}
+                        </button>
+                      </div>
                     )}
                     {/* Delete */}
                     <button

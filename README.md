@@ -62,10 +62,10 @@ npm run dev
 ## 📱 Panduan Penggunaan 2-Tahap
 
 1. **Tahap 1 (Clipping & Scripting)**:
+   - Pastikan `AIVENE_API_KEY` sudah terisi di file `server/.env`.
    - Masukkan **Judul / Nama Produk** (Contoh: *Mini Portable Blender USB 350ml Rechargeable*).
    - Masukkan **Deskripsi & Spesifikasi Produk** (Poin penting & keunggulan barang).
    - Masukkan **YouTube Video URL** dan **Shopee Affiliate Link**.
-   - Masukkan **Aivene API Key**.
    - Klik **"Generate Kotak Scene & Video 9:16"**.
    - **Gemini 2.5 Flash** memotong segmen 30-60 detik dan merender video 9:16 tanpa suara (`-an`).
    - **GPT-4o-mini** membuat Kotak Scene, Sample Context, dan Naskah Voiceover yang akurat sesuai detail produk Anda.

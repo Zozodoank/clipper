@@ -16,7 +16,6 @@ export default function App() {
     shopeeLink: '',
     productTitle: '',
     productDescription: '',
-    apiKey: localStorage.getItem('AIVENE_API_KEY') || '',
     model: 'gemini-2.5-flash',
   }));
 
@@ -43,10 +42,6 @@ export default function App() {
   const lastJobIdRef = useRef(null);
   const lastFormDataRef = useRef(null);
   const eventSourceRef = useRef(null);
-
-  useEffect(() => {
-    if (formData.apiKey) localStorage.setItem('AIVENE_API_KEY', formData.apiKey);
-  }, [formData.apiKey]);
 
   const fetchEngineHealth = async () => {
     setCheckingEngine(true);
@@ -121,7 +116,6 @@ export default function App() {
           shopeeLink: currentForm.shopeeLink,
           productTitle: currentForm.productTitle,
           productDescription: currentForm.productDescription,
-          apiKey: formData.apiKey, // Always use latest API key (may be updated before retry)
           options: settings,
         }),
       });
@@ -165,24 +159,17 @@ export default function App() {
     if (!formData.productTitle) return alert('Silakan masukkan Judul / Nama Produk.');
     if (!formData.youtubeUrl) return alert('Silakan masukkan YouTube Video URL.');
     if (!formData.shopeeLink) return alert('Silakan masukkan link Shopee Affiliate Anda.');
-    if (!formData.apiKey) return alert('Silakan masukkan Aivene API Key Anda.');
     lastFormDataRef.current = { ...formData };
     await runGeneratePipeline(null);
   };
 
   // Retry with same jobId (server reuses cached video)
   const handleRetry = async () => {
-    if (!formData.apiKey) return alert('Silakan perbarui Aivene API Key sebelum retry.');
     await runGeneratePipeline(lastJobIdRef.current);
   };
 
   // Select a job from Job History Panel (retry / resume / view)
   const handleSelectJob = (job) => {
-    if (!formData.apiKey) {
-      alert('Silakan masukkan Aivene API Key terlebih dahulu sebelum retry job ini.');
-      return;
-    }
-
     lastJobIdRef.current = job.jobId;
 
     // Restore form data from persisted job
@@ -196,17 +183,20 @@ export default function App() {
     setFormData(restoredForm);
     lastFormDataRef.current = restoredForm;
 
-    // If job is already done (awaiting_voiceover or completed), just restore the result
+    // If job is already done (awaiting_voiceover or completed), restore all data directly
     if (job.stage === 'completed' || job.stage === 'awaiting_voiceover') {
       setResult({
         ...job,
+        videoUrl: job.videoUrl || (job.stage === 'completed' ? `/api/video/final_clip_${job.jobId}.mp4` : null),
+        downloadUrl: job.downloadUrl || (job.stage === 'completed' ? `/api/download/final_clip_${job.jobId}.mp4` : null),
         silentVideoUrl: job.silentVideoUrl || `/api/video/silent_clip_${job.jobId}.mp4`,
-        silentLocalPath: `server/output/silent_clip_${job.jobId}.mp4`,
+        finalLocalPath: job.finalLocalPath || `server/output/final_clip_${job.jobId}.mp4`,
+        silentLocalPath: job.silentLocalPath || `server/output/silent_clip_${job.jobId}.mp4`,
       });
       setProgressState({
         step: job.stage === 'completed' ? 'completed' : 'awaiting_voiceover',
         message: job.stage === 'completed'
-          ? 'Video Final siap. Pilih dari Riwayat Job untuk unduh.'
+          ? 'Video Final & seluruh data pemasaran siap digunakan untuk Reels.'
           : 'Kotak Scene & Naskah tersedia. Upload voiceover untuk finalisasi.',
         progress: 100, status: job.stage, error: null, canRetry: false,
       });

@@ -106,12 +106,20 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
             </label>
           </div>
 
-          {/* API Endpoint Note */}
-          <div className="p-3 rounded-xl bg-indigo-950/30 border border-indigo-500/30 text-xs text-indigo-300">
-            <span className="font-bold block mb-1">Aivene Base URL:</span>
-            <code className="bg-slate-900 px-2 py-0.5 rounded font-mono text-[11px] text-slate-200">
-              https://api.aivene.com/v1
-            </code>
+          {/* API Endpoint & .env Note */}
+          <div className="p-3 rounded-xl bg-indigo-950/30 border border-indigo-500/30 text-xs text-indigo-300 space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="font-bold">Aivene Configuration:</span>
+              <span className="text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">server/.env</span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              API key dibaca langsung dari file <code className="text-slate-200">.env</code> backend untuk keamanan dan kenyamanan.
+            </p>
+            <div className="pt-1">
+              <code className="bg-slate-900 px-2 py-0.5 rounded font-mono text-[11px] text-indigo-200 block">
+                https://api.aivene.com/v1
+              </code>
+            </div>
           </div>
 
         </div>

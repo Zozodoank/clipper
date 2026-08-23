@@ -1,11 +1,13 @@
 import React, { useRef, useState } from 'react';
-import { Download, Play, Pause, Volume2, VolumeX, Maximize2, Sparkles, Clock, Check, Folder, VolumeX as MuteIcon, CheckCircle2 } from 'lucide-react';
+import { Download, Play, Pause, Volume2, VolumeX, Maximize2, Sparkles, Clock, Check, Folder, FolderOpen, Loader2, CheckCircle2 } from 'lucide-react';
 
 export default function VideoPlayer({ result }) {
   const videoRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isCopiedPath, setIsCopiedPath] = useState(false);
+  const [isOpeningFolder, setIsOpeningFolder] = useState(false);
+  const [openFolderSuccess, setOpenFolderSuccess] = useState(false);
 
   if (!result) return null;
 
@@ -44,6 +46,29 @@ export default function VideoPlayer({ result }) {
       navigator.clipboard.writeText(currentLocalPath);
       setIsCopiedPath(true);
       setTimeout(() => setIsCopiedPath(false), 2000);
+    }
+  };
+
+  const handleOpenFolder = async () => {
+    setIsOpeningFolder(true);
+    try {
+      const res = await fetch('/api/open-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: currentFilename }),
+      });
+      if (res.ok) {
+        setOpenFolderSuccess(true);
+        setTimeout(() => setOpenFolderSuccess(false), 3000);
+      } else {
+        const data = await res.json();
+        alert(`Tidak dapat membuka folder: ${data.error || 'Terjadi kesalahan'}`);
+      }
+    } catch (err) {
+      console.warn('Error opening folder:', err);
+      alert(`Gagal membuka folder di file explorer: ${err.message}`);
+    } finally {
+      setIsOpeningFolder(false);
     }
   };
 
@@ -135,27 +160,47 @@ export default function VideoPlayer({ result }) {
         </div>
       </div>
 
-      {/* Download Action Button */}
+      {/* Action Buttons */}
       <div className="w-full mt-5 space-y-2.5">
-        <a
-          href={currentDownloadUrl}
-          download={currentFilename}
-          className={`w-full py-3.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-lg hover:scale-[1.01] active:scale-[0.99] ${
-            isFinal
-              ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-600/25'
-              : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
-          }`}
-        >
-          <Download className="w-4 h-4" />
-          <span>Download Video .mp4 {isFinal ? '(Final with Subtitles)' : '(Silent Preview)'}</span>
-        </a>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {/* Download Button */}
+          <a
+            href={currentDownloadUrl}
+            download={currentFilename}
+            className={`py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-lg hover:scale-[1.01] active:scale-[0.99] ${
+              isFinal
+                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-emerald-600/25'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+            }`}
+          >
+            <Download className="w-4 h-4 flex-shrink-0" />
+            <span>Download .mp4 {isFinal ? '(Final)' : '(Preview)'}</span>
+          </a>
+
+          {/* Open Output Folder Button */}
+          <button
+            onClick={handleOpenFolder}
+            disabled={isOpeningFolder}
+            className="py-3 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all bg-slate-800/90 hover:bg-slate-700/90 border border-slate-700 text-amber-300 hover:text-amber-200 hover:border-amber-500/40 shadow-lg hover:scale-[1.01] active:scale-[0.99]"
+            title="Buka folder video output di Windows Explorer / File Manager"
+          >
+            {isOpeningFolder ? (
+              <Loader2 className="w-4 h-4 animate-spin flex-shrink-0 text-amber-400" />
+            ) : openFolderSuccess ? (
+              <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            ) : (
+              <FolderOpen className="w-4 h-4 flex-shrink-0 text-amber-400" />
+            )}
+            <span>{openFolderSuccess ? 'Folder Terbuka!' : 'Buka Folder Output'}</span>
+          </button>
+        </div>
 
         {/* Local disk path info & copy */}
         {currentLocalPath && (
           <button
             onClick={copyLocalPath}
             className="w-full py-2 px-3 rounded-lg bg-slate-900/80 hover:bg-slate-800/80 border border-slate-800 text-[11px] text-slate-400 hover:text-slate-200 font-mono flex items-center justify-between transition-colors text-left"
-            title="Click to copy full local path on disk"
+            title="Klik untuk salin alamat file lokal di komputer"
           >
             <span className="truncate flex items-center gap-1.5 max-w-[85%]">
               <Folder className="w-3 h-3 text-slate-500 flex-shrink-0" />

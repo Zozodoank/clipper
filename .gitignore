@@ -19,7 +19,9 @@ server/bin/
 
 # Environment variables
 .env
-.env.local
+.env.*
+.env*.txt
+!.env.example
 
 # Logs
 logs/

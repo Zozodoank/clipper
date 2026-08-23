@@ -29,3 +29,28 @@ export function cleanupTempFiles(filePaths = [], dirPaths = []) {
     }
   }
 }
+
+export function deleteJobTempDirectory(jobId, tempDir) {
+  try {
+    const sessionDir = path.join(tempDir, `job_${jobId}`);
+    if (fs.existsSync(sessionDir)) {
+      fs.rmSync(sessionDir, { recursive: true, force: true });
+      console.log(`[Cleaner] Permanently deleted raw video temp dir for job ${jobId}: ${sessionDir}`);
+      return true;
+    }
+  } catch (err) {
+    console.warn(`[Cleaner] Could not delete temp dir for job ${jobId}: ${err.message}`);
+  }
+  return false;
+}
+
+/**
+ * Permanently deletes specific job output files when a job is deleted from history.
+ */
+export function deleteJobFiles(jobId, outputDir, tempDir) {
+  deleteJobTempDirectory(jobId, tempDir);
+  const silentPath = path.join(outputDir, `silent_clip_${jobId}.mp4`);
+  const finalPath = path.join(outputDir, `final_clip_${jobId}.mp4`);
+  cleanupTempFiles([silentPath, finalPath]);
+}
+

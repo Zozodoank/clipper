@@ -6,6 +6,7 @@ export default function DependenciesStatus({ status, onRefresh, loading }) {
 
   const ffmpegOk = status?.dependencies?.ffmpeg?.available;
   const ytdlpOk = status?.dependencies?.ytdlp?.available;
+  const aiveneOk = status?.aiveneConfigured;
 
   return (
     <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -43,9 +44,18 @@ export default function DependenciesStatus({ status, onRefresh, loading }) {
 
         <span className="text-slate-500">|</span>
 
-        <span className="text-slate-400">
-          BaseURL: <code className="text-indigo-300 bg-slate-800 px-1 py-0.5 rounded">https://api.aivene.com/v1</code>
-        </span>
+        {/* Aivene API status */}
+        <div className="flex items-center gap-1.5">
+          {aiveneOk ? (
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+          ) : (
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+          )}
+          <span className="text-slate-300 font-mono">Aivene API</span>
+          <span className={`px-1.5 py-0.5 rounded text-[10px] ${aiveneOk ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
+            {aiveneOk ? 'Terhubung (.env)' : 'Missing in .env'}
+          </span>
+        </div>
       </div>
 
       <button

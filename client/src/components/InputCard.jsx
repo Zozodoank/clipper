@@ -31,7 +31,7 @@ export default function InputCard({
               Source Video & Informasi Produk
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Masukkan detail produk agar GPT-4o-mini menghasilkan naskah yang akurat dan persuasif.
+              Masukkan detail produk agar Gemini menghasilkan naskah yang akurat dan persuasif.
             </p>
           </div>
 
@@ -52,7 +52,7 @@ export default function InputCard({
               <Tag className="w-4 h-4 text-amber-400" />
               Judul / Nama Produk <span className="text-shopee-500">*</span>
             </span>
-            <span className="text-[11px] font-normal text-amber-300">Konteks Utama GPT-4o-mini</span>
+            <span className="text-[11px] font-normal text-amber-300">Konteks Utama Gemini</span>
           </label>
           <input
             type="text"
@@ -89,7 +89,7 @@ export default function InputCard({
               <Youtube className="w-4 h-4 text-red-500" />
               YouTube Video URL <span className="text-shopee-500">*</span>
             </span>
-            <span className="text-[11px] font-normal text-slate-400">Gemini 2.5 Flash Highlight</span>
+            <span className="text-[11px] font-normal text-slate-400">Faceless Gemini Highlight</span>
           </label>
           <input
             type="url"
@@ -129,6 +129,9 @@ export default function InputCard({
             </span>
             <span className="px-2 py-0.5 rounded bg-slate-800/80 border border-slate-700/60 font-mono text-slate-300">
               9:16 Vertical (720x1280)
+            </span>
+            <span className="px-2 py-0.5 rounded bg-slate-800/80 border border-slate-700/60 font-mono text-slate-300">
+              Faceless Crop
             </span>
             <span className="px-2 py-0.5 rounded bg-slate-800/80 border border-slate-700/60 font-mono text-slate-300">
               Speed: {settings.speedMultiplier}x

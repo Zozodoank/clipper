@@ -12,6 +12,7 @@ import { getFFmpegPath } from './binaryChecker.js';
  * @param {string} params.outputVideo - Target output .mp4 path
  * @param {boolean} [params.hflip=true] - Horizontal flip toggle
  * @param {number} [params.speedMultiplier=1.03] - Speed factor (1.03x)
+ * @param {{ focusX?: number, focusY?: number, faceSafety?: boolean }} [params.reframe] - Product-aware vertical crop focus
  * @param {Function} [params.onProgress] - Progress callback
  * @returns {Promise<{ outputPath: string }>}
  */
@@ -22,6 +23,7 @@ export async function renderSilentAntiDetectionVideo({
   outputVideo,
   hflip = true,
   speedMultiplier = 1.03,
+  reframe = {},
   onProgress = () => {}
 }) {
   const ffmpegPath = getFFmpegPath();
@@ -45,19 +47,26 @@ export async function renderSilentAntiDetectionVideo({
 
   onProgress({
     step: 'render_silent',
-    message: 'Rendering 30-60s Anti-Detection 9:16 vertical video (Muted, No Subtitles)...',
+    message: 'Rendering faceless product-aware 9:16 crop (Muted, No Subtitles)...',
     progress: 60
   });
 
   return new Promise((resolve, reject) => {
     const ptsFactor = (1 / speedMultiplier).toFixed(4);
+    const focusX = clampNumber(reframe.focusX, 0, 1, 0.5).toFixed(3);
+    const focusY = clampNumber(reframe.focusY, 0, 1, 0.62).toFixed(3);
+    const faceSafety = reframe.faceSafety !== false;
+    const edgeCrop = faceSafety
+      ? 'crop=iw*0.94:ih*0.82:iw*0.03:ih*0.12'
+      : 'crop=iw*0.96:ih*0.90:iw*0.02:ih*0.04';
 
     const videoFilters = [
-      // Step 1: Crop bottom 15% of original video to remove subscribe/watermark overlays
-      'crop=iw:ih*0.85:0:0',
-      // Step 2: Scale to fit 720x1280 (9:16) without zooming - pad with black bars if needed
-      'scale=720:1280:force_original_aspect_ratio=decrease',
-      'pad=720:1280:(ow-iw)/2:(oh-ih)/2:black',
+      // Faceless edge crop: remove the upper face/talking-head zone and noisy creator overlays.
+      edgeCrop,
+      // Fill 9:16 like a professional short-form edit, then crop around the AI-selected product/hands focus.
+      'scale=720:1280:force_original_aspect_ratio=increase',
+      `crop=720:1280:(iw-720)*${focusX}:(ih-1280)*${focusY}`,
+      'setsar=1',
       `setpts=${ptsFactor}*PTS`,
       'eq=contrast=1.05:saturation=1.05:brightness=0.01'
     ];
@@ -88,7 +97,7 @@ export async function renderSilentAntiDetectionVideo({
       if (code === 0 && fs.existsSync(outputVideo)) {
         onProgress({
           step: 'render_silent',
-          message: 'Silent 9:16 Anti-Detection video rendered successfully.',
+          message: 'Faceless product-aware 9:16 clip rendered successfully.',
           progress: 70
         });
         resolve({ outputPath: outputVideo });
@@ -138,9 +147,8 @@ export async function mergeVoiceoverAndBurnSubtitles({
         .replace(/\\/g, '/')
         .replace(/:/g, '\\:');
 
-      // High-converting mobile reel typography: Bold white text with black outline & dark translucent box
-      // Alignment=2 = bottom-center, MarginV=40 = 40px from bottom edge
-      const subtitleStyle = 'FontName=Arial,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H90000000,BorderStyle=3,Outline=2,Shadow=0,Bold=1,Alignment=2,MarginV=40';
+      // Bottom-safe mobile subtitles: no center overlay, compact text, strong outline for readability.
+      const subtitleStyle = 'FontName=Arial,FontSize=19,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=1,Bold=1,Alignment=2,MarginV=52,MarginL=48,MarginR=48';
       videoFilters.push(`subtitles='${sanitizedSrt}':force_style='${subtitleStyle}'`);
     }
 
@@ -203,6 +211,12 @@ export async function mergeVoiceoverAndBurnSubtitles({
       reject(new Error(`Failed to spawn FFmpeg for final merge: ${err.message}`));
     });
   });
+}
+
+function clampNumber(value, min, max, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, number));
 }
 
 function mergeAudioOnlyFallback({

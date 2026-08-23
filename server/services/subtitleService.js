@@ -18,21 +18,22 @@ export function generateSrtSubtitles(scriptText, totalDurationSec, srtOutputPath
   // Clean script text: remove markdown, quotes, emojis for subtitle readability
   const cleaned = scriptText
     .replace(/[#*_~`]/g, '')
+    .replace(/\[[^\]]+\]/g, '')
     .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+    .replace(/\s+/g, ' ')
     .trim();
 
-  // Split into natural sentences or chunks of 4-7 words
+  // Split into natural sentences or compact chunks so subtitles stay in the lower safe area.
   const rawSentences = cleaned.match(/[^.!?]+[.!?]+/g) || [cleaned];
   const phrases = [];
 
   for (const sentence of rawSentences) {
     const words = sentence.trim().split(/\s+/);
-    if (words.length <= 7) {
+    if (words.length <= 6) {
       if (words.join(' ').trim()) phrases.push(words.join(' ').trim());
     } else {
-      // Split into sub-chunks of 4-6 words
-      for (let i = 0; i < words.length; i += 5) {
-        const chunk = words.slice(i, i + 5).join(' ').trim();
+      for (let i = 0; i < words.length; i += 4) {
+        const chunk = words.slice(i, i + 4).join(' ').trim();
         if (chunk) phrases.push(chunk);
       }
     }

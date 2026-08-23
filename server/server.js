@@ -12,8 +12,8 @@ import { checkSystemDependencies } from './services/binaryChecker.js';
 import { downloadYouTubeVideo } from './services/downloader.js';
 import { extractFrames } from './services/frameExtractor.js';
 import {
-  selectHighlightWithGemini25Flash,
-  generateAdAdvisorScriptWithGpt4oMini
+  selectHighlightWithGeminiFlash,
+  generateAdAdvisorScriptWithGemini
 } from './services/aiService.js';
 import { generateSrtSubtitles } from './services/subtitleService.js';
 import {
@@ -413,32 +413,34 @@ app.post('/api/generate', async (req, res) => {
     }
 
     // --- Step 2: Extract frames ---
-    updateProgress({ step: 'frames_raw', message: 'Extracting source frames for Gemini 2.5 Flash...', progress: 38, status: 'running' });
+    updateProgress({ step: 'frames_raw', message: 'Extracting source frames for Gemini 3.7 Flash...', progress: 38, status: 'running' });
     const { frames: rawFrames } = await extractFrames(rawVideoPath, rawFramesDir, updateProgress);
 
-    // --- Step 3: Gemini 2.5 Flash ---
-    updateProgress({ step: 'gemini_vision', message: 'Gemini 2.5 Flash analyzing frames...', progress: 48, status: 'running' });
-    const highlight = await selectHighlightWithGemini25Flash({
+    // --- Step 3: Gemini 3.7 Flash ---
+    updateProgress({ step: 'gemini_vision', message: 'Gemini 3.7 Flash analyzing faceless product frames and crop focus...', progress: 48, status: 'running' });
+    const highlight = await selectHighlightWithGeminiFlash({
       apiKey, frames: rawFrames, videoMetadata: videoMeta,
       productTitle, productDescription, shopeeLink, onProgress: updateProgress,
     });
 
     // --- Step 4: Render Silent 9:16 ---
-    updateProgress({ step: 'render_silent', message: `Rendering 9:16 Silent Video (${highlight.startTime} - ${highlight.endTime})...`, progress: 62, status: 'running' });
+    updateProgress({ step: 'render_silent', message: `Rendering faceless 9:16 product clip (${highlight.startTime} - ${highlight.endTime})...`, progress: 62, status: 'running' });
     await renderSilentAntiDetectionVideo({
       inputVideo: rawVideoPath, startTime: highlight.startTime,
       endTime: highlight.endTime, outputVideo: silentOutputPath,
       hflip: options.hflip !== undefined ? options.hflip : true,
-      speedMultiplier: options.speedMultiplier || 1.03, onProgress: updateProgress,
+      speedMultiplier: options.speedMultiplier || 1.03,
+      reframe: highlight.reframe,
+      onProgress: updateProgress,
     });
 
     // --- Step 5: Extract trimmed frames ---
-    updateProgress({ step: 'frames_trimmed', message: 'Sampling frames from trimmed video for GPT-4o-mini...', progress: 72, status: 'running' });
+    updateProgress({ step: 'frames_trimmed', message: 'Sampling frames from trimmed video for Gemini scripting...', progress: 72, status: 'running' });
     const { frames: trimmedFrames } = await extractFrames(silentOutputPath, trimmedFramesDir, updateProgress);
 
-    // --- Step 6: GPT-4o-mini scripting ---
-    updateProgress({ step: 'gpt_scripting', message: 'GPT-4o-mini generating Kotak Scene, Context, Naskah...', progress: 80, status: 'running' });
-    const scriptData = await generateAdAdvisorScriptWithGpt4oMini({
+    // --- Step 6: Gemini scripting ---
+    updateProgress({ step: 'gpt_scripting', message: 'Gemini 3.7 Flash generating Kotak Scene, Context, Naskah...', progress: 80, status: 'running' });
+    const scriptData = await generateAdAdvisorScriptWithGemini({
       apiKey, trimmedFrames, videoMetadata: videoMeta, productTitle, productDescription,
       shopeeLink, productHook: highlight.productHook, segmentDuration: highlight.duration,
       onProgress: updateProgress,
@@ -460,7 +462,7 @@ app.post('/api/generate', async (req, res) => {
       productDescription: productDescription || '',
       youtubeUrl,
       shopeeLink: shopeeLink || '',
-      highlight: { startTime: highlight.startTime, endTime: highlight.endTime, duration: highlight.duration },
+      highlight: { startTime: highlight.startTime, endTime: highlight.endTime, duration: highlight.duration, reframe: highlight.reframe },
       productHook: highlight.productHook,
       sampleContext: scriptData.sampleContext,
       scenes: scriptData.scenes,

@@ -16,7 +16,7 @@ export default function App() {
     shopeeLink: '',
     productTitle: '',
     productDescription: '',
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3.7-flash',
   }));
 
   const [settings, setSettings] = useState({
@@ -70,7 +70,7 @@ export default function App() {
       step: 'start',
       message: overrideJobId
         ? '🔄 Melanjutkan job sebelumnya (Retry)... Video yang sudah diunduh digunakan kembali.'
-        : 'Memulai Tahap 1: Analisis Gemini 2.5 Flash & GPT-4o-mini...',
+        : 'Memulai Tahap 1: Analisis Gemini 3.7 Flash...',
       progress: 5, status: 'running', error: null, isQuotaError: false, canRetry: false,
     });
 
@@ -264,27 +264,27 @@ export default function App() {
                 <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-shopee-500/20 via-orange-500/20 to-amber-500/20 border border-shopee-500/30 flex items-center justify-center text-shopee-500 mb-4 shadow-xl">
                   <Clapperboard className="w-8 h-8 stroke-[1.75]" />
                 </div>
-                <h3 className="text-lg font-bold text-white mb-2">Alur 2-Tahap: Gemini 2.5 Flash + GPT-4o-mini</h3>
+                <h3 className="text-lg font-bold text-white mb-2">Alur 2-Tahap: Gemini 3.7 Flash + FFmpeg</h3>
                 <p className="text-xs text-slate-400 max-w-md leading-relaxed mb-6">
                   1. Masukkan Judul Produk, Deskripsi, URL YouTube, & Link Shopee.<br />
-                  2. <strong className="text-amber-400">Gemini 2.5 Flash</strong> memilih highlight 30-60 detik & merender video 9:16 tanpa suara.<br />
-                  3. <strong className="text-indigo-400">GPT-4o-mini</strong> membuat Kotak Scene & Naskah Ad Advisor berbasis konteks produk.<br />
+                  2. <strong className="text-amber-400">Gemini 3.7 Flash</strong> memilih highlight faceless, fokus produk, dan area teks bawaan yang perlu dihindari.<br />
+                  3. <strong className="text-indigo-400">FFmpeg</strong> merender crop produk/tangan 9:16 penuh, lalu Gemini membuat Kotak Scene & Naskah Ad Advisor.<br />
                   4. Upload audio voiceover dari AI Studio untuk menghasilkan <strong className="text-emerald-400">Video Final + Subtitle</strong>.
                 </p>
                 <div className="grid grid-cols-2 gap-3 w-full max-w-sm text-left">
                   <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
                     <div className="font-bold text-slate-200 flex items-center gap-1.5 mb-1">
                       <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Gemini 2.5 Flash</span>
+                      <span>Gemini 3.7 Flash</span>
                     </div>
-                    <p className="text-[11px] text-slate-400">Deteksi highlight visual 30-60s akurat</p>
+                    <p className="text-[11px] text-slate-400">Deteksi highlight faceless dan fokus produk</p>
                   </div>
                   <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
                     <div className="font-bold text-slate-200 flex items-center gap-1.5 mb-1">
                       <Clapperboard className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>GPT-4o-mini</span>
+                      <span>Faceless Crop</span>
                     </div>
-                    <p className="text-[11px] text-slate-400">Kotak Scene & Naskah Ad Advisor</p>
+                    <p className="text-[11px] text-slate-400">9:16 penuh tanpa letterbox</p>
                   </div>
                 </div>
               </div>
@@ -302,7 +302,7 @@ export default function App() {
       />
 
       <footer className="border-t border-slate-800/60 py-4 bg-slate-950/40 text-center text-xs text-slate-500">
-        <p>Local AI Affiliate Clipper &bull; React + Node.js + FFmpeg &bull; Gemini 2.5 Flash + GPT-4o-mini &bull; 2-Stage Ad Advisor Pipeline</p>
+        <p>Local AI Affiliate Clipper &bull; React + Node.js + FFmpeg &bull; Aivene gemini-3.7-flash &bull; 2-Stage Ad Advisor Pipeline</p>
       </footer>
     </div>
   );

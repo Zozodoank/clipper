@@ -2,6 +2,17 @@ import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';
 
+const AIVENE_GEMINI_MODEL = 'gemini-3.7-flash';
+const DEFAULT_REFRAME = {
+  focusX: 0.5,
+  focusY: 0.62,
+  cropStrategy: 'faceless_product_hands_avoid_creator_text',
+  avoidTextZones: [],
+  avoidFaceZones: ['top', 'upper_middle'],
+  faceSafety: true,
+  notes: '',
+};
+
 /**
  * Helper to format Aivene / OpenAI API errors into clear Indonesian messages.
  */
@@ -25,10 +36,10 @@ function formatApiError(err, modelName = 'AI') {
 }
 
 /**
- * Stage 1, Step A: Calls Aivene API with model 'gemini-2.5-flash'
+ * Stage 1, Step A: Calls Aivene API with Gemini vision
  * to analyze full video frames and select the optimal 30-60 second highlight window.
  */
-export async function selectHighlightWithGemini25Flash({
+export async function selectHighlightWithGeminiFlash({
   apiKey,
   frames,
   videoMetadata,
@@ -39,7 +50,7 @@ export async function selectHighlightWithGemini25Flash({
 }) {
   onProgress({
     step: 'gemini_vision',
-    message: 'Analyzing full video frames with Gemini 2.5 Flash to select best 30-60s segment...',
+    message: `Analyzing full video frames with ${AIVENE_GEMINI_MODEL} to select best 30-60s segment...`,
     progress: 45
   });
 
@@ -62,10 +73,20 @@ Your task is to analyze the sequence of video frames and select the SINGLE most 
 
 Rules:
 1. Choose a continuous segment strictly between 30 and 60 seconds in length (e.g. 30s, 45s, or up to 60s).
-2. The segment MUST show the product in action, unboxing, key demonstration, or exciting moments.
+2. The segment MUST show the product in action, unboxing, key demonstration, hands-only usage, or exciting product moments.
 3. Output exact 'startTime' and 'endTime' in format "MM:SS" within 00:00 to ${formatSeconds(totalDuration)}.
 4. Provide a catchy short Indonesian hook headline ('productHook').
-5. Output MUST be valid JSON only.`;
+5. Decide the best vertical 9:16 reframing for a professional social clip:
+   - 'focusX' from 0.0 left to 1.0 right, centered on the product/action.
+   - 'focusY' from 0.0 top to 1.0 bottom.
+   - Prefer the product, hands, tools, packaging, and demo action.
+   - Avoid burned-in captions, usernames, watermarks, lower thirds, and duplicate text overlays from the source video.
+6. FACELESS RULES (strict):
+   - Do NOT choose segments where the creator's face is clearly visible or talking-head content dominates.
+   - Prefer hands-only demos, close-up product shots, unboxing, before/after, or product-in-use shots.
+   - If a face appears near the top/side, choose a focus point that keeps the product/hands while cropping the face out.
+   - If every candidate contains a face, select the segment where the face is smallest/easiest to crop out and mark 'faceSafety' as true.
+7. Output MUST be valid JSON only.`;
 
   const userPrompt = `Product Title: "${effectiveTitle}"
 ${effectiveDesc ? `Product Description / Key Features: "${effectiveDesc}"` : ''}
@@ -82,7 +103,16 @@ Return strict JSON in this format:
   "startTime": "00:15",
   "endTime": "00:55",
   "duration": 40,
-  "productHook": "Racun Shopee Viral Wajib Punya!"
+  "productHook": "Racun Shopee Viral Wajib Punya!",
+  "reframe": {
+    "focusX": 0.72,
+    "focusY": 0.64,
+    "cropStrategy": "faceless_right_bias_keep_product_hands_avoid_left_text",
+    "avoidTextZones": ["left_middle"],
+    "avoidFaceZones": ["top_left", "upper_middle"],
+    "faceSafety": true,
+    "notes": "Keep the product and hands centered, crop out creator face and built-in source text."
+  }
 }`;
 
   const messageContent = [
@@ -95,7 +125,7 @@ Return strict JSON in this format:
 
   try {
     const response = await client.chat.completions.create({
-      model: 'gemini-2.5-flash',
+      model: AIVENE_GEMINI_MODEL,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: messageContent },
@@ -105,7 +135,7 @@ Return strict JSON in this format:
     });
 
     const rawContent = response.choices?.[0]?.message?.content || '{}';
-    console.log('[AIService Gemini 2.5 Flash] Raw response:', rawContent);
+    console.log(`[AIService ${AIVENE_GEMINI_MODEL}] Raw response:`, rawContent);
 
     let parsed;
     try {
@@ -136,7 +166,7 @@ Return strict JSON in this format:
 
     onProgress({
       step: 'gemini_vision',
-      message: `Gemini 2.5 Flash selected 30-60s highlight: ${startTime} - ${endTime} (${duration}s)`,
+      message: `${AIVENE_GEMINI_MODEL} selected 30-60s highlight: ${startTime} - ${endTime} (${duration}s)`,
       progress: 55
     });
 
@@ -147,15 +177,16 @@ Return strict JSON in this format:
       endSeconds: endSec,
       duration,
       productHook: parsed.productHook || 'Racun Shopee Viral Wajib Punya!',
+      reframe: normalizeReframe(parsed.reframe),
     };
   } catch (err) {
-    console.error('[AIService Gemini 2.5 Flash] Error:', err);
-    throw new Error(formatApiError(err, 'gemini-2.5-flash'));
+    console.error(`[AIService ${AIVENE_GEMINI_MODEL}] Error:`, err);
+    throw new Error(formatApiError(err, AIVENE_GEMINI_MODEL));
   }
 }
 
 /**
- * Stage 1, Step B: Calls Aivene API with model 'gemini-2.5-flash'
+ * Stage 1, Step B: Calls Aivene API with Gemini
  * using explicit user provided Product Title and Product Description to generate:
  * - Kotak Scene (Scene Breakdown)
  * - Sample Context (USPs, Target Audience, Core Problem)
@@ -163,7 +194,7 @@ Return strict JSON in this format:
  * - Google AI Studio Prompt Template
  * - Reels Caption & Hashtags
  */
-export async function generateAdAdvisorScriptWithGpt4oMini({
+export async function generateAdAdvisorScriptWithGemini({
   apiKey,
   trimmedFrames,
   videoMetadata,
@@ -176,7 +207,7 @@ export async function generateAdAdvisorScriptWithGpt4oMini({
 }) {
   onProgress({
     step: 'gpt_scripting',
-    message: 'Analyzing trimmed video frames with GPT-4o-mini for Kotak Scene & Ad Advisor Naskah...',
+    message: `Analyzing trimmed video frames with ${AIVENE_GEMINI_MODEL} for Kotak Scene & Ad Advisor Naskah...`,
     progress: 75
   });
 
@@ -296,7 +327,7 @@ Return strict JSON in this format:
 
   try {
     const response = await client.chat.completions.create({
-      model: 'gemini-2.5-flash',
+      model: AIVENE_GEMINI_MODEL,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: messageContent },
@@ -306,7 +337,7 @@ Return strict JSON in this format:
     });
 
     const rawContent = response.choices?.[0]?.message?.content || '{}';
-    console.log('[AIService GPT-4o-mini] Raw response:', rawContent);
+    console.log(`[AIService ${AIVENE_GEMINI_MODEL} Scripting] Raw response:`, rawContent);
 
     let parsed;
     try {
@@ -335,7 +366,7 @@ Return strict JSON in this format:
 
     onProgress({
       step: 'gpt_scripting',
-      message: 'Gemini 2.5 Flash generated Kotak Scene, Sample Context, and Naskah successfully!',
+      message: `${AIVENE_GEMINI_MODEL} generated Kotak Scene, Sample Context, and Naskah successfully!`,
       progress: 88
     });
 
@@ -377,8 +408,8 @@ Return strict JSON in this format:
       caption,
     };
   } catch (err) {
-    console.error('[AIService GPT-4o-mini] Error:', err);
-    throw new Error(formatApiError(err, 'gemini-2.5-flash'));
+    console.error(`[AIService ${AIVENE_GEMINI_MODEL} Scripting] Error:`, err);
+    throw new Error(formatApiError(err, AIVENE_GEMINI_MODEL));
   }
 }
 
@@ -400,4 +431,31 @@ function parseTimeToSeconds(timeStr) {
     return parts[0] * 60 + parts[1];
   }
   return parseFloat(timeStr) || 0;
+}
+
+function normalizeReframe(reframe = {}) {
+  const focusX = clampNumber(reframe.focusX, 0, 1, DEFAULT_REFRAME.focusX);
+  const focusY = clampNumber(reframe.focusY, 0, 1, DEFAULT_REFRAME.focusY);
+  const avoidTextZones = Array.isArray(reframe.avoidTextZones)
+    ? reframe.avoidTextZones.filter(Boolean).map((zone) => zone.toString().slice(0, 40))
+    : [];
+  const avoidFaceZones = Array.isArray(reframe.avoidFaceZones)
+    ? reframe.avoidFaceZones.filter(Boolean).map((zone) => zone.toString().slice(0, 40))
+    : DEFAULT_REFRAME.avoidFaceZones;
+
+  return {
+    focusX,
+    focusY,
+    cropStrategy: (reframe.cropStrategy || DEFAULT_REFRAME.cropStrategy).toString().slice(0, 80),
+    avoidTextZones,
+    avoidFaceZones,
+    faceSafety: reframe.faceSafety !== false,
+    notes: (reframe.notes || DEFAULT_REFRAME.notes).toString().slice(0, 180),
+  };
+}
+
+function clampNumber(value, min, max, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, number));
 }

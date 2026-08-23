@@ -38,13 +38,12 @@ export async function extractFrames(videoPath, framesDir, onProgress = () => {})
   onProgress({ step: 'frames', message: 'Extracting video frames (1 frame every 2s)...', progress: 40 });
 
   return new Promise((resolve, reject) => {
-    // Extract 1 frame per 2 seconds, resize to width 480 for fast AI processing & low token usage
+    // Extract full-frame samples so the AI can see product position and built-in text overlays.
     const args = [
       '-y',
       '-i', targetVideoPath,
-      // Crop: remove top 5% and bottom 20% to avoid subscribe buttons and watermarks
-      // Then scale to 480px width for fast AI processing
-      '-vf', 'crop=iw:ih*0.75:0:ih*0.05,fps=1/2,scale=480:-1',
+      // Scale to 480px width for fast AI processing and low token usage.
+      '-vf', 'fps=1/2,scale=480:-1',
       '-q:v', '3',
       outputPattern
     ];

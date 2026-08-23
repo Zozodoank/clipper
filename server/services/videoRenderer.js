@@ -28,6 +28,21 @@ export async function renderSilentAntiDetectionVideo({
   const outDir = path.dirname(outputVideo);
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
+  let targetVideo = inputVideo;
+  const isAudioFile = ['.m4a', '.mp3', '.aac', '.wav', '.opus'].some(ext => inputVideo.toLowerCase().endsWith(ext));
+  if (isAudioFile || !fs.existsSync(inputVideo)) {
+    const parentDir = path.dirname(inputVideo);
+    if (fs.existsSync(parentDir)) {
+      const candidates = fs.readdirSync(parentDir).filter(f =>
+        (f.endsWith('.mp4') || f.endsWith('.webm') || f.endsWith('.mkv') || f.endsWith('.mov')) &&
+        !f.startsWith('silent_') && !f.startsWith('final_')
+      );
+      if (candidates.length > 0) {
+        targetVideo = path.join(parentDir, candidates[0]);
+      }
+    }
+  }
+
   onProgress({
     step: 'render_silent',
     message: 'Rendering 30-60s Anti-Detection 9:16 vertical video (Muted, No Subtitles)...',
@@ -49,7 +64,7 @@ export async function renderSilentAntiDetectionVideo({
       '-y',
       '-ss', startTime.toString(),
       '-to', endTime.toString(),
-      '-i', inputVideo,
+      '-i', targetVideo,
       '-vf', videoFilters.join(','),
       '-an', // Strictly NO AUDIO
       '-c:v', 'libx264',

@@ -1,7 +1,37 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
-import { getYtDlpPath } from './binaryChecker.js';
+import { getYtDlpPath, getFFmpegPath } from './binaryChecker.js';
+
+/**
+ * Merge separate video and audio files using FFmpeg.
+ */
+function mergeStreamsWithFfmpeg(videoFile, audioFile, outputFile) {
+  const ffmpegPath = getFFmpegPath();
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-y',
+      '-i', videoFile,
+      '-i', audioFile,
+      '-c:v', 'copy',
+      '-c:a', 'aac',
+      '-movflags', '+faststart',
+      outputFile
+    ];
+    console.log(`[Downloader] Merging streams with FFmpeg:\n${ffmpegPath} ${args.join(' ')}`);
+    const proc = spawn(ffmpegPath, args);
+    let stderr = '';
+    proc.stderr.on('data', (d) => stderr += d.toString());
+    proc.on('close', (code) => {
+      if (code === 0 && fs.existsSync(outputFile)) {
+        resolve(outputFile);
+      } else {
+        reject(new Error(`FFmpeg merge failed with code ${code}: ${stderr.slice(-300)}`));
+      }
+    });
+    proc.on('error', reject);
+  });
+}
 
 /**
  * Downloads a YouTube video at max 720p resolution using yt-dlp.
@@ -17,6 +47,7 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
   }
 
   const ytDlpPath = await getYtDlpPath(onProgress);
+  const ffmpegPath = getFFmpegPath();
   const outputTemplate = path.join(outputDir, `raw_${videoId}.%(ext)s`);
   const finalExpectedPath = path.join(outputDir, `raw_${videoId}.mp4`);
 
@@ -38,7 +69,7 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
       infoErr += data.toString();
     });
 
-    infoProc.on('close', (infoCode) => {
+    infoProc.on('close', async (infoCode) => {
       let metadata = { title: 'YouTube Video', duration: 60 };
       if (infoCode === 0 && infoData) {
         try {
@@ -55,8 +86,10 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
         }
       }
 
-      // 2. Download the video file capped at 720p
+      // 2. Download the video file capped at 720p with explicit ffmpeg-location
       const dlArgs = [
+        '--ffmpeg-location',
+        ffmpegPath,
         '-f',
         'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best',
         '--merge-output-format',
@@ -88,22 +121,55 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
         errOutput += chunk.toString();
       });
 
-      dlProc.on('close', (code) => {
+      dlProc.on('close', async (code) => {
         if (code === 0) {
-          // Verify file exists
-          let downloadedFile = finalExpectedPath;
-          if (!fs.existsSync(downloadedFile)) {
-            // Check if any file with raw_videoId exists
-            const files = fs.readdirSync(outputDir).filter(f => f.startsWith(`raw_${videoId}`));
-            if (files.length > 0) {
-              downloadedFile = path.join(outputDir, files[0]);
-            } else {
-              return reject(new Error(`Downloaded file not found in ${outputDir}`));
-            }
-          }
+          try {
+            // Verify file exists
+            let downloadedFile = finalExpectedPath;
 
-          onProgress({ step: 'download', message: 'Video download completed successfully.', progress: 35 });
-          resolve({ filePath: downloadedFile, metadata });
+            if (!fs.existsSync(downloadedFile)) {
+              // Find video files (exclude audio files like .m4a, .mp3, .aac)
+              const videoFiles = fs.readdirSync(outputDir).filter(f =>
+                f.startsWith(`raw_${videoId}`) &&
+                !f.endsWith('.m4a') &&
+                !f.endsWith('.mp3') &&
+                !f.endsWith('.aac') &&
+                !f.endsWith('.opus') &&
+                !f.endsWith('.part') &&
+                !f.endsWith('.ytdl') &&
+                (f.endsWith('.mp4') || f.endsWith('.webm') || f.endsWith('.mkv') || f.endsWith('.mov'))
+              );
+
+              const audioFiles = fs.readdirSync(outputDir).filter(f =>
+                f.startsWith(`raw_${videoId}`) &&
+                (f.endsWith('.m4a') || f.endsWith('.mp3') || f.endsWith('.aac') || f.endsWith('.opus'))
+              );
+
+              if (videoFiles.length > 0) {
+                const primaryVideo = path.join(outputDir, videoFiles[0]);
+                if (audioFiles.length > 0) {
+                  const primaryAudio = path.join(outputDir, audioFiles[0]);
+                  onProgress({ step: 'download', message: 'Merging video & audio streams with FFmpeg...', progress: 32 });
+                  try {
+                    await mergeStreamsWithFfmpeg(primaryVideo, primaryAudio, finalExpectedPath);
+                    downloadedFile = finalExpectedPath;
+                  } catch (mErr) {
+                    console.warn('[Downloader] Stream merge fallback, using video stream directly:', mErr.message);
+                    downloadedFile = primaryVideo;
+                  }
+                } else {
+                  downloadedFile = primaryVideo;
+                }
+              } else {
+                return reject(new Error(`Video file not found in ${outputDir} after download.`));
+              }
+            }
+
+            onProgress({ step: 'download', message: 'Video download completed successfully.', progress: 35 });
+            resolve({ filePath: downloadedFile, metadata });
+          } catch (resErr) {
+            reject(resErr);
+          }
         } else {
           reject(new Error(`yt-dlp failed with code ${code}: ${errOutput}`));
         }

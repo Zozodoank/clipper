@@ -385,9 +385,10 @@ app.post('/api/generate', async (req, res) => {
     })();
 
     // Also check if a persisted job stored the path
+    const isVideoFile = (p) => p && !p.endsWith('.m4a') && !p.endsWith('.mp3') && !p.endsWith('.aac') && (p.endsWith('.mp4') || p.endsWith('.webm') || p.endsWith('.mkv') || p.endsWith('.mov'));
     const existingJob = activeJobs.get(jobId);
     const cachedVideoPath = existingVideoInTemp ||
-      (existingJob?.downloadedVideoPath && fs.existsSync(existingJob.downloadedVideoPath)
+      (existingJob?.downloadedVideoPath && fs.existsSync(existingJob.downloadedVideoPath) && isVideoFile(existingJob.downloadedVideoPath)
         ? existingJob.downloadedVideoPath
         : null);
 

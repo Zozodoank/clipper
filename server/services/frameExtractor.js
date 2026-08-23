@@ -18,13 +18,30 @@ export async function extractFrames(videoPath, framesDir, onProgress = () => {})
   const ffmpegPath = getFFmpegPath();
   const outputPattern = path.join(framesDir, 'frame_%04d.jpg');
 
+  // Guard against audio-only input path
+  let targetVideoPath = videoPath;
+  const isAudioFile = ['.m4a', '.mp3', '.aac', '.wav', '.opus'].some(ext => videoPath.toLowerCase().endsWith(ext));
+  if (isAudioFile || !fs.existsSync(videoPath)) {
+    const parentDir = path.dirname(videoPath);
+    if (fs.existsSync(parentDir)) {
+      const candidates = fs.readdirSync(parentDir).filter(f =>
+        (f.endsWith('.mp4') || f.endsWith('.webm') || f.endsWith('.mkv') || f.endsWith('.mov')) &&
+        !f.startsWith('silent_') && !f.startsWith('final_')
+      );
+      if (candidates.length > 0) {
+        targetVideoPath = path.join(parentDir, candidates[0]);
+        console.log(`[FrameExtractor] Auto-resolved video input to: ${targetVideoPath}`);
+      }
+    }
+  }
+
   onProgress({ step: 'frames', message: 'Extracting video frames (1 frame every 2s)...', progress: 40 });
 
   return new Promise((resolve, reject) => {
     // Extract 1 frame per 2 seconds, resize to width 480 for fast AI processing & low token usage
     const args = [
       '-y',
-      '-i', videoPath,
+      '-i', targetVideoPath,
       '-vf', 'fps=1/2,scale=480:-1',
       '-q:v', '3',
       outputPattern

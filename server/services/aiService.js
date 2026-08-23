@@ -155,7 +155,7 @@ Return strict JSON in this format:
 }
 
 /**
- * Stage 1, Step B: Calls Aivene API with model 'gpt-4o-mini'
+ * Stage 1, Step B: Calls Aivene API with model 'gemini-2.5-flash'
  * using explicit user provided Product Title and Product Description to generate:
  * - Kotak Scene (Scene Breakdown)
  * - Sample Context (USPs, Target Audience, Core Problem)
@@ -296,7 +296,7 @@ Return strict JSON in this format:
 
   try {
     const response = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gemini-2.5-flash',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: messageContent },
@@ -335,7 +335,7 @@ Return strict JSON in this format:
 
     onProgress({
       step: 'gpt_scripting',
-      message: 'GPT-4o-mini generated Kotak Scene, Sample Context, and Naskah successfully!',
+      message: 'Gemini 2.5 Flash generated Kotak Scene, Sample Context, and Naskah successfully!',
       progress: 88
     });
 
@@ -378,7 +378,7 @@ Return strict JSON in this format:
     };
   } catch (err) {
     console.error('[AIService GPT-4o-mini] Error:', err);
-    throw new Error(formatApiError(err, 'gpt-4o-mini'));
+    throw new Error(formatApiError(err, 'gemini-2.5-flash'));
   }
 }
 

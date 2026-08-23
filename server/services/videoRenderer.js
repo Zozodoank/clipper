@@ -53,8 +53,11 @@ export async function renderSilentAntiDetectionVideo({
     const ptsFactor = (1 / speedMultiplier).toFixed(4);
 
     const videoFilters = [
-      'crop=ih*9/16:ih:(iw-ih*9/16)/2:0',
-      'scale=720:1280',
+      // Step 1: Crop bottom 15% of original video to remove subscribe/watermark overlays
+      'crop=iw:ih*0.85:0:0',
+      // Step 2: Scale to fit 720x1280 (9:16) without zooming - pad with black bars if needed
+      'scale=720:1280:force_original_aspect_ratio=decrease',
+      'pad=720:1280:(ow-iw)/2:(oh-ih)/2:black',
       `setpts=${ptsFactor}*PTS`,
       'eq=contrast=1.05:saturation=1.05:brightness=0.01'
     ];
@@ -136,7 +139,8 @@ export async function mergeVoiceoverAndBurnSubtitles({
         .replace(/:/g, '\\:');
 
       // High-converting mobile reel typography: Bold white text with black outline & dark translucent box
-      const subtitleStyle = 'FontName=Arial,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H90000000,BorderStyle=3,Outline=2,Shadow=0,Bold=1,Alignment=2,MarginV=75';
+      // Alignment=2 = bottom-center, MarginV=40 = 40px from bottom edge
+      const subtitleStyle = 'FontName=Arial,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H90000000,BorderStyle=3,Outline=2,Shadow=0,Bold=1,Alignment=2,MarginV=40';
       videoFilters.push(`subtitles='${sanitizedSrt}':force_style='${subtitleStyle}'`);
     }
 

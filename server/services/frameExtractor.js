@@ -42,7 +42,9 @@ export async function extractFrames(videoPath, framesDir, onProgress = () => {})
     const args = [
       '-y',
       '-i', targetVideoPath,
-      '-vf', 'fps=1/2,scale=480:-1',
+      // Crop: remove top 5% and bottom 20% to avoid subscribe buttons and watermarks
+      // Then scale to 480px width for fast AI processing
+      '-vf', 'crop=iw:ih*0.75:0:ih*0.05,fps=1/2,scale=480:-1',
       '-q:v', '3',
       outputPattern
     ];

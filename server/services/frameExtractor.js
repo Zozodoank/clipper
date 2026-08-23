@@ -4,13 +4,16 @@ import fs from 'fs';
 import { getFFmpegPath } from './binaryChecker.js';
 
 /**
- * Extracts 1 frame every 2 seconds from the video and converts selected keyframes to base64.
+ * Extracts timeline frames from a video and converts selected keyframes to base64.
  * @param {string} videoPath - Path to the local raw mp4 file
  * @param {string} framesDir - Directory to store extracted JPEG frames
  * @param {Function} onProgress - Progress status callback
  * @returns {Promise<{ frames: Array<{ index: number, timestamp: number, timeFormatted: string, base64: string }>, totalFrames: number, framesDir: string }>}
  */
-export async function extractFrames(videoPath, framesDir, onProgress = () => {}) {
+export async function extractFrames(videoPath, framesDir, onProgress = () => {}, {
+  sampleIntervalSec = 1,
+  maxSampleFrames = 48,
+} = {}) {
   if (!fs.existsSync(framesDir)) {
     fs.mkdirSync(framesDir, { recursive: true });
   }
@@ -35,15 +38,17 @@ export async function extractFrames(videoPath, framesDir, onProgress = () => {})
     }
   }
 
-  onProgress({ step: 'frames', message: 'Extracting video frames (1 frame every 2s)...', progress: 40 });
+  const safeInterval = Math.max(0.5, Number(sampleIntervalSec) || 1);
+  const safeMaxFrames = Math.max(1, Math.floor(Number(maxSampleFrames) || 48));
+  onProgress({ step: 'frames', message: `Extracting source timeline frames (1 frame every ${safeInterval}s)...`, progress: 40 });
 
   return new Promise((resolve, reject) => {
     // Extract full-frame samples so the AI can see product position and built-in text overlays.
     const args = [
       '-y',
       '-i', targetVideoPath,
-      // Scale to 480px width for fast AI processing and low token usage.
-      '-vf', 'fps=1/2,scale=480:-1',
+      // 360px keeps enough visual detail for product/text/face checks without overloading vision input.
+      '-vf', `fps=1/${safeInterval},scale=360:-1`,
       '-q:v', '3',
       outputPattern
     ];
@@ -72,15 +77,14 @@ export async function extractFrames(videoPath, framesDir, onProgress = () => {})
         return reject(new Error('No frames were extracted from the video.'));
       }
 
-      // Sample frames intelligently (maximum 20 frames distributed evenly)
-      const maxSampleFrames = 20;
+      // Preserve a dense timeline for 5-second clip planning, while keeping the vision request bounded.
       let sampledFiles = [];
 
-      if (frameFiles.length <= maxSampleFrames) {
+      if (frameFiles.length <= safeMaxFrames) {
         sampledFiles = frameFiles;
       } else {
-        const step = (frameFiles.length - 1) / (maxSampleFrames - 1);
-        for (let i = 0; i < maxSampleFrames; i++) {
+        const step = safeMaxFrames === 1 ? 0 : (frameFiles.length - 1) / (safeMaxFrames - 1);
+        for (let i = 0; i < safeMaxFrames; i++) {
           const index = Math.round(i * step);
           if (index < frameFiles.length && !sampledFiles.includes(frameFiles[index])) {
             sampledFiles.push(frameFiles[index]);
@@ -94,10 +98,9 @@ export async function extractFrames(videoPath, framesDir, onProgress = () => {})
         const filename = sampledFiles[i];
         const filePath = path.join(framesDir, filename);
 
-        // Frame index in 1-based order. Each frame represents 2 seconds
-        // frame_0001 is at 0s-2s, frame_0002 is at 2s-4s, etc.
+        // Frame index in 1-based order. The filename maps back to the source timeline.
         const frameNumber = parseInt(filename.replace('frame_', '').replace('.jpg', ''), 10);
-        const timestampInSeconds = Math.max(0, (frameNumber - 1) * 2);
+        const timestampInSeconds = Math.max(0, (frameNumber - 1) * safeInterval);
 
         const mins = Math.floor(timestampInSeconds / 60).toString().padStart(2, '0');
         const secs = Math.floor(timestampInSeconds % 60).toString().padStart(2, '0');

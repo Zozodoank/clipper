@@ -415,7 +415,10 @@ app.post('/api/generate', async (req, res) => {
 
     // --- Step 2: Extract frames ---
     updateProgress({ step: 'frames_raw', message: 'Extracting source frames for Gemini 3.7 Flash...', progress: 38, status: 'running' });
-    const { frames: rawFrames } = await extractFrames(rawVideoPath, rawFramesDir, updateProgress);
+    const { frames: rawFrames } = await extractFrames(rawVideoPath, rawFramesDir, updateProgress, {
+      sampleIntervalSec: 1,
+      maxSampleFrames: 48,
+    });
 
     // --- Step 3: Gemini 3.7 Flash ---
     updateProgress({ step: 'gemini_vision', message: 'Gemini 3.7 Flash analyzing faceless product frames and crop focus...', progress: 48, status: 'running' });
@@ -425,19 +428,23 @@ app.post('/api/generate', async (req, res) => {
     });
 
     // --- Step 4: Render Silent 9:16 ---
-    updateProgress({ step: 'render_silent', message: `Rendering faceless 9:16 product clip (${highlight.startTime} - ${highlight.endTime})...`, progress: 62, status: 'running' });
+    updateProgress({ step: 'render_silent', message: `Rendering ${highlight.clips.length} Gemini-selected 5-second full-product shots...`, progress: 62, status: 'running' });
     await renderSilentAntiDetectionVideo({
       inputVideo: rawVideoPath, startTime: highlight.startTime,
       endTime: highlight.endTime, outputVideo: silentOutputPath,
+      clips: highlight.clips,
       hflip: options.hflip !== undefined ? options.hflip : true,
-      speedMultiplier: options.speedMultiplier || 1.03,
+      speedMultiplier: options.speedMultiplier || 1,
       reframe: highlight.reframe,
       onProgress: updateProgress,
     });
 
     // --- Step 5: Extract trimmed frames ---
     updateProgress({ step: 'frames_trimmed', message: 'Sampling frames from trimmed video for Gemini scripting...', progress: 72, status: 'running' });
-    const { frames: trimmedFrames } = await extractFrames(silentOutputPath, trimmedFramesDir, updateProgress);
+    const { frames: trimmedFrames } = await extractFrames(silentOutputPath, trimmedFramesDir, updateProgress, {
+      sampleIntervalSec: 1,
+      maxSampleFrames: 48,
+    });
 
     // --- Step 6: Gemini scripting ---
     updateProgress({ step: 'gpt_scripting', message: 'Gemini 3.7 Flash generating Kotak Scene, Context, Naskah...', progress: 80, status: 'running' });
@@ -463,7 +470,7 @@ app.post('/api/generate', async (req, res) => {
       productDescription: productDescription || '',
       youtubeUrl,
       shopeeLink: shopeeLink || '',
-      highlight: { startTime: highlight.startTime, endTime: highlight.endTime, duration: highlight.duration, reframe: highlight.reframe },
+      highlight: { startTime: highlight.startTime, endTime: highlight.endTime, duration: highlight.duration, reframe: highlight.reframe, clips: highlight.clips },
       productHook: highlight.productHook,
       sampleContext: scriptData.sampleContext,
       scenes: scriptData.scenes,

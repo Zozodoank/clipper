@@ -7,7 +7,7 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
   const resetDefaults = () => {
     setSettings({
       hflip: true,
-      speedMultiplier: 1.03,
+      speedMultiplier: 1,
       enableSubtitles: false,
       enableTts: false,
       voice: 'alloy',
@@ -67,7 +67,7 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              Slightly speeds up video & audio tempo (1.03x recommended) to evade copyright hash.
+              Keep 1.00x for precise 5-second product shots. Higher speeds are optional.
             </p>
             <div className="grid grid-cols-4 gap-2 pt-1">
               {[1.00, 1.03, 1.05, 1.08].map((spd) => (

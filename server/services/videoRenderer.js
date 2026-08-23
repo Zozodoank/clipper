@@ -4,15 +4,17 @@ import fs from 'fs';
 import { getFFmpegPath } from './binaryChecker.js';
 
 /**
- * Stage 1: Renders a 30-60s anti-detection vertical 9:16 video with NO AUDIO (-an) and NO SUBTITLES.
+ * Stage 1: Renders Gemini-selected 5-second product clips as one vertical 9:16 video
+ * with NO AUDIO (-an) and NO SUBTITLES.
  * @param {object} params
  * @param {string} params.inputVideo - Source raw video path
  * @param {string} params.startTime - Trim start (e.g. "00:15")
  * @param {string} params.endTime - Trim end (e.g. "00:55")
  * @param {string} params.outputVideo - Target output .mp4 path
+ * @param {Array<{ startTime?: string, endTime?: string, startSeconds?: number, endSeconds?: number, reframe?: object }>} [params.clips] - Gemini cut plan
  * @param {boolean} [params.hflip=true] - Horizontal flip toggle
- * @param {number} [params.speedMultiplier=1.03] - Speed factor (1.03x)
- * @param {{ focusX?: number, focusY?: number, faceSafety?: boolean }} [params.reframe] - Product-aware vertical crop focus
+ * @param {number} [params.speedMultiplier=1] - Speed factor
+ * @param {{ focusX?: number, focusY?: number, faceSafety?: boolean, renderMode?: string }} [params.reframe] - Product-aware framing
  * @param {Function} [params.onProgress] - Progress callback
  * @returns {Promise<{ outputPath: string }>}
  */
@@ -21,8 +23,9 @@ export async function renderSilentAntiDetectionVideo({
   startTime,
   endTime,
   outputVideo,
+  clips = [],
   hflip = true,
-  speedMultiplier = 1.03,
+  speedMultiplier = 1,
   reframe = {},
   onProgress = () => {}
 }) {
@@ -47,37 +50,40 @@ export async function renderSilentAntiDetectionVideo({
 
   onProgress({
     step: 'render_silent',
-    message: 'Rendering faceless product-aware 9:16 crop (Muted, No Subtitles)...',
+    message: 'Rendering Gemini-selected faceless full-product 9:16 shots (Muted, No Subtitles)...',
     progress: 60
   });
 
   return new Promise((resolve, reject) => {
-    const ptsFactor = (1 / speedMultiplier).toFixed(4);
-    const focusX = clampNumber(reframe.focusX, 0, 1, 0.5).toFixed(3);
-    const focusY = clampNumber(reframe.focusY, 0, 1, 0.62).toFixed(3);
-    const faceSafety = reframe.faceSafety !== false;
-    const edgeCrop = faceSafety
-      ? 'crop=iw*0.94:ih*0.82:iw*0.03:ih*0.12'
-      : 'crop=iw*0.96:ih*0.90:iw*0.02:ih*0.04';
+    const selectedClips = normalizeRenderClips(clips, startTime, endTime, reframe);
+    const safeSpeedMultiplier = clampNumber(speedMultiplier, 0.5, 2, 1);
+    const ptsFactor = (1 / safeSpeedMultiplier).toFixed(4);
+    const args = ['-y'];
 
-    const videoFilters = [
-      // Faceless edge crop: remove the upper face/talking-head zone and noisy creator overlays.
-      edgeCrop,
-      // Fill 9:16 like a professional short-form edit, then crop around the AI-selected product/hands focus.
-      'scale=720:1280:force_original_aspect_ratio=increase',
-      `crop=720:1280:(iw-720)*${focusX}:(ih-1280)*${focusY}`,
-      'setsar=1',
-      `setpts=${ptsFactor}*PTS`,
-      'eq=contrast=1.05:saturation=1.05:brightness=0.01'
-    ];
-    if (hflip) videoFilters.push('hflip');
+    for (const clip of selectedClips) {
+      const sourceDuration = (clip.duration * safeSpeedMultiplier).toFixed(3);
+      args.push('-ss', clip.startSeconds.toFixed(3), '-t', sourceDuration, '-i', targetVideo);
+    }
 
-    const args = [
-      '-y',
-      '-ss', startTime.toString(),
-      '-to', endTime.toString(),
-      '-i', targetVideo,
-      '-vf', videoFilters.join(','),
+    const filterChains = selectedClips.flatMap((clip, index) =>
+      buildClipFilter({
+        inputIndex: index,
+        outputLabel: `v${index}`,
+        reframe: clip.reframe,
+        hflip,
+        ptsFactor,
+      })
+    );
+
+    if (selectedClips.length === 1) {
+      filterChains.push('[v0]null[outv]');
+    } else {
+      filterChains.push(`${selectedClips.map((_, index) => `[v${index}]`).join('')}concat=n=${selectedClips.length}:v=1:a=0[outv]`);
+    }
+
+    args.push(
+      '-filter_complex', filterChains.join(';'),
+      '-map', '[outv]',
       '-an', // Strictly NO AUDIO
       '-c:v', 'libx264',
       '-preset', 'fast',
@@ -85,7 +91,7 @@ export async function renderSilentAntiDetectionVideo({
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
       outputVideo
-    ];
+    );
 
     console.log(`[VideoRenderer Silent] Spawning FFmpeg:\n${ffmpegPath} ${args.join(' ')}`);
     const proc = spawn(ffmpegPath, args);
@@ -97,7 +103,7 @@ export async function renderSilentAntiDetectionVideo({
       if (code === 0 && fs.existsSync(outputVideo)) {
         onProgress({
           step: 'render_silent',
-          message: 'Faceless product-aware 9:16 clip rendered successfully.',
+          message: `${selectedClips.length} faceless full-product 5-second shots rendered successfully.`,
           progress: 70
         });
         resolve({ outputPath: outputVideo });
@@ -226,6 +232,77 @@ export async function mergeVoiceoverAndBurnSubtitles({
       reject(new Error(`Failed to spawn FFmpeg for final merge: ${err.message}`));
     });
   });
+}
+
+function buildClipFilter({ inputIndex, outputLabel, reframe = {}, hflip, ptsFactor }) {
+  const renderMode = reframe.renderMode === 'vertical_crop' ? 'vertical_crop' : 'preserve_full_product';
+  const preFlip = hflip ? 'hflip,' : '';
+  const finish = `setsar=1,setpts=${ptsFactor}*PTS,eq=contrast=1.05:saturation=1.05:brightness=0.01`;
+
+  if (renderMode === 'vertical_crop') {
+    const focusX = clampNumber(reframe.focusX, 0, 1, 0.5).toFixed(3);
+    const focusY = clampNumber(reframe.focusY, 0, 1, 0.55).toFixed(3);
+    return [
+      `[${inputIndex}:v]${preFlip}scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280:(iw-720)*${focusX}:(ih-1280)*${focusY},${finish}[${outputLabel}]`
+    ];
+  }
+
+  // Keep the complete source frame visible over a 9:16 blurred fill so the product is not cut.
+  return [
+    `[${inputIndex}:v]${preFlip}split=2[bgsrc${inputIndex}][fgsrc${inputIndex}]`,
+    `[bgsrc${inputIndex}]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,boxblur=18:8,eq=brightness=-0.12:saturation=0.85[bg${inputIndex}]`,
+    `[fgsrc${inputIndex}]scale=680:1200:force_original_aspect_ratio=decrease,setsar=1[fg${inputIndex}]`,
+    `[bg${inputIndex}][fg${inputIndex}]overlay=(W-w)/2:(H-h)/2,${finish}[${outputLabel}]`,
+  ];
+}
+
+function normalizeRenderClips(clips, fallbackStartTime, fallbackEndTime, fallbackReframe = {}) {
+  const clipLength = 5;
+  const sourceClips = Array.isArray(clips) ? clips : [];
+  const normalized = [];
+
+  if (sourceClips.length) {
+    for (const clip of sourceClips) {
+      const startSeconds = parseTimeToSeconds(clip?.startSeconds ?? clip?.startTime);
+      const endSeconds = parseTimeToSeconds(clip?.endSeconds ?? clip?.endTime);
+      if (!Number.isFinite(startSeconds) || startSeconds < 0) continue;
+      if (Number.isFinite(endSeconds) && endSeconds - startSeconds < 4.9) continue;
+
+      normalized.push({
+        startSeconds,
+        duration: clipLength,
+        reframe: clip?.reframe || fallbackReframe,
+      });
+      if (normalized.length === 12) break;
+    }
+  }
+
+  if (normalized.length) return normalized;
+
+  const fallbackStart = parseTimeToSeconds(fallbackStartTime);
+  const fallbackEnd = parseTimeToSeconds(fallbackEndTime);
+  const fallbackDuration = fallbackEnd > fallbackStart ? fallbackEnd - fallbackStart : clipLength;
+  const clipCount = Math.max(1, Math.min(12, Math.floor(fallbackDuration / clipLength)));
+
+  for (let index = 0; index < clipCount; index++) {
+    normalized.push({
+      startSeconds: fallbackStart + (index * clipLength),
+      duration: clipLength,
+      reframe: fallbackReframe,
+    });
+  }
+
+  return normalized;
+}
+
+function parseTimeToSeconds(value) {
+  if (typeof value === 'number') return value;
+  if (!value) return 0;
+  const parts = value.toString().split(':').map(Number);
+  if (parts.length === 3) return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
+  if (parts.length === 2) return (parts[0] * 60) + parts[1];
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function clampNumber(value, min, max, fallback) {

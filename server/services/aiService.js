@@ -37,7 +37,7 @@ function formatApiError(err, modelName = 'AI') {
 
 /**
  * Stage 1, Step A: Calls Aivene API with Gemini vision
- * to analyze full video frames and select the optimal 30-60 second highlight window.
+ * to analyze the full video timeline and select a cut plan made of 5-second product shots.
  */
 export async function selectHighlightWithGeminiFlash({
   apiKey,
@@ -50,7 +50,7 @@ export async function selectHighlightWithGeminiFlash({
 }) {
   onProgress({
     step: 'gemini_vision',
-    message: `Analyzing full video frames with ${AIVENE_GEMINI_MODEL} to select best 30-60s segment...`,
+    message: `Analyzing full video frames with ${AIVENE_GEMINI_MODEL} to plan 5-second product shots...`,
     progress: 45
   });
 
@@ -69,24 +69,21 @@ export async function selectHighlightWithGeminiFlash({
   const effectiveDesc = productDescription || videoMetadata?.description || '';
 
   const systemPrompt = `You are an Expert Video Editor & Viral Short-Form Producer.
-Your task is to analyze the sequence of video frames and select the SINGLE most captivating, action-packed continuous highlight window of 30 to 60 seconds suitable for an Indonesian Shopee Affiliate vertical reel.
+Your task is to analyze the entire source-video timeline and create a professional Indonesian affiliate-video cut plan. The backend will cut and concatenate ONLY the exact clips you return.
 
 Rules:
-1. Choose a continuous segment strictly between 30 and 60 seconds in length (e.g. 30s, 45s, or up to 60s).
-2. The segment MUST show the product in action, unboxing, key demonstration, hands-only usage, or exciting product moments.
-3. Output exact 'startTime' and 'endTime' in format "MM:SS" within 00:00 to ${formatSeconds(totalDuration)}.
-4. Provide a catchy short Indonesian hook headline ('productHook').
-5. Decide the best vertical 9:16 reframing for a professional social clip:
+1. Return 6 to 12 separate clips in chronological order. Every clip MUST be exactly 5 seconds long. Do not return a long continuous highlight.
+2. Each clip MUST be a usable affiliate shot: product full body/whole product visible from edge to edge, product in use, packaging, detail, or hands-only demonstration. The product must not be cropped by the source frame.
+3. Reject any candidate with a creator face, talking head, person as subject, burned-in source caption, username, watermark, price sticker, or large on-screen text over the product. Choose another clean moment instead.
+4. Clips must not overlap and must use timestamps supported by the supplied frames. Output exact start/end in "MM:SS" within 00:00 to ${formatSeconds(totalDuration)}.
+5. The first clip must be the strongest clean full-product hook. Subsequent clips should vary detail, use, benefit, and closing product shot like a polished affiliate edit.
+6. For every clip, decide the best vertical 9:16 treatment:
    - 'focusX' from 0.0 left to 1.0 right, centered on the product/action.
    - 'focusY' from 0.0 top to 1.0 bottom.
-   - Prefer the product, hands, tools, packaging, and demo action.
-   - Avoid burned-in captions, usernames, watermarks, lower thirds, and duplicate text overlays from the source video.
-6. FACELESS RULES (strict):
-   - Do NOT choose segments where the creator's face is clearly visible or talking-head content dominates.
-   - Prefer hands-only demos, close-up product shots, unboxing, before/after, or product-in-use shots.
-   - If a face appears near the top/side, choose a focus point that keeps the product/hands while cropping the face out.
-   - If every candidate contains a face, select the segment where the face is smallest/easiest to crop out and mark 'faceSafety' as true.
-7. Output MUST be valid JSON only.`;
+   - Use renderMode 'preserve_full_product' when the complete product needs to stay visible. This uses a blurred 9:16 background instead of cutting the product.
+   - Use renderMode 'vertical_crop' only when the source is already a clean 9:16 product shot with safe empty margins.
+7. FACELESS is absolute: a visible creator face means the clip is invalid. Never use crop as a reason to accept a face shot.
+8. Output MUST be valid JSON only.`;
 
   const userPrompt = `Product Title: "${effectiveTitle}"
 ${effectiveDesc ? `Product Description / Key Features: "${effectiveDesc}"` : ''}
@@ -97,22 +94,27 @@ Product Link: ${shopeeLink || 'https://shope.ee/link'}
 Sampled Visual Frames (${frames.length} frames across timeline):
 ${frames.map((f, i) => `Frame #${i + 1} at timestamp ${f.timeFormatted} (${f.timestamp}s)`).join('\n')}
 
-Identify the best 30-60 second highlight window.
+Analyze every supplied timestamp, then return the best non-overlapping 5-second clip plan.
 Return strict JSON in this format:
 {
-  "startTime": "00:15",
-  "endTime": "00:55",
-  "duration": 40,
   "productHook": "Racun Shopee Viral Wajib Punya!",
-  "reframe": {
-    "focusX": 0.72,
-    "focusY": 0.64,
-    "cropStrategy": "faceless_right_bias_keep_product_hands_avoid_left_text",
-    "avoidTextZones": ["left_middle"],
-    "avoidFaceZones": ["top_left", "upper_middle"],
-    "faceSafety": true,
-    "notes": "Keep the product and hands centered, crop out creator face and built-in source text."
-  }
+  "clips": [
+    {
+      "startTime": "00:15",
+      "endTime": "00:20",
+      "reason": "Produk utuh dan bersih sebagai hook.",
+      "reframe": {
+        "focusX": 0.5,
+        "focusY": 0.55,
+        "renderMode": "preserve_full_product",
+        "cropStrategy": "keep_full_product_no_source_text_no_face",
+        "avoidTextZones": [],
+        "avoidFaceZones": ["top_left"],
+        "faceSafety": true,
+        "notes": "Whole product visible, no face and no built-in text."
+      }
+    }
+  ]
 }`;
 
   const messageContent = [
@@ -145,39 +147,26 @@ Return strict JSON in this format:
       parsed = JSON.parse(cleaned);
     }
 
-    let startSec = parseTimeToSeconds(parsed.startTime || '00:00');
-    let endSec = parseTimeToSeconds(parsed.endTime || '00:45');
-
-    // Ensure 30-60 second segment duration constraint
-    if (endSec <= startSec || endSec - startSec < 25) {
-      endSec = Math.min(totalDuration, startSec + 40);
-    }
-    if (endSec - startSec > 60) {
-      endSec = startSec + 55;
-    }
-    if (endSec > totalDuration && totalDuration > 30) {
-      endSec = totalDuration;
-      startSec = Math.max(0, endSec - 45);
-    }
-
-    const duration = endSec - startSec;
-    const startTime = formatSeconds(startSec);
-    const endTime = formatSeconds(endSec);
+    const clips = normalizeClipPlan(parsed.clips, totalDuration);
+    const duration = clips.reduce((total, clip) => total + (clip.endSeconds - clip.startSeconds), 0);
+    const startTime = clips[0].startTime;
+    const endTime = clips[clips.length - 1].endTime;
 
     onProgress({
       step: 'gemini_vision',
-      message: `${AIVENE_GEMINI_MODEL} selected 30-60s highlight: ${startTime} - ${endTime} (${duration}s)`,
+      message: `${AIVENE_GEMINI_MODEL} selected ${clips.length} clean 5-second product shots (${duration}s total).`,
       progress: 55
     });
 
     return {
       startTime,
       endTime,
-      startSeconds: startSec,
-      endSeconds: endSec,
+      startSeconds: clips[0].startSeconds,
+      endSeconds: clips[clips.length - 1].endSeconds,
       duration,
       productHook: parsed.productHook || 'Racun Shopee Viral Wajib Punya!',
-      reframe: normalizeReframe(parsed.reframe),
+      reframe: clips[0].reframe,
+      clips,
     };
   } catch (err) {
     console.error(`[AIService ${AIVENE_GEMINI_MODEL}] Error:`, err);
@@ -285,7 +274,7 @@ Shopee Affiliate Link: ${shopeeLink || 'https://shope.ee/link'}
 Visual Hook: "${productHook || 'Racun Viral Wajib Punya!'}"
 Durasi Video Potongan: ${segmentDuration} detik
 
-Visual Frames of the 30-60s Trimmed Video (${trimmedFrames.length} frames):
+Visual Frames of the concatenated 5-second Gemini-selected product clips (${trimmedFrames.length} frames):
 ${trimmedFrames.map((f, i) => `Frame #${i + 1} at timestamp ${f.timeFormatted} (${f.timestamp}s)`).join('\n')}
 
 Gunakan informasi judul dan deskripsi produk di atas agar naskah sangat relevan dan akurat.
@@ -424,12 +413,58 @@ function normalizeReframe(reframe = {}) {
   return {
     focusX,
     focusY,
+    renderMode: reframe.renderMode === 'vertical_crop' ? 'vertical_crop' : 'preserve_full_product',
     cropStrategy: (reframe.cropStrategy || DEFAULT_REFRAME.cropStrategy).toString().slice(0, 80),
     avoidTextZones,
     avoidFaceZones,
     faceSafety: reframe.faceSafety !== false,
     notes: (reframe.notes || DEFAULT_REFRAME.notes).toString().slice(0, 180),
   };
+}
+
+function normalizeClipPlan(rawClips, totalDuration) {
+  const clipLength = 5;
+  const sourceClips = Array.isArray(rawClips) ? rawClips : [];
+  const normalized = [];
+  let previousEnd = -1;
+
+  for (const rawClip of sourceClips) {
+    let startSeconds = Math.max(0, Math.round(parseTimeToSeconds(rawClip?.startSeconds ?? rawClip?.startTime)));
+    if (startSeconds < previousEnd) continue;
+    if (startSeconds + clipLength > totalDuration) continue;
+
+    const endSeconds = startSeconds + clipLength;
+    normalized.push({
+      startSeconds,
+      endSeconds,
+      startTime: formatSeconds(startSeconds),
+      endTime: formatSeconds(endSeconds),
+      reason: (rawClip?.reason || 'Clean full-product affiliate shot.').toString().slice(0, 180),
+      reframe: normalizeReframe(rawClip?.reframe),
+    });
+    previousEnd = endSeconds;
+    if (normalized.length === 12) break;
+  }
+
+  if (normalized.length) return normalized;
+
+  // API fallback still keeps the renderer on five-second cuts instead of returning one long scene.
+  const maxStart = Math.max(0, Math.floor(totalDuration - clipLength));
+  for (let startSeconds = 0; startSeconds <= maxStart && normalized.length < 6; startSeconds += clipLength) {
+    normalized.push({
+      startSeconds,
+      endSeconds: startSeconds + clipLength,
+      startTime: formatSeconds(startSeconds),
+      endTime: formatSeconds(startSeconds + clipLength),
+      reason: 'Fallback 5-second product shot pending Gemini detail.',
+      reframe: normalizeReframe(),
+    });
+  }
+
+  if (!normalized.length) {
+    throw new Error('Video terlalu pendek untuk membuat potongan produk utama 5 detik.');
+  }
+  return normalized;
 }
 
 function clampNumber(value, min, max, fallback) {

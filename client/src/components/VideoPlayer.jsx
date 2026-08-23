@@ -16,6 +16,7 @@ export default function VideoPlayer({ result }) {
   const currentDownloadUrl = result.downloadUrl || result.silentVideoUrl;
   const currentLocalPath = result.finalLocalPath || result.silentLocalPath || result.localPath;
   const currentFilename = result.finalFileName || result.silentFileName || result.filename || 'affiliate_clip.mp4';
+  const highlightClips = Array.isArray(result.highlight?.clips) ? result.highlight.clips : [];
 
   const togglePlay = () => {
     if (!videoRef.current) return;
@@ -106,7 +107,11 @@ export default function VideoPlayer({ result }) {
         {result.highlight && (
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-xs font-mono text-amber-400 ml-auto">
             <Clock className="w-3.5 h-3.5" />
-            <span>{result.highlight.startTime} - {result.highlight.endTime}</span>
+            <span>
+              {highlightClips.length
+                ? `${highlightClips.length} x 5s`
+                : `${result.highlight.startTime} - ${result.highlight.endTime}`}
+            </span>
             <span className="text-slate-500">({result.highlight.duration}s)</span>
           </div>
         )}

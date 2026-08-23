@@ -131,7 +131,7 @@ export default function InputCard({
               9:16 Vertical (720x1280)
             </span>
             <span className="px-2 py-0.5 rounded bg-slate-800/80 border border-slate-700/60 font-mono text-slate-300">
-              Faceless Crop
+              Full Product
             </span>
             <span className="px-2 py-0.5 rounded bg-slate-800/80 border border-slate-700/60 font-mono text-slate-300">
               Speed: {settings.speedMultiplier}x

@@ -21,7 +21,7 @@ export default function App() {
 
   const [settings, setSettings] = useState({
     hflip: true,
-    speedMultiplier: 1.03,
+    speedMultiplier: 1,
     enableSubtitles: true,
     voice: 'alloy',
   });
@@ -267,8 +267,8 @@ export default function App() {
                 <h3 className="text-lg font-bold text-white mb-2">Alur 2-Tahap: Gemini 3.7 Flash + FFmpeg</h3>
                 <p className="text-xs text-slate-400 max-w-md leading-relaxed mb-6">
                   1. Masukkan Judul Produk, Deskripsi, URL YouTube, & Link Shopee.<br />
-                  2. <strong className="text-amber-400">Gemini 3.7 Flash</strong> memilih highlight faceless, fokus produk, dan area teks bawaan yang perlu dihindari.<br />
-                  3. <strong className="text-indigo-400">FFmpeg</strong> merender crop produk/tangan 9:16 penuh, lalu Gemini membuat Kotak Scene & Naskah Ad Advisor.<br />
+                  2. <strong className="text-amber-400">Gemini 3.7 Flash</strong> menganalisis frame video panjang dan memilih potongan faceless 5 detik yang fokus produk.<br />
+                  3. <strong className="text-indigo-400">FFmpeg</strong> memotong sesuai instruksi Gemini, menjaga produk full body dalam frame 9:16, lalu Gemini membuat Kotak Scene & Naskah Ad Advisor.<br />
                   4. Upload audio voiceover dari AI Studio untuk menghasilkan <strong className="text-emerald-400">Video Final + Subtitle</strong>.
                 </p>
                 <div className="grid grid-cols-2 gap-3 w-full max-w-sm text-left">
@@ -277,14 +277,14 @@ export default function App() {
                       <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                       <span>Gemini 3.7 Flash</span>
                     </div>
-                    <p className="text-[11px] text-slate-400">Deteksi highlight faceless dan fokus produk</p>
+                    <p className="text-[11px] text-slate-400">Rencana potongan 5 detik faceless</p>
                   </div>
                   <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
                     <div className="font-bold text-slate-200 flex items-center gap-1.5 mb-1">
                       <Clapperboard className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>Faceless Crop</span>
+                      <span>Full Product</span>
                     </div>
-                    <p className="text-[11px] text-slate-400">9:16 penuh tanpa letterbox</p>
+                    <p className="text-[11px] text-slate-400">9:16 tanpa memotong produk</p>
                   </div>
                 </div>
               </div>

@@ -218,13 +218,18 @@ You will receive the explicit Product Title, Product Description, and the sample
      [HOOK 0-3s]: Bold, curiosity-inducing hook line mentioning the product.
      [PROBLEM & DEMO 3-20s]: Story / problem and benefit demonstration based on product description and video visual.
      [VALUE PROPOSITION 20-35s]: Key advantages, specifications, and quality assurance.
-     [CALL TO ACTION 35-${segmentDuration}s]: Direct CTA directing viewer to checkout via Shopee link in bio/caption.
+     [CALL TO ACTION 35-${segmentDuration}s]: Direct CTA directing viewer to check the product below (e.g., "Cek produk di bawah sekarang sebelum kehabisan!").
+
+STRICT RULES FOR VOICE OVER & CALL TO ACTION:
+- NEVER use the word "Shopee" in the voiceover script or scene spoken lines.
+- NEVER say "link di bio" or "klik link di bio".
+- ALWAYS use direct calls like "Cek produk di bawah sekarang", "Klik produk di bawah", "Checkout produk di bawah mumpung promo", or "Cek selengkapnya di bawah".
 
 4. 'aiStudioPrompt':
    - A copy-paste ready prompt template formatted for Google AI Studio / Gemini TTS to generate or refine the Indonesian voiceover audio.
 
 5. 'caption':
-   - High-converting Instagram & Facebook Reels caption with emojis, Indonesian hashtags (#racunshopee, #shopeehaul, #spillracunshopee, #reelsviral, etc.), and the provided Shopee affiliate link.
+   - High-converting Instagram & Facebook Reels caption with emojis, Indonesian hashtags (#racunbelanja, #racuntiktok, #reelsviral, #affiliateindonesia, etc.), and the provided affiliate link.
 
 Output MUST be strictly valid JSON matching the requested schema.`;
 
@@ -232,7 +237,7 @@ Output MUST be strictly valid JSON matching the requested schema.`;
 Judul / Nama Produk: "${effectiveTitle}"
 ${effectiveDesc ? `Deskripsi & Spesifikasi Produk: "${effectiveDesc}"` : 'Deskripsi: (Analisis dari visual frame video)'}
 Shopee Affiliate Link: ${shopeeLink || 'https://shope.ee/link'}
-Visual Hook: "${productHook || 'Racun Shopee Viral!'}"
+Visual Hook: "${productHook || 'Racun Viral Wajib Punya!'}"
 Durasi Video Potongan: ${segmentDuration} detik
 
 Visual Frames of the 30-60s Trimmed Video (${trimmedFrames.length} frames):
@@ -240,6 +245,11 @@ ${trimmedFrames.map((f, i) => `Frame #${i + 1} at timestamp ${f.timeFormatted} (
 
 Gunakan informasi judul dan deskripsi produk di atas agar naskah sangat relevan dan akurat.
 Buat Kotak Scene, Sample Context, Naskah Voiceover Ad Advisor, dan AI Studio prompt.
+
+PENTING - ATURAN CTA & NARASI:
+1. JANGAN PERNAH gunakan kata "Shopee" dalam naskah voiceover maupun Kotak Scene.
+2. JANGAN PERNAH gunakan kata "link di bio".
+3. Selalu gunakan ajakan seperti "Cek produk di bawah sekarang", "Klik produk di bawah", atau "Checkout produk di bawah sebelum kehabisan".
 
 Return strict JSON in this format:
 {
@@ -261,7 +271,7 @@ Return strict JSON in this format:
   ],
   "voiceoverScript": "[HOOK]\\n...\\n\\n[PROBLEM & DEMO]\\n...\\n\\n[CALL TO ACTION]\\n...",
   "aiStudioPrompt": "Prompt siap copy ke Google AI Studio...",
-  "caption": "Teks caption lengkap dengan link Shopee dan hashtag..."
+  "caption": "Teks caption lengkap dengan link pembelian dan hashtag..."
 }`;
 
   const messageContent = [
@@ -296,19 +306,19 @@ Return strict JSON in this format:
 
     let voiceoverScript = (parsed.voiceoverScript || '').trim();
     if (!voiceoverScript) {
-      voiceoverScript = `[HOOK]\nStop scroll! ${effectiveTitle} yang satu ini bener-bener lagi viral dan wajib banget kamu punya di Shopee!\n\n[DEMO & BENEFIT]\n${effectiveDesc ? effectiveDesc.slice(0, 100) : 'Kualitasnya kokoh, desainnya elegan, dan praktis banget buat dipakai sehari-hari tanpa ribet.'}\n\n[VALUE PROPOSITION]\nUdah banyak yang review bagus dan terbukti awet buat jangka panjang.\n\n[CALL TO ACTION]\nMumpung lagi ada diskon spesial dan promo gratis ongkir, buruan checkout di link Shopee sekarang sebelum kehabisan!`;
+      voiceoverScript = `[HOOK]\nStop scroll! ${effectiveTitle} yang satu ini bener-bener lagi viral dan wajib banget kamu punya!\n\n[DEMO & BENEFIT]\n${effectiveDesc ? effectiveDesc.slice(0, 100) : 'Kualitasnya kokoh, desainnya elegan, dan praktis banget buat dipakai sehari-hari tanpa ribet.'}\n\n[VALUE PROPOSITION]\nUdah banyak yang review bagus dan terbukti awet buat jangka panjang.\n\n[CALL TO ACTION]\nMumpung lagi ada promo dan diskon spesial, buruan cek produk di bawah sekarang sebelum kehabisan!`;
     }
 
     let caption = (parsed.caption || '').trim();
     if (!caption) {
-      caption = `🔥 Racun Shopee Viral: ${effectiveTitle}!\n\n${effectiveDesc ? effectiveDesc + '\n\n' : ''}Buruan checkout sekarang mumpung lagi diskon & promo gratis ongkir!\n\n🛒 Link Pembelian Shopee: ${shopeeLink || 'https://shope.ee/link-disini'}\n\n#racunshopee #shopeehaul #racuntiktok #reelsviral #affiliateindonesia #spillracunshopee`;
+      caption = `🔥 Racun Belanja Viral: ${effectiveTitle}!\n\n${effectiveDesc ? effectiveDesc + '\n\n' : ''}Buruan checkout sekarang mumpung lagi diskon spesial!\n\n🛒 Link Produk: ${shopeeLink || 'https://shope.ee/link-disini'}\n\n#racunbelanja #racuntiktok #reelsviral #affiliateindonesia #spillracun`;
     } else if (shopeeLink && !caption.includes(shopeeLink)) {
-      caption += `\n\n🛒 Link Shopee: ${shopeeLink}`;
+      caption += `\n\n🛒 Link Produk: ${shopeeLink}`;
     }
 
     let aiStudioPrompt = (parsed.aiStudioPrompt || '').trim();
     if (!aiStudioPrompt) {
-      aiStudioPrompt = `Bertindaklah sebagai Senior Ad Advisor untuk konten Shopee Affiliate Indonesia.\nKonteks Produk: "${effectiveTitle}"\n${effectiveDesc ? `Deskripsi: ${effectiveDesc}\n` : ''}Naskah Spoken Voiceover:\n${voiceoverScript}\n\nHasilkan pembacaan audio voiceover dengan intonasi ramah, antusias, dan persuasif.`;
+      aiStudioPrompt = `Bertindaklah sebagai Senior Ad Advisor untuk konten Affiliate Video Indonesia.\nKonteks Produk: "${effectiveTitle}"\n${effectiveDesc ? `Deskripsi: ${effectiveDesc}\n` : ''}Naskah Spoken Voiceover:\n${voiceoverScript}\n\nHasilkan pembacaan audio voiceover dengan intonasi ramah, antusias, dan persuasif.`;
     }
 
     onProgress({
@@ -320,7 +330,7 @@ Return strict JSON in this format:
     return {
       sampleContext: parsed.sampleContext || {
         productName: effectiveTitle,
-        targetAudience: "Pengguna Shopee & pencari produk viral",
+        targetAudience: "Pencari produk viral & praktis",
         coreProblem: "Mencari produk berkualitas dengan harga terjangkau",
         keyFeatures: ["Praktis & Multifungsi", "Bahan Berkualitas", "Harga Terjangkau"],
         buyingTrigger: "FOMO & Diskon Terbatas"
@@ -332,7 +342,7 @@ Return strict JSON in this format:
               sceneNumber: 1,
               timeRange: "00:00 - 00:10",
               visualDescription: `Tampilan visual ${effectiveTitle} di awal video.`,
-              voiceover: `Stop scroll! ${effectiveTitle} ini beneran lagi rame banget di Shopee!`,
+              voiceover: `Stop scroll! ${effectiveTitle} yang satu ini beneran lagi viral dan wajib kamu punya!`,
               adAdvisorNotes: "Gunakan hook visual dinamis & teks 'Wajib Punya!' di layar."
             },
             {
@@ -346,8 +356,8 @@ Return strict JSON in this format:
               sceneNumber: 3,
               timeRange: `00:30 - 00:${segmentDuration.toString().padStart(2, '0')}`,
               visualDescription: "Hasil akhir dan ajakan bertindak (CTA).",
-              voiceover: "Buruan checkout sekarang mumpung ada diskon spesial di link Shopee!",
-              adAdvisorNotes: "Munculkan panah animasi mengarah ke bio/deskripsi."
+              voiceover: "Buruan checkout sekarang mumpung lagi diskon spesial, cek produk di bawah!",
+              adAdvisorNotes: "Munculkan panah animasi mengarah ke produk di bawah."
             }
           ],
       voiceoverScript,

@@ -1,6 +1,7 @@
 {
   "name": "local-ai-affiliate-clipper",
   "version": "1.0.0",
+  "type": "module",
   "description": "Local AI Affiliate Clipper - React + Node.js + FFmpeg + Aivene AI",
   "scripts": {
     "install:all": "npm --prefix server install && npm --prefix client install",

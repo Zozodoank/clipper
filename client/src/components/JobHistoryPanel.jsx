@@ -78,7 +78,7 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId }) {
   };
 
   const retryableStages = ['error', 'interrupted', 'downloaded'];
-  const retryableJobs = jobs.filter(j => retryableStages.includes(j.stage) && j.hasDownloadedVideo);
+  const retryableJobs = jobs.filter(j => retryableStages.includes(j.stage));
   const hasNewItems = retryableJobs.length > 0;
 
   if (!isOpen) {
@@ -152,8 +152,7 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId }) {
         <div className="mx-4 mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-[11px] flex items-start gap-2">
           <Info className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
           <p>
-            <strong>{retryableJobs.length} job</strong> memiliki video yang sudah terunduh dan dapat di-retry tanpa download ulang.
-            Pastikan perbarui API Key sebelum retry.
+            <strong>{retryableJobs.length} job</strong> dapat di-retry. Job dengan video yang sudah terunduh tidak perlu download ulang.
           </p>
         </div>
       )}
@@ -172,8 +171,16 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId }) {
           </div>
         ) : (
           jobs.map((job) => {
-            const isRetryable = retryableStages.includes(job.stage) && job.hasDownloadedVideo;
+            const isRetryable = retryableStages.includes(job.stage);
             const isCurrent = job.jobId === currentJobId;
+
+            // Determine button label and style
+            const actionConfig = (() => {
+              if (job.stage === 'completed') return { label: 'Lihat & Unduh', icon: Download, style: 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30' };
+              if (job.stage === 'awaiting_voiceover') return { label: 'Lanjut Upload', icon: Music, style: 'bg-purple-500/20 text-purple-300 hover:bg-purple-500/30' };
+              return { label: 'Retry', icon: RefreshCw, style: 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30' };
+            })();
+            const ActionIcon = actionConfig.icon;
 
             return (
               <div
@@ -187,7 +194,7 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId }) {
                     ? 'border-emerald-500/20 bg-slate-900/60 hover:bg-slate-800/60'
                     : 'border-slate-700/50 bg-slate-900/40 hover:bg-slate-800/40'
                 }`}
-                onClick={() => isRetryable || job.stage === 'awaiting_voiceover' || job.stage === 'completed' ? onSelectJob(job) : null}
+                onClick={() => onSelectJob(job)}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
@@ -217,38 +224,25 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId }) {
                   </div>
 
                   <div className="flex-shrink-0 flex flex-col items-end gap-1.5">
-                    {/* Action buttons */}
-                    {(isRetryable || job.stage === 'awaiting_voiceover' || job.stage === 'completed') && (
-                      <div className="flex items-center gap-1">
-                        {job.stage === 'completed' && (
-                          <button
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-slate-800 transition-colors"
-                            title="Buka file ini di Windows Explorer"
-                            onClick={(e) => handleOpenFolder(e, job.finalFileName || `final_clip_${job.jobId}.mp4`)}
-                          >
-                            <FolderOpen className="w-3.5 h-3.5" />
-                          </button>
-                        )}
+                    {/* Action button - shown for ALL jobs */}
+                    <div className="flex items-center gap-1">
+                      {job.stage === 'completed' && (
                         <button
-                          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
-                            job.stage === 'completed'
-                              ? 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30'
-                              : isRetryable
-                              ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30'
-                              : 'bg-purple-500/20 text-purple-300 hover:bg-purple-500/30'
-                          }`}
-                          onClick={(e) => { e.stopPropagation(); onSelectJob(job); }}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-slate-800 transition-colors"
+                          title="Buka file ini di Windows Explorer"
+                          onClick={(e) => handleOpenFolder(e, job.finalFileName || `final_clip_${job.jobId}.mp4`)}
                         >
-                          {isRetryable ? (
-                            <><RefreshCw className="w-3 h-3" /> Retry</>
-                          ) : job.stage === 'awaiting_voiceover' ? (
-                            <><Music className="w-3 h-3" /> Lanjut</>
-                          ) : (
-                            <><Download className="w-3 h-3" /> Lihat & Unduh</>
-                          )}
+                          <FolderOpen className="w-3.5 h-3.5" />
                         </button>
-                      </div>
-                    )}
+                      )}
+                      <button
+                        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all ${actionConfig.style}`}
+                        onClick={(e) => { e.stopPropagation(); onSelectJob(job); }}
+                      >
+                        <ActionIcon className="w-3 h-3" />
+                        {actionConfig.label}
+                      </button>
+                    </div>
                     {/* Delete */}
                     <button
                       onClick={(e) => handleDelete(e, job.jobId)}

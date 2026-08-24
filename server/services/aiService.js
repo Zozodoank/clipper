@@ -75,15 +75,16 @@ Rules:
 1. Return 6 to 12 separate clips in chronological order. Every clip MUST be exactly 5 seconds long. Do not return a long continuous highlight.
 2. Each clip MUST be a usable affiliate shot: product full body/whole product visible from edge to edge, product in use, packaging, detail, or hands-only demonstration. The product must not be cropped by the source frame.
 3. Reject any candidate with a creator face, talking head, person as subject, burned-in source caption, username, watermark, price sticker, or large on-screen text over the product. Choose another clean moment instead.
-4. Clips must not overlap and must use timestamps supported by the supplied frames. Output exact start/end in "MM:SS" within 00:00 to ${formatSeconds(totalDuration)}.
-5. The first clip must be the strongest clean full-product hook. Subsequent clips should vary detail, use, benefit, and closing product shot like a polished affiliate edit.
-6. For every clip, decide the best vertical 9:16 treatment:
+4. Reject SOURCE OWNER IDENTITY absolutely: channel logo, creator logo, intro/outro bumper, subscribe/like/end-screen graphic, profile/avatar, social handle, channel name, source title card, or any branding that identifies the owner of the source video. Product logos printed on the product or packaging are allowed. If unsure, mark sourceIdentityRisk as "high" and choose a different clip.
+5. Clips must not overlap and must use timestamps supported by the supplied frames. Output exact start/end in "MM:SS" within 00:00 to ${formatSeconds(totalDuration)}.
+6. The first clip must be the strongest clean full-product hook. Subsequent clips should vary detail, use, benefit, and closing product shot like a polished affiliate edit.
+7. For every clip, decide the best vertical 9:16 treatment:
    - 'focusX' from 0.0 left to 1.0 right, centered on the product/action.
    - 'focusY' from 0.0 top to 1.0 bottom.
    - Use renderMode 'preserve_full_product' for most landscape sources. This places a large 720x720 product stage over a blurred 9:16 background, centered on the product/action.
    - Use renderMode 'vertical_crop' only when the source is already a clean 9:16 product shot with safe empty margins.
-7. FACELESS is absolute: a visible creator face means the clip is invalid. Never use crop as a reason to accept a face shot.
-8. Output MUST be valid JSON only.`;
+8. FACELESS is absolute: a visible creator face means the clip is invalid. Never use crop as a reason to accept a face shot.
+9. Output MUST be valid JSON only.`;
 
   const userPrompt = `Product Title: "${effectiveTitle}"
 ${effectiveDesc ? `Product Description / Key Features: "${effectiveDesc}"` : ''}
@@ -103,15 +104,18 @@ Return strict JSON in this format:
       "startTime": "00:15",
       "endTime": "00:20",
       "reason": "Produk utuh dan bersih sebagai hook.",
+      "isCleanAffiliateShot": true,
+      "sourceOwnerIdentityVisible": false,
+      "sourceIdentityRisk": "none",
       "reframe": {
         "focusX": 0.5,
         "focusY": 0.55,
         "renderMode": "preserve_full_product",
-        "cropStrategy": "keep_full_product_no_source_text_no_face",
+        "cropStrategy": "keep_full_product_no_source_owner_identity_no_face",
         "avoidTextZones": [],
         "avoidFaceZones": ["top_left"],
         "faceSafety": true,
-        "notes": "Whole product visible, no face and no built-in text."
+        "notes": "Clean product-only shot."
       }
     }
   ]
@@ -432,6 +436,8 @@ function normalizeClipPlan(rawClips, totalDuration) {
     let startSeconds = Math.max(0, Math.round(parseTimeToSeconds(rawClip?.startSeconds ?? rawClip?.startTime)));
     if (startSeconds < previousEnd) continue;
     if (startSeconds + clipLength > totalDuration) continue;
+    if (rawClip?.isCleanAffiliateShot === false) continue;
+    if (hasSourceIdentityRisk(rawClip)) continue;
 
     const endSeconds = startSeconds + clipLength;
     normalized.push({
@@ -448,15 +454,22 @@ function normalizeClipPlan(rawClips, totalDuration) {
 
   if (normalized.length) return normalized;
 
-  // API fallback still keeps the renderer on five-second cuts instead of returning one long scene.
+  // API fallback avoids intro/outro zones where source-owner logos and subscribe screens usually live.
   const maxStart = Math.max(0, Math.floor(totalDuration - clipLength));
-  for (let startSeconds = 0; startSeconds <= maxStart && normalized.length < 6; startSeconds += clipLength) {
+  const fallbackStart = totalDuration > 25
+    ? Math.min(maxStart, Math.max(8, Math.floor(totalDuration * 0.12)))
+    : 0;
+  const fallbackLastStart = totalDuration > 35
+    ? Math.max(fallbackStart, Math.min(maxStart, Math.floor(totalDuration * 0.82) - clipLength))
+    : maxStart;
+
+  for (let startSeconds = fallbackStart; startSeconds <= fallbackLastStart && normalized.length < 6; startSeconds += clipLength) {
     normalized.push({
       startSeconds,
       endSeconds: startSeconds + clipLength,
       startTime: formatSeconds(startSeconds),
       endTime: formatSeconds(startSeconds + clipLength),
-      reason: 'Fallback 5-second product shot pending Gemini detail.',
+      reason: 'Fallback 5-second product shot away from source intro/outro identity zones.',
       reframe: normalizeReframe(),
     });
   }
@@ -465,6 +478,15 @@ function normalizeClipPlan(rawClips, totalDuration) {
     throw new Error('Video terlalu pendek untuk membuat potongan produk utama 5 detik.');
   }
   return normalized;
+}
+
+function hasSourceIdentityRisk(rawClip = {}) {
+  if (rawClip.sourceOwnerIdentityVisible === true) return true;
+
+  const risk = (rawClip.sourceIdentityRisk || '').toString().toLowerCase();
+  if (!risk || risk === 'none' || risk === 'low' || risk === 'false' || risk === 'no') return false;
+
+  return true;
 }
 
 function clampNumber(value, min, max, fallback) {

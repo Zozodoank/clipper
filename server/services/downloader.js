@@ -12,22 +12,57 @@ const serverDir = path.resolve(__dirname, '..');
 const IS_LINUX = process.platform === 'linux';
 
 /**
+ * Scan all common directory locations and filename variations for cookies.txt
+ */
+function findCookiesFile() {
+  const rootDir = path.resolve(serverDir, '..');
+  const candidatePaths = [
+    path.join(serverDir, 'cookies.txt'),
+    path.join(rootDir, 'cookies.txt'),
+    path.join(serverDir, 'Cookies.txt'),
+    path.join(rootDir, 'Cookies.txt'),
+    path.join(serverDir, 'cookie.txt'),
+    path.join(rootDir, 'cookie.txt'),
+    path.join(serverDir, 'cookies.txt.txt'),
+    path.join(rootDir, 'cookies.txt.txt'),
+    path.join(serverDir, 'youtube_cookies.txt'),
+    path.join(rootDir, 'youtube_cookies.txt'),
+    path.join(process.cwd(), 'server', 'cookies.txt'),
+    path.join(process.cwd(), 'cookies.txt')
+  ];
+
+  for (const p of candidatePaths) {
+    if (fs.existsSync(p)) {
+      try {
+        const stats = fs.statSync(p);
+        if (stats.size > 10) {
+          return p;
+        }
+      } catch {}
+    }
+  }
+  return null;
+}
+
+/**
  * Returns yt-dlp args configured with:
  * 1. Human-like rate pacing (--sleep-requests 3, --sleep-interval 3, --max-sleep-interval 6)
  * 2. Bandwidth throttling (--limit-rate 5M) to mimic natural video browsing
- * 3. Client manipulation (web_embedded, mweb, android)
+ * 3. Client manipulation (web, mweb, ios, android)
  * 4. Optional Residential Proxy support (via RESIDENTIAL_PROXY or PROXY_URL)
+ * 5. Automatic detection of session cookies.txt across root and server/ folders
  */
 function getYtDlpArgs() {
   const residentialProxy = (process.env.RESIDENTIAL_PROXY || process.env.PROXY_URL || '').trim();
   const proxyArgs = residentialProxy ? ['--proxy', residentialProxy] : [];
 
-  const cookiesPath = path.join(serverDir, 'cookies.txt');
-  const hasCookies = fs.existsSync(cookiesPath);
-  const cookiesArgs = hasCookies ? ['--cookies', cookiesPath] : [];
+  const foundCookies = findCookiesFile();
+  const cookiesArgs = foundCookies ? ['--cookies', foundCookies] : [];
   
-  if (hasCookies) {
-    console.log(`[Downloader] 🍪 Authenticated cloud session active: using ${cookiesPath}`);
+  if (foundCookies) {
+    console.log(`[Downloader] 🍪 Found active session cookies: ${foundCookies}`);
+  } else {
+    console.warn(`[Downloader] ⚠️ No cookies.txt found in server/ or root directory. Running in unauthenticated mode.`);
   }
 
   return [

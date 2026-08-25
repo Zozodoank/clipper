@@ -26,6 +26,12 @@ import {
   deleteJobTempDirectory,
   deleteJobFiles
 } from './services/cleaner.js';
+import {
+  discoverShopeeProducts,
+  discoverSingleShopeeProduct,
+  discoverYouTubeCandidatesForProduct,
+  DEFAULT_AUTO_KEYWORDS
+} from './services/discoveryService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -75,6 +81,11 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // ─── Persistent Job Store ────────────────────────────────────────────────────
 
+/** In-memory stores */
+const activeJobs = new Map();
+const jobProgress = new Map();
+const autoRuns = new Map();
+
 /** Load jobs from disk into memory */
 function loadJobsFromDisk() {
   try {
@@ -98,10 +109,13 @@ function persistJob(jobId, jobData) {
     if (fs.existsSync(jobsFilePath)) {
       existing = JSON.parse(fs.readFileSync(jobsFilePath, 'utf-8'));
     }
-    existing[jobId] = jobData;
+    existing[jobId] = {
+      ...jobData,
+      updatedAt: new Date().toISOString(),
+    };
     fs.writeFileSync(jobsFilePath, JSON.stringify(existing, null, 2), 'utf-8');
   } catch (err) {
-    console.warn('[Jobs] Could not persist job to disk:', err.message);
+    console.warn(`[Jobs] Could not persist job ${jobId}:`, err.message);
   }
 }
 
@@ -114,138 +128,64 @@ function deletePersistedJob(jobId) {
       fs.writeFileSync(jobsFilePath, JSON.stringify(existing, null, 2), 'utf-8');
     }
   } catch (err) {
-    console.warn('[Jobs] Could not delete job from disk:', err.message);
+    console.warn(`[Jobs] Could not delete job ${jobId} from disk:`, err.message);
   }
 }
 
-/**
- * Scan temp/ directory for orphaned downloaded videos from interrupted jobs.
- * These are jobs that downloaded the video but failed before stage 1 completed.
- * We reconstruct a minimal job stub so user can retry them.
- */
-function scanOrphanedJobs() {
-  try {
-    const jobDirs = fs.readdirSync(tempDir).filter(name => name.startsWith('job_'));
-    let found = 0;
-
-    for (const dirName of jobDirs) {
-      const jobId = dirName.replace('job_', '');
-
-      // Skip if already tracked
-      if (activeJobs.has(jobId)) continue;
-
-      const jobTempDir = path.join(tempDir, dirName);
-      const videoFiles = fs.readdirSync(jobTempDir).filter(f => f.endsWith('.mp4') || f.endsWith('.webm') || f.endsWith('.mkv'));
-
-      if (videoFiles.length === 0) continue;
-
-      const videoPath = path.join(jobTempDir, videoFiles[0]);
-      const stat = fs.statSync(videoPath);
-
-      // Only consider files larger than 5MB as valid partial downloads
-      if (stat.size < 5 * 1024 * 1024) continue;
-
-      const stub = {
-        jobId,
-        stage: 'interrupted',
-        downloadedVideoPath: videoPath,
-        downloadedAt: stat.mtime.toISOString(),
-        productTitle: '',
-        productDescription: '',
-        youtubeUrl: '',
-        shopeeLink: '',
-        isOrphan: true,
-      };
-
-      activeJobs.set(jobId, stub);
-      persistJob(jobId, stub);
-      found++;
-    }
-
-    if (found > 0) {
-      console.log(`[Jobs] Found ${found} orphaned job(s) with downloaded video in temp/.`);
-    }
-  } catch (err) {
-    console.warn('[Jobs] Could not scan orphaned jobs:', err.message);
-  }
-}
-
-// In-memory active jobs registry and progress tracker
-const jobProgress = new Map();
-const activeJobs = new Map();
-
-// Load existing jobs from disk on startup
 loadJobsFromDisk();
-// Detect any interrupted jobs that still have videos in temp/
-scanOrphanedJobs();
 
-// ─── Routes ──────────────────────────────────────────────────────────────────
+function isVideoFilePath(p) {
+  if (!p) return false;
+  const lower = p.toLowerCase();
+  return !['.m4a', '.mp3', '.aac', '.wav', '.opus'].some(ext => lower.endsWith(ext)) &&
+    ['.mp4', '.webm', '.mkv', '.mov'].some(ext => lower.endsWith(ext));
+}
 
-// 1. Health & Dependency Check
+function isQuotaErrorMessage(msg = '') {
+  const lower = msg.toLowerCase();
+  return lower.includes('saldo') || lower.includes('insufficient') ||
+    lower.includes('balance') || lower.includes('quota') || lower.includes('credit');
+}
+
+// ─── API Routes ──────────────────────────────────────────────────────────────
+
+// 1. Health check & dependency verification
 app.get('/api/health', async (req, res) => {
-  try {
-    const deps = await checkSystemDependencies();
-    const hasAiveneKey = Boolean(process.env.AIVENE_API_KEY && process.env.AIVENE_API_KEY.trim());
-    res.json({
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      dependencies: deps,
-      aiveneConfigured: hasAiveneKey,
-    });
-  } catch (err) {
-    res.status(500).json({ status: 'error', message: err.message });
-  }
+  const binaryCheck = await checkSystemDependencies();
+  const aiveneKeySet = Boolean(process.env.AIVENE_API_KEY && process.env.AIVENE_API_KEY.trim());
+
+  res.json({
+    status: 'ok',
+    serverTime: new Date().toISOString(),
+    ffmpeg: binaryCheck.ffmpeg,
+    ytdlp: binaryCheck.ytdlp,
+    aiveneKeyConfigured: aiveneKeySet,
+    ready: binaryCheck.ffmpeg.available && binaryCheck.ytdlp.available,
+  });
 });
 
-// 2. List all persisted jobs (for Job History UI)
+// 2. Get all jobs history
 app.get('/api/jobs', (req, res) => {
   const jobs = [];
   for (const [jobId, job] of activeJobs.entries()) {
-    // Enrich with disk check: does the downloaded video or silent clip still exist?
-    const silentClipPath = path.join(outputDir, `silent_clip_${jobId}.mp4`);
-    const hasSilentClip = fs.existsSync(silentClipPath);
-    const finalClipPath = path.join(outputDir, `final_clip_${jobId}.mp4`);
-    const hasFinalClip = fs.existsSync(finalClipPath);
-    const tempJobDir = path.join(tempDir, `job_${jobId}`);
-    const hasDownloadedVideo = (() => {
-      try {
-        if (job.downloadedVideoPath && fs.existsSync(job.downloadedVideoPath)) return true;
-        if (fs.existsSync(tempJobDir)) {
-          const files = fs.readdirSync(tempJobDir).filter(f =>
-            f.endsWith('.mp4') || f.endsWith('.webm') || f.endsWith('.mkv')
-          );
-          return files.length > 0;
-        }
-      } catch {}
-      return false;
-    })();
-
-    const effectiveStage = hasFinalClip
-      ? 'completed'
-      : hasSilentClip
-      ? 'awaiting_voiceover'
-      : job.stage || 'unknown';
+    const silentPath = job.silentLocalPath || path.join(outputDir, `silent_clip_${jobId}.mp4`);
+    const finalPath = job.finalLocalPath || path.join(outputDir, `final_clip_${jobId}.mp4`);
 
     jobs.push({
       jobId,
-      stage: effectiveStage,
-      productTitle: job.productTitle || '(Tidak diketahui)',
+      stage: job.stage || 'unknown',
+      productTitle: job.productTitle || '',
       productDescription: job.productDescription || '',
       youtubeUrl: job.youtubeUrl || '',
       shopeeLink: job.shopeeLink || '',
-      createdAt: job.createdAt || job.downloadedAt || null,
-      hasDownloadedVideo,
-      hasSilentClip,
-      hasFinalClip,
-      isOrphan: job.isOrphan || false,
-      silentVideoUrl: hasSilentClip ? `/api/video/silent_clip_${jobId}.mp4` : null,
-      videoUrl: hasFinalClip ? `/api/video/final_clip_${jobId}.mp4` : null,
-      downloadUrl: hasFinalClip ? `/api/download/final_clip_${jobId}.mp4` : null,
-      finalFileName: job.finalFileName || (hasFinalClip ? `final_clip_${jobId}.mp4` : null),
-      silentFileName: job.silentFileName || (hasSilentClip ? `silent_clip_${jobId}.mp4` : null),
-      finalLocalPath: job.finalLocalPath || (hasFinalClip ? finalClipPath : null),
-      silentLocalPath: job.silentLocalPath || (hasSilentClip ? silentClipPath : null),
-      // Include full marketing & AI assets so user can resume/view anytime
+      createdAt: job.createdAt || '',
+      updatedAt: job.updatedAt || '',
+      errorAt: job.errorAt || '',
+      lastError: job.lastError || '',
+      hasSilentVideo: fs.existsSync(silentPath),
+      hasFinalVideo: fs.existsSync(finalPath),
+      silentVideoUrl: job.silentVideoUrl || (fs.existsSync(silentPath) ? `/api/video/silent_clip_${jobId}.mp4` : null),
+      finalVideoUrl: job.videoUrl || (fs.existsSync(finalPath) ? `/api/video/final_clip_${jobId}.mp4` : null),
       scenes: job.scenes || [],
       voiceoverScript: job.voiceoverScript || '',
       aiStudioPrompt: job.aiStudioPrompt || '',
@@ -257,7 +197,6 @@ app.get('/api/jobs', (req, res) => {
     });
   }
 
-  // Sort newest first
   jobs.sort((a, b) => {
     if (!a.createdAt) return 1;
     if (!b.createdAt) return -1;
@@ -270,14 +209,13 @@ app.get('/api/jobs', (req, res) => {
 // 3. Delete a specific job
 app.delete('/api/jobs/:jobId', (req, res) => {
   const { jobId } = req.params;
-  // Permanently delete temp directory and associated output files
   deleteJobFiles(jobId, outputDir, tempDir);
   activeJobs.delete(jobId);
   deletePersistedJob(jobId);
   res.json({ success: true, jobId });
 });
 
-// 4. SSE endpoint for live progress streaming
+// 4. SSE endpoint for live job progress streaming
 app.get('/api/progress/:jobId', (req, res) => {
   const { jobId } = req.params;
 
@@ -309,23 +247,20 @@ app.get('/api/progress/:jobId', (req, res) => {
   });
 });
 
-// 5. STAGE 1: Video Clipping & AI Scripting
-app.post('/api/generate', async (req, res) => {
-  const {
-    youtubeUrl,
-    shopeeLink,
-    productTitle,
-    productDescription,
-    apiKey,
-    options = {},
-    jobId: clientJobId
-  } = req.body;
+// ─── Stage 1 Pipeline Engine ─────────────────────────────────────────────────
 
-  if (!youtubeUrl) {
-    return res.status(400).json({ error: 'YouTube Video URL is required.' });
-  }
-
-  const jobId = clientJobId || crypto.randomBytes(6).toString('hex');
+export async function runStage1Pipeline({
+  jobId,
+  youtubeUrl,
+  shopeeLink,
+  productTitle,
+  productDescription,
+  apiKey,
+  options = {},
+  extraJobMeta = {},
+  requireCleanGeminiPlan = false,
+  onProgress = null,
+}) {
   const sessionTempDir = path.join(tempDir, `job_${jobId}`);
   const rawFramesDir = path.join(sessionTempDir, 'raw_frames');
   const trimmedFramesDir = path.join(sessionTempDir, 'trimmed_frames');
@@ -334,15 +269,14 @@ app.post('/api/generate', async (req, res) => {
 
   if (!fs.existsSync(sessionTempDir)) fs.mkdirSync(sessionTempDir, { recursive: true });
 
-  const updateProgress = (data) => {
+  const updateProgress = onProgress || ((data) => {
     const payload = typeof data === 'string'
       ? { step: 'processing', message: data, progress: 50, jobId }
       : { ...data, jobId };
     jobProgress.set(jobId, payload);
     console.log(`[Job ${jobId}] [${payload.progress || 0}%] ${payload.message}`);
-  };
+  });
 
-  // Persist job metadata early so it survives interruptions
   const jobMeta = {
     jobId,
     stage: 'running',
@@ -352,6 +286,7 @@ app.post('/api/generate', async (req, res) => {
     shopeeLink: shopeeLink || '',
     createdAt: new Date().toISOString(),
     isOrphan: false,
+    ...extraJobMeta,
   };
   activeJobs.set(jobId, jobMeta);
   persistJob(jobId, jobMeta);
@@ -364,11 +299,9 @@ app.post('/api/generate', async (req, res) => {
   });
 
   try {
-    // --- Step 1: Download with Smart Cache ---
     let rawVideoPath;
     let videoMeta = { title: productTitle || 'Product Video', duration: 60 };
 
-    // Look for already-downloaded video files in session temp dir
     const existingVideoInTemp = (() => {
       try {
         if (fs.existsSync(sessionTempDir)) {
@@ -385,11 +318,9 @@ app.post('/api/generate', async (req, res) => {
       return null;
     })();
 
-    // Also check if a persisted job stored the path
-    const isVideoFile = (p) => p && !p.endsWith('.m4a') && !p.endsWith('.mp3') && !p.endsWith('.aac') && (p.endsWith('.mp4') || p.endsWith('.webm') || p.endsWith('.mkv') || p.endsWith('.mov'));
     const existingJob = activeJobs.get(jobId);
     const cachedVideoPath = existingVideoInTemp ||
-      (existingJob?.downloadedVideoPath && fs.existsSync(existingJob.downloadedVideoPath) && isVideoFile(existingJob.downloadedVideoPath)
+      (existingJob?.downloadedVideoPath && fs.existsSync(existingJob.downloadedVideoPath) && isVideoFilePath(existingJob.downloadedVideoPath)
         ? existingJob.downloadedVideoPath
         : null);
 
@@ -397,7 +328,7 @@ app.post('/api/generate', async (req, res) => {
       rawVideoPath = cachedVideoPath;
       updateProgress({
         step: 'download',
-        message: `♻️ Video sudah ada (${(fs.statSync(rawVideoPath).size / 1024 / 1024).toFixed(1)} MB). Skip download, langsung proses.`,
+        message: `Video sudah ada (${(fs.statSync(rawVideoPath).size / 1024 / 1024).toFixed(1)} MB). Skip download, langsung proses.`,
         progress: 30,
         status: 'running'
       });
@@ -407,27 +338,25 @@ app.post('/api/generate', async (req, res) => {
       rawVideoPath = dlResult.filePath;
       videoMeta = dlResult.metadata;
 
-      // Update persisted job with video path
       const updatedMeta = { ...jobMeta, downloadedVideoPath: rawVideoPath, stage: 'downloaded' };
       activeJobs.set(jobId, updatedMeta);
       persistJob(jobId, updatedMeta);
     }
 
-    // --- Step 2: Extract frames ---
-    updateProgress({ step: 'frames_raw', message: 'Extracting source frames for Gemini 3.7 Flash...', progress: 38, status: 'running' });
+    updateProgress({ step: 'frames_raw', message: 'Extracting source frames for Gemini analysis...', progress: 38, status: 'running' });
     const { frames: rawFrames } = await extractFrames(rawVideoPath, rawFramesDir, updateProgress, {
-      sampleIntervalSec: 1,
-      maxSampleFrames: 48,
+      sampleIntervalSec: 2,
+      maxSampleFrames: 18,
     });
 
-    // --- Step 3: Gemini 3.7 Flash ---
-    updateProgress({ step: 'gemini_vision', message: 'Gemini 3.7 Flash analyzing faceless product frames and crop focus...', progress: 48, status: 'running' });
+    updateProgress({ step: 'gemini_vision', message: 'Gemini analyzing faceless product frames and crop focus...', progress: 48, status: 'running' });
     const highlight = await selectHighlightWithGeminiFlash({
       apiKey, frames: rawFrames, videoMetadata: videoMeta,
-      productTitle, productDescription, shopeeLink, onProgress: updateProgress,
+      productTitle, productDescription, shopeeLink,
+      allowFallbackClips: !requireCleanGeminiPlan,
+      onProgress: updateProgress,
     });
 
-    // --- Step 4: Render Silent 9:16 ---
     updateProgress({ step: 'render_silent', message: `Rendering ${highlight.clips.length} Gemini-selected 5-second full-product shots...`, progress: 62, status: 'running' });
     await renderSilentAntiDetectionVideo({
       inputVideo: rawVideoPath, startTime: highlight.startTime,
@@ -439,26 +368,23 @@ app.post('/api/generate', async (req, res) => {
       onProgress: updateProgress,
     });
 
-    // --- Step 5: Extract trimmed frames ---
     updateProgress({ step: 'frames_trimmed', message: 'Sampling frames from trimmed video for Gemini scripting...', progress: 72, status: 'running' });
     const { frames: trimmedFrames } = await extractFrames(silentOutputPath, trimmedFramesDir, updateProgress, {
-      sampleIntervalSec: 1,
-      maxSampleFrames: 48,
+      sampleIntervalSec: 2,
+      maxSampleFrames: 10,
     });
 
-    // --- Step 6: Gemini scripting ---
-    updateProgress({ step: 'gpt_scripting', message: 'Gemini 3.7 Flash generating Kotak Scene, Context, Naskah...', progress: 80, status: 'running' });
+    updateProgress({ step: 'gpt_scripting', message: 'Gemini generating Kotak Scene, Context, Naskah...', progress: 80, status: 'running' });
     const scriptData = await generateAdAdvisorScriptWithGemini({
       apiKey, trimmedFrames, videoMetadata: videoMeta, productTitle, productDescription,
       shopeeLink, productHook: highlight.productHook, segmentDuration: highlight.duration,
       onProgress: updateProgress,
     });
 
-    // Cleanup raw frames only (keep downloaded video for future voiceover merge)
     cleanupTempFiles([], [rawFramesDir, trimmedFramesDir]);
 
-    // Full Stage 1 result
     const stage1Result = {
+      ...extraJobMeta,
       jobId,
       stage: 'awaiting_voiceover',
       createdAt: jobMeta.createdAt,
@@ -490,14 +416,14 @@ app.post('/api/generate', async (req, res) => {
       progress: 100, status: 'awaiting_voiceover', result: stage1Result
     });
 
-    res.json(stage1Result);
+    return stage1Result;
   } catch (error) {
     console.error(`[Job ${jobId}] Stage 1 Pipeline Error:`, error);
 
-    // Persist error state (keep downloadedVideoPath so retry works)
-    const currentJob = activeJobs.get(jobId) || {};
+    const currentJob = activeJobs.get(jobId) || jobMeta;
     const errorJob = {
       ...currentJob,
+      ...extraJobMeta,
       stage: 'error',
       lastError: error.message,
       errorAt: new Date().toISOString(),
@@ -505,20 +431,272 @@ app.post('/api/generate', async (req, res) => {
     activeJobs.set(jobId, errorJob);
     persistJob(jobId, errorJob);
 
-    const isQuotaError = error.message.toLowerCase().includes('saldo') ||
-      error.message.toLowerCase().includes('insufficient') ||
-      error.message.toLowerCase().includes('balance') ||
-      error.message.toLowerCase().includes('quota') ||
-      error.message.toLowerCase().includes('credit');
-
+    const isQuotaError = isQuotaErrorMessage(error.message);
     updateProgress({
       step: 'error',
       message: error.message || 'An error occurred during video processing.',
       progress: 0, status: 'error', error: error.message, isQuotaError, canRetry: true
     });
 
-    res.status(500).json({ success: false, error: error.message, isQuotaError, canRetry: true, jobId });
+    error.jobId = jobId;
+    error.isQuotaError = isQuotaError;
+    throw error;
   }
+}
+
+// 5. Manual STAGE 1 Endpoint
+app.post('/api/generate', async (req, res) => {
+  const {
+    youtubeUrl,
+    shopeeLink,
+    productTitle,
+    productDescription,
+    apiKey,
+    options = {},
+    jobId: clientJobId,
+  } = req.body;
+
+  if (!youtubeUrl) {
+    return res.status(400).json({ error: 'YouTube Video URL is required.' });
+  }
+
+  const jobId = clientJobId || crypto.randomBytes(6).toString('hex');
+  try {
+    const stage1Result = await runStage1Pipeline({
+      jobId,
+      youtubeUrl,
+      shopeeLink,
+      productTitle,
+      productDescription,
+      apiKey,
+      options,
+    });
+    res.json(stage1Result);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      isQuotaError: error.isQuotaError || false,
+      canRetry: true,
+      jobId,
+    });
+  }
+});
+
+// ─── Auto Mode State & Endpoints ─────────────────────────────────────────────
+
+function publicAutoRunState(run) {
+  if (!run) return { status: 'idle' };
+  return {
+    runId: run.runId,
+    status: run.status,
+    maxJobs: run.maxJobs,
+    successfulJobs: run.successfulJobs,
+    failedJobs: run.failedJobs,
+    skippedProducts: run.skippedProducts,
+    currentJobId: run.currentJobId,
+    currentProductTitle: run.currentProductTitle,
+    message: run.message,
+    progress: run.progress,
+    startedAt: run.startedAt,
+    updatedAt: run.updatedAt,
+    finishedAt: run.finishedAt || null,
+    failures: run.failures.slice(-10),
+  };
+}
+
+function updateAutoRun(run, patch) {
+  Object.assign(run, patch, { updatedAt: new Date().toISOString() });
+  autoRuns.set(run.runId, run);
+  console.log(`[Auto ${run.runId}] [${run.progress || 0}%] ${run.message || run.status}`);
+}
+
+function getLatestAutoRun() {
+  const all = Array.from(autoRuns.values()).sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt));
+  return all[0] || null;
+}
+
+async function runAutoStage1Worker(run) {
+  try {
+    updateAutoRun(run, { status: 'running', message: 'Memulai pencarian produk viral Shopee...', progress: 5 });
+
+    // Thoroughly shuffle keywords so each auto run picks varied, fresh product categories
+    const candidateKeywords = [...DEFAULT_AUTO_KEYWORDS];
+    for (let i = candidateKeywords.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [candidateKeywords[i], candidateKeywords[j]] = [candidateKeywords[j], candidateKeywords[i]];
+    }
+
+    const seenShopeeUrls = new Set();
+
+    for (const keyword of candidateKeywords) {
+      if (run.status === 'stopping' || run.status === 'stopped') break;
+      if (run.successfulJobs >= run.maxJobs) break;
+
+      const currentTargetIndex = run.successfulJobs + 1;
+      updateAutoRun(run, {
+        message: `Mencari produk (${currentTargetIndex}/${run.maxJobs}): "${keyword}"...`,
+        progress: Math.min(95, Math.round((run.successfulJobs / run.maxJobs) * 100) || 5),
+      });
+
+      const product = await discoverSingleShopeeProduct(keyword, seenShopeeUrls);
+      if (!product) {
+        continue;
+      }
+
+      updateAutoRun(run, {
+        currentProductTitle: product.title,
+        message: `[${currentTargetIndex}/${run.maxJobs}] Menemukan: "${product.title.slice(0, 35)}...". Mencari video YouTube...`,
+        progress: Math.min(95, Math.round((run.successfulJobs / run.maxJobs) * 100) + 3),
+      });
+
+      const candidates = await discoverYouTubeCandidatesForProduct({
+        productTitle: product.title,
+        productDescription: product.description,
+        limit: 6,
+        onProgress: (p) => updateAutoRun(run, { message: `[${currentTargetIndex}/${run.maxJobs}] ${p.message}` }),
+      });
+
+      if (!candidates.length) {
+        run.skippedProducts++;
+        updateAutoRun(run, { message: `[${currentTargetIndex}/${run.maxJobs}] Skip "${product.title.slice(0, 25)}...": Tidak ada video YouTube cocok.` });
+        continue;
+      }
+
+      let jobSuccess = false;
+      for (const candidate of candidates) {
+        if (run.status === 'stopping' || run.status === 'stopped') break;
+        const autoJobId = `auto_${crypto.randomBytes(5).toString('hex')}`;
+        run.currentJobId = autoJobId;
+
+        try {
+          updateAutoRun(run, {
+            message: `[${currentTargetIndex}/${run.maxJobs}] Memproses video untuk "${product.title.slice(0, 30)}..."...`,
+            progress: Math.min(95, Math.round((run.successfulJobs / run.maxJobs) * 100) + 5),
+          });
+
+          await runStage1Pipeline({
+            jobId: autoJobId,
+            youtubeUrl: candidate.url,
+            shopeeLink: product.url,
+            productTitle: product.title,
+            productDescription: product.description,
+            apiKey: process.env.AIVENE_API_KEY,
+            options: run.options,
+            extraJobMeta: { autoRunId: run.runId, isAutoGenerated: true },
+            requireCleanGeminiPlan: true,
+            onProgress: (p) => {
+              const baseProgress = Math.round((run.successfulJobs / run.maxJobs) * 100);
+              const stepFraction = Math.round(((p.progress || 0) / 100) * (100 / run.maxJobs));
+              updateAutoRun(run, {
+                message: `[${currentTargetIndex}/${run.maxJobs}] ${p.message}`,
+                progress: Math.min(98, baseProgress + stepFraction),
+              });
+            },
+          });
+
+          run.successfulJobs++;
+          jobSuccess = true;
+          updateAutoRun(run, {
+            message: `✅ [${run.successfulJobs}/${run.maxJobs}] Selesai: "${product.title.slice(0, 35)}..."`,
+            progress: Math.round((run.successfulJobs / run.maxJobs) * 100),
+          });
+          break; // Success! Move to next product keyword immediately
+        } catch (err) {
+          console.warn(`[Auto] Candidate rejected for ${product.title}:`, err.message);
+          run.failures.push({ productTitle: product.title, error: err.message, time: new Date().toISOString() });
+          // Try next YouTube candidate for this product
+        }
+      }
+
+      if (!jobSuccess) {
+        run.failedJobs++;
+      }
+    }
+
+    const finalStatus = run.status === 'stopping' ? 'stopped' : 'completed';
+    updateAutoRun(run, {
+      status: finalStatus,
+      message: `Auto Mode selesai. Berhasil: ${run.successfulJobs}/${run.maxJobs}, Gagal: ${run.failedJobs}, Dilewati: ${run.skippedProducts}.`,
+      progress: 100,
+      finishedAt: new Date().toISOString(),
+      currentJobId: null,
+      currentProductTitle: null,
+    });
+  } catch (err) {
+    console.error('[Auto] Fatal worker error:', err);
+    updateAutoRun(run, {
+      status: 'error',
+      message: err.message || 'Auto Mode terhenti karena error.',
+      progress: 100,
+      finishedAt: new Date().toISOString(),
+    });
+  }
+}
+
+app.get('/api/auto/status', (req, res) => {
+  res.json({ run: publicAutoRunState(getLatestAutoRun()) });
+});
+
+app.post('/api/auto/start', (req, res) => {
+  const latest = getLatestAutoRun();
+  if (latest && latest.status === 'running') {
+    return res.json({ run: publicAutoRunState(latest) });
+  }
+
+  const { maxJobs = 10, options = {} } = req.body || {};
+  const runId = `autorun_${crypto.randomBytes(4).toString('hex')}`;
+  const run = {
+    runId,
+    status: 'starting',
+    maxJobs: Math.max(1, Math.min(50, Number(maxJobs) || 10)),
+    successfulJobs: 0,
+    failedJobs: 0,
+    skippedProducts: 0,
+    currentJobId: null,
+    currentProductTitle: null,
+    message: 'Memulai pipeline Auto Mode...',
+    progress: 0,
+    startedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    options,
+    failures: [],
+  };
+
+  autoRuns.set(runId, run);
+  runAutoStage1Worker(run);
+  res.json({ run: publicAutoRunState(run) });
+});
+
+app.post('/api/auto/stop', (req, res) => {
+  const { runId } = req.body || {};
+  const run = autoRuns.get(runId) || getLatestAutoRun();
+  if (run && run.status === 'running') {
+    updateAutoRun(run, { status: 'stopping', message: 'Menghentikan Auto Mode setelah job saat ini selesai...' });
+  }
+  res.json({ run: publicAutoRunState(run) });
+});
+
+app.get('/api/auto/progress/:runId', (req, res) => {
+  const { runId } = req.params;
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const sendProgress = () => {
+    const run = autoRuns.get(runId);
+    res.write(`data: ${JSON.stringify({ run: publicAutoRunState(run) })}\n\n`);
+    if (run && ['completed', 'stopped', 'error'].includes(run.status)) {
+      clearInterval(interval);
+      res.end();
+    }
+  };
+
+  const interval = setInterval(sendProgress, 800);
+  sendProgress();
+
+  req.on('close', () => clearInterval(interval));
 });
 
 // 6. STAGE 2: Upload Voiceover & Merge Subtitles
@@ -567,7 +745,6 @@ app.post('/api/upload-voiceover', upload.single('audio'), async (req, res) => {
 
     cleanupTempFiles([audioFile.path, srtPath]);
 
-    // Permanently delete downloaded raw YouTube video and session temp directory
     deleteJobTempDirectory(jobId, tempDir);
     console.log(`[Cleaner] Raw YouTube video and temp files for job ${jobId} permanently removed.`);
 
@@ -620,11 +797,47 @@ app.get('/api/video/:filename', (req, res) => {
   }
 });
 
-// 8. Download endpoint
+// 8. Download endpoint for videos
 app.get('/api/download/:filename', (req, res) => {
   const filePath = path.join(outputDir, req.params.filename);
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found.' });
   res.download(filePath, req.params.filename);
+});
+
+// 8b. Download script & marketing text as .txt file via HTTP
+app.get('/api/jobs/:jobId/script.txt', (req, res) => {
+  const { jobId } = req.params;
+  const job = activeJobs.get(jobId);
+  if (!job) return res.status(404).send('Job not found.');
+
+  const filename = `naskah_${(job.productTitle || jobId).replace(/[^\p{L}\p{N}]+/gu, '_').slice(0, 40)}_${jobId}.txt`;
+  
+  const content = [
+    `======================================================`,
+    `AFFILIATE VIDEO ASSETS & SCRIPT`,
+    `Job ID        : ${jobId}`,
+    `Judul Produk  : ${job.productTitle || '-'}`,
+    `Link Shopee   : ${job.shopeeLink || '-'}`,
+    `Hook Visual   : ${job.productHook || '-'}`,
+    `Dibuat Pada   : ${job.createdAt || new Date().toISOString()}`,
+    `======================================================\n`,
+    `--- 1. NASKAH VOICEOVER (AD ADVISOR) ---`,
+    job.voiceoverScript || '(Belum ada naskah)',
+    `\n------------------------------------------------------\n`,
+    `--- 2. PROMPT GOOGLE AI STUDIO (TTS Composer) ---`,
+    job.aiStudioPrompt || '(Belum ada prompt AI Studio)',
+    `\n------------------------------------------------------\n`,
+    `--- 3. CAPTION & HASHTAGS REELS / TIKTOK ---`,
+    job.caption || '(Belum ada caption)',
+    `\n------------------------------------------------------\n`,
+    `--- 4. KOTAK SCENE BREAKDOWN (5 DETIK) ---`,
+    ...(Array.isArray(job.scenes) ? job.scenes.map(s => `[Scene ${s.sceneNumber}] (${s.timeRange || s.startTime + ' - ' + s.endTime})\nVisual: ${s.visualDescription}\nNarasi: "${s.voiceover}"\nNotes : ${s.adAdvisorNotes || '-'}\n`) : ['-']),
+    `======================================================`
+  ].join('\n');
+
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(content);
 });
 
 // 9. Open output folder in native OS file explorer

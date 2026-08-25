@@ -8,6 +8,7 @@ import CaptionCard from './components/CaptionCard';
 import VoiceoverUploader from './components/VoiceoverUploader';
 import SettingsModal from './components/SettingsModal';
 import JobHistoryPanel from './components/JobHistoryPanel';
+import AutoModePanel from './components/AutoModePanel';
 import { Sparkles, Clapperboard } from 'lucide-react';
 
 export default function App() {
@@ -38,6 +39,7 @@ export default function App() {
   const [result, setResult] = useState(null);
   const [engineStatus, setEngineStatus] = useState(null);
   const [checkingEngine, setCheckingEngine] = useState(false);
+  const [historyRefreshSignal, setHistoryRefreshSignal] = useState(0);
 
   const lastJobIdRef = useRef(null);
   const lastFormDataRef = useRef(null);
@@ -227,7 +229,16 @@ export default function App() {
           {/* Left Column */}
           <div className="lg:col-span-6 space-y-6">
             {/* Job History Panel — above the form */}
-            <JobHistoryPanel onSelectJob={handleSelectJob} currentJobId={lastJobIdRef.current} />
+            <AutoModePanel
+              settings={settings}
+              onHistoryRefresh={() => setHistoryRefreshSignal((value) => value + 1)}
+            />
+
+            <JobHistoryPanel
+              onSelectJob={handleSelectJob}
+              currentJobId={lastJobIdRef.current}
+              refreshSignal={historyRefreshSignal}
+            />
 
             <InputCard
               formData={formData}

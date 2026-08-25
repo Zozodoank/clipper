@@ -181,6 +181,71 @@ function formatYtDlpError(code, stderr) {
 }
 
 /**
+ * Searches YouTube through yt-dlp without the official YouTube API.
+ * @param {string} query - Search query text
+ * @param {{ limit?: number, onProgress?: Function }} options
+ * @returns {Promise<Array<{ id: string, title: string, url: string, duration: number, channel: string, description: string }>>}
+ */
+export async function searchYouTubeVideos(query, { limit = 10, onProgress = () => {} } = {}) {
+  const reportProgress = (data) => {
+    if (typeof data === 'string') {
+      onProgress({ step: 'auto_youtube_search', message: data, progress: 5 });
+    } else {
+      onProgress(data);
+    }
+  };
+  const ytDlpPath = await getYtDlpPath(reportProgress);
+  const safeLimit = Math.max(1, Math.min(20, Number(limit) || 10));
+  const searchTarget = `ytsearch${safeLimit}:${query}`;
+
+  reportProgress({
+    step: 'auto_youtube_search',
+    message: `Searching YouTube candidates: ${query}`,
+    progress: 8,
+  });
+
+  const baseArgs = ['--flat-playlist', '--dump-json', '--skip-download', searchTarget];
+  let result = await runYtDlp(ytDlpPath, baseArgs);
+  if (result.code !== 0 && isYouTubeAuthError(result.stderr)) {
+    for (const cookieSource of getCookieSources()) {
+      reportProgress({
+        step: 'auto_youtube_search',
+        message: `YouTube meminta verifikasi. Mencoba search dengan ${cookieSource.label}...`,
+        progress: 9,
+      });
+      result = await runYtDlp(ytDlpPath, [...cookieSource.args, ...baseArgs]);
+      if (result.code === 0) break;
+    }
+  }
+
+  if (result.code !== 0) {
+    throw new Error(formatYtDlpError(result.code, result.stderr));
+  }
+
+  return result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    .map((item) => ({
+      id: item.id,
+      title: item.title || 'YouTube Video',
+      url: item.webpage_url || item.original_url || (item.id ? `https://www.youtube.com/watch?v=${item.id}` : ''),
+      duration: Number(item.duration) || 0,
+      channel: item.uploader || item.channel || '',
+      description: (item.description || '').slice(0, 500),
+    }))
+    .filter((item) => item.id && item.url && item.duration >= 20 && item.duration <= 900);
+}
+
+/**
  * Downloads a YouTube video at max 720p resolution using yt-dlp.
  * @param {string} url - YouTube URL
  * @param {string} outputDir - Directory to store the downloaded file
@@ -229,7 +294,7 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
         console.warn('[Downloader] Metadata requires cookies/auth; continuing to download fallback.');
       }
 
-      // 2. Download the video file capped at 720p with explicit ffmpeg-location
+      // 2. Download the video file capped at 720p with explicit ffmpeg-location and Windows-safe flags
       const dlArgs = [
         '--ffmpeg-location',
         ffmpegPath,
@@ -238,6 +303,11 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
         '--merge-output-format',
         'mp4',
         '--no-playlist',
+        '--no-part',             // Disables .part file creation to prevent Windows [WinError 32] file locking on rename
+        '--no-mtime',            // Avoids timestamp modification lock
+        '--windows-filenames',   // Ensures fully compliant Windows filenames
+        '--retries', '5',
+        '--fragment-retries', '5',
         '-o',
         outputTemplate,
         url,

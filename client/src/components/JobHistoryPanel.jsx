@@ -25,7 +25,7 @@ function StageBadge({ stage }) {
   );
 }
 
-export default function JobHistoryPanel({ onSelectJob, currentJobId }) {
+export default function JobHistoryPanel({ onSelectJob, currentJobId, refreshSignal = 0 }) {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
@@ -48,7 +48,7 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId }) {
 
   useEffect(() => {
     fetchJobs();
-  }, []);
+  }, [refreshSignal]);
 
   const handleOpenFolder = async (e, filename) => {
     e.stopPropagation();

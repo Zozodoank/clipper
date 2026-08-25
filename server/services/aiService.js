@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';
 
-const AIVENE_GEMINI_MODEL = 'gemini-3.7-flash';
+const AIVENE_GEMINI_MODEL = process.env.AIVENE_GEMINI_MODEL || 'gemini-3.7-flash';
 const DEFAULT_REFRAME = {
   focusX: 0.5,
   focusY: 0.62,
@@ -46,6 +46,7 @@ export async function selectHighlightWithGeminiFlash({
   productTitle,
   productDescription,
   shopeeLink,
+  allowFallbackClips = true,
   onProgress = () => {}
 }) {
   onProgress({
@@ -62,29 +63,31 @@ export async function selectHighlightWithGeminiFlash({
   const client = new OpenAI({
     apiKey: effectiveApiKey,
     baseURL: 'https://api.aivene.com/v1',
+    timeout: 120000,
   });
 
   const totalDuration = videoMetadata?.duration || 60;
   const effectiveTitle = productTitle || videoMetadata?.title || 'Product Showcase Video';
   const effectiveDesc = productDescription || videoMetadata?.description || '';
 
-  const systemPrompt = `You are an Expert Video Editor & Viral Short-Form Producer.
-Your task is to analyze the entire source-video timeline and create a professional Indonesian affiliate-video cut plan. The backend will cut and concatenate ONLY the exact clips you return.
+  const systemPrompt = `You are a Strict, World-Class Short-Form Video Editor & Viral Affiliate Content Producer.
+Your task is to analyze the source-video timeline frames and select ONLY pristine, 100% clean 5-second product demo clips suitable for high-converting Indonesian affiliate ads.
 
-Rules:
-1. Return 6 to 12 separate clips in chronological order. Every clip MUST be exactly 5 seconds long. Do not return a long continuous highlight.
-2. Each clip MUST be a usable affiliate shot: product full body/whole product visible from edge to edge, product in use, packaging, detail, or hands-only demonstration. The product must not be cropped by the source frame.
-3. Reject any candidate with a creator face, talking head, person as subject, burned-in source caption, username, watermark, price sticker, or large on-screen text over the product. Choose another clean moment instead.
-4. Reject SOURCE OWNER IDENTITY absolutely: channel logo, creator logo, intro/outro bumper, subscribe/like/end-screen graphic, profile/avatar, social handle, channel name, source title card, or any branding that identifies the owner of the source video. Product logos printed on the product or packaging are allowed. If unsure, mark sourceIdentityRisk as "high" and choose a different clip.
-5. Clips must not overlap and must use timestamps supported by the supplied frames. Output exact start/end in "MM:SS" within 00:00 to ${formatSeconds(totalDuration)}.
-6. The first clip must be the strongest clean full-product hook. Subsequent clips should vary detail, use, benefit, and closing product shot like a polished affiliate edit.
-7. For every clip, decide the best vertical 9:16 treatment:
-   - 'focusX' from 0.0 left to 1.0 right, centered on the product/action.
-   - 'focusY' from 0.0 top to 1.0 bottom.
-   - Use renderMode 'preserve_full_product' for most landscape sources. This places a large 720x720 product stage over a blurred 9:16 background, centered on the product/action.
-   - Use renderMode 'vertical_crop' only when the source is already a clean 9:16 product shot with safe empty margins.
-8. FACELESS is absolute: a visible creator face means the clip is invalid. Never use crop as a reason to accept a face shot.
-9. Output MUST be valid JSON only.`;
+CRITICAL REJECTION & QUALITY RULES:
+1. FIRST DECIDE PRODUCT MATCH: If this source video does not visually feature the Shopee product or category, set "isProductMatch": false, "isUsableSourceVideo": false, and return an empty clips array.
+2. ABSOLUTE ZERO-TOLERANCE ON SUBTITLES & TEXT OVERLAYS:
+   - REJECT ANY CLIP containing burned-in subtitles, automated closed captions, translated lyrics, spoken dialogue text, or narrative captions.
+   - REJECT ANY CLIP containing stickers, emojis, cartoon badges, discount stickers, promo banners, or pop-up graphics.
+   - REJECT ANY CLIP containing watermarks, TikTok/IG usernames (@username), source channel branding, or prices.
+3. ABSOLUTE ZERO-TOLERANCE ON CREATOR FACES / TALKING HEADS:
+   - FACELESS is mandatory: If a creator's face or head is visible in a candidate moment, REJECT IT. Only accept hands-only, product-only, or demonstration shots.
+4. REJECT SOURCE OWNER IDENTITY: Intro/outro bumpers, subscribe/like animations, channel end cards.
+5. IF NO CLEAN CLIPS EXIST: If the entire source video is covered in subtitles, stickers, or creator faces such that you cannot find at least 5 clean 5-second shots, set "isUsableSourceVideo": false, and write the clear rejection reason in "rejectionReason" (e.g. "Video ditolak: Mengandung subtitle / stiker / teks tambahan pada visual").
+6. RETURN 6 TO 12 CLEAN 5-SECOND CLIPS: Each clip MUST be exactly 5 seconds long (e.g., 00:05 to 00:10). Clips must not overlap.
+7. VISUAL REFRAME FOR 9:16:
+   - 'focusX' (0.0 left to 1.0 right) & 'focusY' (0.0 top to 1.0 bottom) centered on the product action.
+   - 'renderMode': 'preserve_full_product' (for landscape 16:9 videos, stages 720x720 clean product over blurred backdrop) or 'vertical_crop' (for clean vertical sources).
+8. OUTPUT FORMAT: Strictly valid JSON matching the requested schema.`;
 
   const userPrompt = `Product Title: "${effectiveTitle}"
 ${effectiveDesc ? `Product Description / Key Features: "${effectiveDesc}"` : ''}
@@ -95,15 +98,27 @@ Product Link: ${shopeeLink || 'https://shope.ee/link'}
 Sampled Visual Frames (${frames.length} frames across timeline):
 ${frames.map((f, i) => `Frame #${i + 1} at timestamp ${f.timeFormatted} (${f.timestamp}s)`).join('\n')}
 
-Analyze every supplied timestamp, then return the best non-overlapping 5-second clip plan.
+INSPECTION INSTRUCTION:
+Check each frame carefully for:
+- Burned-in subtitles / text overlays / captions
+- Stickers / emoji icons / badge overlays
+- Creator faces / talking heads
+- Watermarks / usernames
+
+If the video contains clean product-only shots, return the 5-second clips.
+If the entire video is dirty/subtitled/faced, reject it with isUsableSourceVideo: false.
+
 Return strict JSON in this format:
 {
+  "isProductMatch": true,
+  "isUsableSourceVideo": true,
+  "rejectionReason": "",
   "productHook": "Racun Shopee Viral Wajib Punya!",
   "clips": [
     {
-      "startTime": "00:15",
-      "endTime": "00:20",
-      "reason": "Produk utuh dan bersih sebagai hook.",
+      "startTime": "00:10",
+      "endTime": "00:15",
+      "reason": "Produk bersih tanpa subtitle, tanpa stiker, tanpa wajah.",
       "isCleanAffiliateShot": true,
       "sourceOwnerIdentityVisible": false,
       "sourceIdentityRisk": "none",
@@ -111,11 +126,11 @@ Return strict JSON in this format:
         "focusX": 0.5,
         "focusY": 0.55,
         "renderMode": "preserve_full_product",
-        "cropStrategy": "keep_full_product_no_source_owner_identity_no_face",
+        "cropStrategy": "keep_full_product_no_text_no_stickers_no_face",
         "avoidTextZones": [],
         "avoidFaceZones": ["top_left"],
         "faceSafety": true,
-        "notes": "Clean product-only shot."
+        "notes": "Clean product-only demonstration."
       }
     }
   ]
@@ -129,53 +144,100 @@ Return strict JSON in this format:
     })),
   ];
 
-  try {
-    const response = await client.chat.completions.create({
-      model: AIVENE_GEMINI_MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: messageContent },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.5,
-    });
-
-    const rawContent = response.choices?.[0]?.message?.content || '{}';
-    console.log(`[AIService ${AIVENE_GEMINI_MODEL}] Raw response:`, rawContent);
-
-    let parsed;
-    try {
-      parsed = JSON.parse(rawContent);
-    } catch (e) {
-      const cleaned = rawContent.replace(/```json/gi, '').replace(/```/g, '').trim();
-      parsed = JSON.parse(cleaned);
-    }
-
-    const clips = normalizeClipPlan(parsed.clips, totalDuration);
-    const duration = clips.reduce((total, clip) => total + (clip.endSeconds - clip.startSeconds), 0);
-    const startTime = clips[0].startTime;
-    const endTime = clips[clips.length - 1].endTime;
-
+  const startTimeMs = Date.now();
+  const heartbeat = setInterval(() => {
+    const elapsedSec = Math.round((Date.now() - startTimeMs) / 1000);
     onProgress({
       step: 'gemini_vision',
-      message: `${AIVENE_GEMINI_MODEL} selected ${clips.length} clean 5-second product shots (${duration}s total).`,
-      progress: 55
+      message: `Gemini (${AIVENE_GEMINI_MODEL}) menganalisa ${frames.length} frame visual... (${elapsedSec} detik)`,
+      progress: Math.min(58, 48 + Math.floor(elapsedSec / 4)),
     });
+  }, 2000);
 
-    return {
-      startTime,
-      endTime,
-      startSeconds: clips[0].startSeconds,
-      endSeconds: clips[clips.length - 1].endSeconds,
-      duration,
-      productHook: parsed.productHook || 'Racun Shopee Viral Wajib Punya!',
-      reframe: clips[0].reframe,
-      clips,
-    };
-  } catch (err) {
-    console.error(`[AIService ${AIVENE_GEMINI_MODEL}] Error:`, err);
-    throw new Error(formatApiError(err, AIVENE_GEMINI_MODEL));
+  const MAX_RETRIES = 3;
+  const RETRY_DELAYS_MS = [12000, 20000, 30000];
+
+  let lastError;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      if (attempt > 0) {
+        const waitSec = RETRY_DELAYS_MS[attempt - 1] / 1000;
+        for (let t = waitSec; t > 0; t--) {
+          onProgress({
+            step: 'gemini_vision',
+            message: `API Gemini overloaded. Retry ke-${attempt}/${MAX_RETRIES} dalam ${t} detik...`,
+            progress: 48,
+          });
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+
+      const response = await client.chat.completions.create({
+        model: AIVENE_GEMINI_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: messageContent },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.5,
+      });
+
+      clearInterval(heartbeat);
+
+      const rawContent = response.choices?.[0]?.message?.content || '{}';
+      console.log(`[AIService ${AIVENE_GEMINI_MODEL}] Raw response:`, rawContent);
+      let parsed;
+      try {
+        parsed = JSON.parse(rawContent);
+      } catch (e) {
+        const cleaned = rawContent.replace(/```json/gi, '').replace(/```/g, '').trim();
+        parsed = JSON.parse(cleaned);
+      }
+
+      if (parsed.isProductMatch === false || parsed.isUsableSourceVideo === false) {
+        throw new Error(parsed.rejectionReason || 'Video YouTube tidak cocok atau tidak bersih untuk produk ini.');
+      }
+
+      const clips = normalizeClipPlan(parsed.clips, totalDuration, { allowFallback: allowFallbackClips });
+      const duration = clips.reduce((total, clip) => total + (clip.endSeconds - clip.startSeconds), 0);
+      const startTime = clips[0].startTime;
+      const endTime = clips[clips.length - 1].endTime;
+
+      onProgress({
+        step: 'gemini_vision',
+        message: `${AIVENE_GEMINI_MODEL} selected ${clips.length} clean 5-second product shots (${duration}s total).`,
+        progress: 55
+      });
+
+      return {
+        startTime,
+        endTime,
+        startSeconds: clips[0].startSeconds,
+        endSeconds: clips[clips.length - 1].endSeconds,
+        duration,
+        productHook: parsed.productHook || 'Racun Shopee Viral Wajib Punya!',
+        reframe: clips[0].reframe,
+        clips,
+      };
+    } catch (err) {
+      lastError = err;
+      const status = err.status || err.statusCode;
+      const msg = (err.message || '').toLowerCase();
+      const isOverloaded = status === 503 || status === 529 || msg.includes('overload') || msg.includes('overloaded');
+
+      if (isOverloaded && attempt < MAX_RETRIES) {
+        console.warn(`[AIService] Gemini overloaded (attempt ${attempt + 1}). Will retry...`);
+        continue;
+      }
+
+      clearInterval(heartbeat);
+      console.error(`[AIService ${AIVENE_GEMINI_MODEL}] Error:`, err);
+      throw new Error(formatApiError(err, AIVENE_GEMINI_MODEL));
+    }
   }
+
+  clearInterval(heartbeat);
+  throw new Error(formatApiError(lastError, AIVENE_GEMINI_MODEL));
 }
 
 /**
@@ -212,6 +274,7 @@ export async function generateAdAdvisorScriptWithGemini({
   const client = new OpenAI({
     apiKey: effectiveApiKey,
     baseURL: 'https://api.aivene.com/v1',
+    timeout: 120000,
   });
 
   const effectiveTitle = (productTitle || '').trim() || videoMetadata?.title || 'Produk Viral Shopee';
@@ -320,68 +383,116 @@ Return strict JSON in this format:
     })),
   ];
 
-  try {
-    const response = await client.chat.completions.create({
-      model: AIVENE_GEMINI_MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: messageContent },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.7,
-    });
-
-    const rawContent = response.choices?.[0]?.message?.content || '{}';
-    console.log(`[AIService ${AIVENE_GEMINI_MODEL} Scripting] Raw response:`, rawContent);
-
-    let parsed;
-    try {
-      parsed = JSON.parse(rawContent);
-    } catch (e) {
-      const cleaned = rawContent.replace(/```json/gi, '').replace(/```/g, '').trim();
-      parsed = JSON.parse(cleaned);
-    }
-
-    let voiceoverScript = (parsed.voiceoverScript || '').trim();
-    if (!voiceoverScript) {
-      voiceoverScript = `[HOOK]\nStop scroll! ${effectiveTitle} yang satu ini bener-bener lagi viral dan wajib banget kamu punya!\n\n[DEMO & BENEFIT]\n${effectiveDesc ? effectiveDesc.slice(0, 100) : 'Kualitasnya kokoh, desainnya elegan, dan praktis banget buat dipakai sehari-hari tanpa ribet.'}\n\n[VALUE PROPOSITION]\nUdah banyak yang review bagus dan terbukti awet buat jangka panjang.\n\n[CALL TO ACTION]\nMumpung lagi ada promo dan diskon spesial, buruan cek produk di bawah sekarang sebelum kehabisan!`;
-    }
-
-    let caption = (parsed.caption || '').trim();
-    if (!caption) {
-      caption = `🔥 Racun Belanja Viral: ${effectiveTitle}!\n\n${effectiveDesc ? effectiveDesc + '\n\n' : ''}Buruan checkout sekarang mumpung lagi diskon spesial!\n\n🛒 Link Produk: ${shopeeLink || 'https://shope.ee/link-disini'}\n\n#racunbelanja #racuntiktok #reelsviral #affiliateindonesia #spillracun`;
-    } else if (shopeeLink && !caption.includes(shopeeLink)) {
-      caption += `\n\n🛒 Link Produk: ${shopeeLink}`;
-    }
-
-    let aiStudioPrompt = (parsed.aiStudioPrompt || '').trim();
-    if (!aiStudioPrompt) {
-      aiStudioPrompt = `Scene\nStudio rekaman energik dengan presenter Indonesia yang antusias dan percaya diri.\n\nSample Context\nIklan affiliate viral. Dimulai dengan hook yang mengejutkan, membangun ke demonstrasi manfaat produk, diakhiri CTA yang meyakinkan. Nada suara hangat, antusias, dan persuasif.\n\nSpeaker 1 - Orus\n[intrigue] Stop scroll dulu! [desire] ${effectiveTitle} yang satu ini beneran wajib kamu punya! [information] ${effectiveDesc ? effectiveDesc.slice(0, 120) + '.' : 'Produk ini hadir dengan kualitas premium dan desain yang praktis untuk kebutuhan sehari-hari.'} [excited] Udah ribuan orang pake dan reviewnya bagus semua! [inspiration] Kualitasnya terbukti awet dan terpercaya untuk jangka panjang. [confident] Buruan cek produk di bawah sekarang sebelum kehabisan!`;
-    }
-
+  const startTimeMs = Date.now();
+  const heartbeat = setInterval(() => {
+    const elapsedSec = Math.round((Date.now() - startTimeMs) / 1000);
     onProgress({
       step: 'gpt_scripting',
-      message: `${AIVENE_GEMINI_MODEL} generated Kotak Scene, Sample Context, and Naskah successfully!`,
-      progress: 88
+      message: `Gemini (${AIVENE_GEMINI_MODEL}) menyusun Kotak Scene & Naskah Ad Advisor... (${elapsedSec} detik)`,
+      progress: Math.min(88, 78 + Math.floor(elapsedSec / 4)),
     });
+  }, 2000);
 
-    return {
-      sampleContext: parsed.sampleContext || {
-        productName: effectiveTitle,
-        targetAudience: "Pencari produk viral & praktis",
-        coreProblem: "Mencari produk berkualitas dengan harga terjangkau",
-        keyFeatures: ["Praktis & Multifungsi", "Bahan Berkualitas", "Harga Terjangkau"],
-        buyingTrigger: "FOMO & Diskon Terbatas"
-      },
-      scenes: normalizeShortScenes(parsed.scenes, effectiveTitle, segmentDuration),
-      voiceoverScript,
-      aiStudioPrompt,
-      caption,
-    };
-  } catch (err) {
-    console.error(`[AIService ${AIVENE_GEMINI_MODEL} Scripting] Error:`, err);
-    throw new Error(formatApiError(err, AIVENE_GEMINI_MODEL));
+  const MAX_RETRIES = 3;
+  const RETRY_DELAYS_MS = [12000, 20000, 30000];
+
+  let parsed = {};
+  let lastError;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      if (attempt > 0) {
+        const waitSec = RETRY_DELAYS_MS[attempt - 1] / 1000;
+        for (let t = waitSec; t > 0; t--) {
+          onProgress({
+            step: 'gpt_scripting',
+            message: `API Gemini overloaded. Retry naskah ke-${attempt}/${MAX_RETRIES} dalam ${t} detik...`,
+            progress: 78,
+          });
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+
+      const response = await client.chat.completions.create({
+        model: AIVENE_GEMINI_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: messageContent },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.7,
+      });
+
+      clearInterval(heartbeat);
+
+      const rawContent = response.choices?.[0]?.message?.content || '{}';
+      console.log(`[AIService ${AIVENE_GEMINI_MODEL} Scripting] Raw response:`, rawContent);
+      try {
+        parsed = JSON.parse(rawContent);
+      } catch (e) {
+        const cleaned = rawContent.replace(/```json/gi, '').replace(/```/g, '').trim();
+        parsed = JSON.parse(cleaned);
+      }
+
+      break; // success — exit retry loop
+    } catch (err) {
+      lastError = err;
+      const status = err.status || err.statusCode;
+      const msg = (err.message || '').toLowerCase();
+      const isOverloaded = status === 503 || status === 529 || msg.includes('overload') || msg.includes('overloaded');
+
+      if (isOverloaded && attempt < MAX_RETRIES) {
+        console.warn(`[AIService Scripting] Gemini overloaded (attempt ${attempt + 1}). Will retry...`);
+        continue;
+      }
+
+      clearInterval(heartbeat);
+      console.error(`[AIService ${AIVENE_GEMINI_MODEL} Scripting] Error:`, err);
+      throw new Error(formatApiError(err, AIVENE_GEMINI_MODEL));
+    }
   }
+
+  if (lastError && !parsed.sampleContext) {
+    clearInterval(heartbeat);
+    throw new Error(formatApiError(lastError, AIVENE_GEMINI_MODEL));
+  }
+
+  let voiceoverScript = (parsed.voiceoverScript || '').trim();
+  if (!voiceoverScript) {
+    voiceoverScript = `[HOOK]\nStop scroll! ${effectiveTitle} yang satu ini bener-bener lagi viral dan wajib banget kamu punya!\n\n[DEMO & BENEFIT]\n${effectiveDesc ? effectiveDesc.slice(0, 100) : 'Kualitasnya kokoh, desainnya elegan, dan praktis banget buat dipakai sehari-hari tanpa ribet.'}\n\n[VALUE PROPOSITION]\nUdah banyak yang review bagus dan terbukti awet buat jangka panjang.\n\n[CALL TO ACTION]\nMumpung lagi ada promo dan diskon spesial, buruan cek produk di bawah sekarang sebelum kehabisan!`;
+  }
+
+  let caption = (parsed.caption || '').trim();
+  if (!caption) {
+    caption = `🔥 Racun Belanja Viral: ${effectiveTitle}!\n\n${effectiveDesc ? effectiveDesc + '\n\n' : ''}Buruan checkout sekarang mumpung lagi diskon spesial!\n\n🛒 Link Produk: ${shopeeLink || 'https://shope.ee/link-disini'}\n\n#racunbelanja #racuntiktok #reelsviral #affiliateindonesia #spillracun`;
+  } else if (shopeeLink && !caption.includes(shopeeLink)) {
+    caption += `\n\n🛒 Link Produk: ${shopeeLink}`;
+  }
+
+  let aiStudioPrompt = (parsed.aiStudioPrompt || '').trim();
+  if (!aiStudioPrompt) {
+    aiStudioPrompt = `Scene\nStudio rekaman energik dengan presenter Indonesia yang antusias dan percaya diri.\n\nSample Context\nIklan affiliate viral. Dimulai dengan hook yang mengejutkan, membangun ke demonstrasi manfaat produk, diakhiri CTA yang meyakinkan. Nada suara hangat, antusias, dan persuasif.\n\nSpeaker 1 - Orus\n[intrigue] Stop scroll dulu! [desire] ${effectiveTitle} yang satu ini beneran wajib kamu punya! [information] ${effectiveDesc ? effectiveDesc.slice(0, 120) + '.' : 'Produk ini hadir dengan kualitas premium dan desain yang praktis untuk kebutuhan sehari-hari.'} [excited] Udah ribuan orang pake dan reviewnya bagus semua! [inspiration] Kualitasnya terbukti awet dan terpercaya untuk jangka panjang. [confident] Buruan cek produk di bawah sekarang sebelum kehabisan!`;
+  }
+
+  onProgress({
+    step: 'gpt_scripting',
+    message: `${AIVENE_GEMINI_MODEL} generated Kotak Scene, Sample Context, and Naskah successfully!`,
+    progress: 88
+  });
+
+  return {
+    sampleContext: parsed.sampleContext || {
+      productName: effectiveTitle,
+      targetAudience: "Pencari produk viral & praktis",
+      coreProblem: "Mencari produk berkualitas dengan harga terjangkau",
+      keyFeatures: ["Praktis & Multifungsi", "Bahan Berkualitas", "Harga Terjangkau"],
+      buyingTrigger: "FOMO & Diskon Terbatas"
+    },
+    scenes: normalizeShortScenes(parsed.scenes, effectiveTitle, segmentDuration),
+    voiceoverScript,
+    aiStudioPrompt,
+    caption,
+  };
 }
 
 // Helpers
@@ -426,7 +537,7 @@ function normalizeReframe(reframe = {}) {
   };
 }
 
-function normalizeClipPlan(rawClips, totalDuration) {
+function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true } = {}) {
   const clipLength = 5;
   const sourceClips = Array.isArray(rawClips) ? rawClips : [];
   const normalized = [];
@@ -453,6 +564,9 @@ function normalizeClipPlan(rawClips, totalDuration) {
   }
 
   if (normalized.length) return normalized;
+  if (!allowFallback) {
+    throw new Error('Gemini tidak menemukan potongan faceless bersih yang cocok dengan produk.');
+  }
 
   // API fallback avoids intro/outro zones where source-owner logos and subscribe screens usually live.
   const maxStart = Math.max(0, Math.floor(totalDuration - clipLength));

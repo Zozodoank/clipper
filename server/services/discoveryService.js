@@ -284,25 +284,23 @@ async function searchDuckDuckGoShopee(keyword) {
 
   try {
     const response = await fetchWithTlsFallback(url, {
+      timeoutMs: 2500,
       headers: {
         'user-agent': USER_AGENT,
         'accept-language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
       },
     });
 
-    if (!response.ok) {
-      console.warn(`[Discovery] DuckDuckGo search failed (${response.status}). Falling back to Brave search.`);
+    if (!response || !response.ok) {
       return searchBraveShopee(keyword);
     }
 
     html = await response.text();
   } catch (error) {
-    console.warn(`[Discovery] DuckDuckGo search failed (${error.message}). Falling back to Brave search.`);
     return searchBraveShopee(keyword);
   }
 
-  if (html.includes('internetbaik.telkomsel.com')) {
-    console.warn('[Discovery] DuckDuckGo was intercepted. Falling back to Brave search.');
+  if (html.includes('internetbaik.telkomsel.com') || html.includes('blocked')) {
     return searchBraveShopee(keyword);
   }
 
@@ -326,112 +324,99 @@ async function searchDuckDuckGoShopee(keyword) {
 }
 
 async function searchBraveShopee(keyword) {
-  for (const searchQuery of buildShopeeSearchQueries(keyword)) {
+  for (const searchQuery of buildShopeeSearchQueries(keyword).slice(0, 1)) {
     const url = `https://search.brave.com/search?q=${encodeURIComponent(searchQuery)}`;
-    const response = await fetchWithTlsFallback(url, {
-      headers: {
-        'user-agent': USER_AGENT,
-        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'accept-language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
-      },
-    });
-
-    if (!response.ok) {
-      console.warn(`[Discovery] Brave search failed (${response.status}) for query "${searchQuery}".`);
-      continue;
-    }
-
-    const html = await response.text();
-    const $ = cheerio.load(html);
-    const results = [];
-
-    $('a').each((_, element) => {
-      const productUrl = normalizeSearchResultUrl($(element).attr('href'));
-      if (!isShopeeProductUrl(productUrl)) return;
-
-      results.push({
-        title: $(element).text().trim(),
-        snippet: $(element).closest('[data-type="web"]').text().trim(),
-        url: productUrl,
+    try {
+      const response = await fetchWithTlsFallback(url, {
+        timeoutMs: 2500,
+        headers: {
+          'user-agent': USER_AGENT,
+          'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'accept-language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+        },
       });
-    });
 
-    const deduped = dedupeByUrl(results);
-    if (deduped.length) return deduped;
+      if (!response || !response.ok) {
+        continue;
+      }
 
-    await delayWithJitter(400, 800);
-  }
+      const html = await response.text();
+      const $ = cheerio.load(html);
+      const results = [];
 
-  return searchBingShopee(keyword);
-}
-
-async function searchBingShopee(keyword) {
-  for (const searchQuery of buildShopeeSearchQueries(keyword)) {
-    const url = `https://www.bing.com/search?q=${encodeURIComponent(searchQuery)}`;
-    const response = await fetchWithTlsFallback(url, {
-      headers: {
-        'user-agent': USER_AGENT,
-        'accept-language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
-      },
-    });
-
-    if (!response.ok) {
-      console.warn(`[Discovery] Bing search failed (${response.status}) for query "${searchQuery}".`);
-      continue;
-    }
-
-    const html = await response.text();
-    const $ = cheerio.load(html);
-    const results = [];
-
-    $('li.b_algo').each((_, element) => {
-      const anchor = $(element).find('h2 a').first();
-      const productUrl = normalizeSearchResultUrl(anchor.attr('href'));
-      if (!isShopeeProductUrl(productUrl)) return;
-
-      results.push({
-        title: anchor.text().trim(),
-        snippet: $(element).find('.b_caption p').first().text().trim(),
-        url: productUrl,
-      });
-    });
-
-    if (!results.length) {
       $('a').each((_, element) => {
         const productUrl = normalizeSearchResultUrl($(element).attr('href'));
         if (!isShopeeProductUrl(productUrl)) return;
 
         results.push({
           title: $(element).text().trim(),
-          snippet: '',
+          snippet: $(element).closest('[data-type="web"]').text().trim(),
           url: productUrl,
         });
       });
+
+      const deduped = dedupeByUrl(results);
+      if (deduped.length) return deduped;
+    } catch {
+      continue;
     }
+  }
 
-    const deduped = dedupeByUrl(results);
-    if (deduped.length) return deduped;
+  return searchBingShopee(keyword);
+}
 
-    await delayWithJitter(400, 800);
+async function searchBingShopee(keyword) {
+  for (const searchQuery of buildShopeeSearchQueries(keyword).slice(0, 1)) {
+    const url = `https://www.bing.com/search?q=${encodeURIComponent(searchQuery)}`;
+    try {
+      const response = await fetchWithTlsFallback(url, {
+        timeoutMs: 2500,
+        headers: {
+          'user-agent': USER_AGENT,
+          'accept-language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+        },
+      });
+
+      if (!response || !response.ok) {
+        continue;
+      }
+
+      const html = await response.text();
+      const $ = cheerio.load(html);
+      const results = [];
+
+      $('li.b_algo').each((_, element) => {
+        const anchor = $(element).find('h2 a').first();
+        const productUrl = normalizeSearchResultUrl(anchor.attr('href'));
+        if (!isShopeeProductUrl(productUrl)) return;
+
+        results.push({
+          title: anchor.text().trim(),
+          snippet: $(element).find('.b_caption p').first().text().trim(),
+          url: productUrl,
+        });
+      });
+
+      const deduped = dedupeByUrl(results);
+      if (deduped.length) return deduped;
+    } catch {
+      continue;
+    }
   }
 
   return [];
 }
 
 async function fetchShopeePageMeta(url) {
-  // 5-second timeout per URL so a slow Shopee page doesn't block the whole pipeline
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
   try {
     const response = await fetchWithTlsFallback(url, {
-      signal: controller.signal,
+      timeoutMs: 3000,
       headers: {
         'user-agent': USER_AGENT,
         'accept-language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
       },
     });
-    clearTimeout(timeout);
-    if (!response.ok) return {};
+    if (!response || !response.ok) return {};
 
     const html = await response.text();
     const $ = cheerio.load(html);
@@ -440,18 +425,27 @@ async function fetchShopeePageMeta(url) {
       description: $('meta[property="og:description"]').attr('content') || $('meta[name="description"]').attr('content'),
     };
   } catch {
-    clearTimeout(timeout);
     return {};
   }
 }
 
 async function fetchWithTlsFallback(url, options = {}) {
+  const timeoutMs = Number(options.timeoutMs) || 3000;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
-    return await fetch(url, options);
+    const cleanOptions = { ...options };
+    delete cleanOptions.timeoutMs;
+    const response = await fetch(url, {
+      ...cleanOptions,
+      signal: cleanOptions.signal || controller.signal,
+    });
+    clearTimeout(timeout);
+    return response;
   } catch (error) {
-    if (error.code !== 'CERT_HAS_EXPIRED') throw error;
-    console.warn(`[Discovery] TLS certificate issue for ${url}. Retrying with local insecure TLS fallback.`);
-    return fetch(url, { ...options, agent: insecureTlsAgent });
+    clearTimeout(timeout);
+    throw error;
   }
 }
 

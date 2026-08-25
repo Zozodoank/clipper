@@ -178,9 +178,10 @@ node dev-runner.js
 
 ### 🛡️ Parameter Kunci `yt-dlp` yang Digunakan Backend
 
-Backend mengombinasikan 4 teknologi bypass otomatis:
+Backend mengombinasikan 5 teknologi bypass otomatis:
 - `--proxy socks5://127.0.0.1:40000` : Melewati jaringan Cloudflare WARP untuk masking IP.
 - `--cookies server/cookies.txt` : Autentikasi sesi pengguna Google asli.
+- `--extractor-args "youtube:player_client=web,mweb,ios,android"` : Multi-client fallback (jika satu protokol ditantang bot check, otomatis beralih ke protokol klien lainnya).
 - `--js-runtimes node` : Menggunakan engine Node.js lokal untuk mengeksekusi challenge script YouTube.
 - `--remote-components ejs:github` : Mengunduh solver enkripsi *n-challenge* terbaru langsung dari repository resmi GitHub secara otomatis.
 

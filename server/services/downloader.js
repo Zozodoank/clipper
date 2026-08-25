@@ -10,13 +10,26 @@ const serverDir = path.resolve(__dirname, '..');
 
 const IS_LINUX = process.platform === 'linux';
 
-// Android Native App Protocol flags (completely bypasses web CAPTCHA and Cloud Datacenter blocks)
-const ANDROID_EXTRACTOR_ARGS = [
-  '--extractor-args', 'youtube:player_client=android;player_skip=web,configs',
-  '--user-agent', 'com.google.android.youtube/19.29.37',
-  '--no-check-certificates',
-  '--geo-bypass'
-];
+// Cookies file path - used by yt-dlp to authenticate as a real YouTube session
+const COOKIES_PATH = path.join(serverDir, 'cookies.txt');
+const cookiesArgs = fs.existsSync(COOKIES_PATH) ? ['--cookies', COOKIES_PATH] : [];
+if (cookiesArgs.length) {
+  console.log('[Downloader] YouTube cookies file found, will use for yt-dlp authentication.');
+} else {
+  console.warn('[Downloader] WARNING: cookies.txt not found at', COOKIES_PATH);
+}
+
+// Android Native App Protocol flags + cookies for Codespace/datacenter bypass
+function getYtDlpArgs() {
+  return [
+    '--extractor-args', 'youtube:player_client=android;player_skip=web,configs',
+    '--user-agent', 'com.google.android.youtube/19.29.37',
+    '--no-check-certificates',
+    '--geo-bypass',
+    ...cookiesArgs
+  ];
+}
+
 
 /**
  * Merge separate video and audio files using FFmpeg.
@@ -250,7 +263,7 @@ export async function searchYouTubeVideos(query, { limit = 10, onProgress = () =
   });
 
   const baseArgs = [
-    ...ANDROID_EXTRACTOR_ARGS,
+    ...getYtDlpArgs(),
     '--flat-playlist',
     '--dump-json',
     '--skip-download',
@@ -318,7 +331,7 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
     (async () => {
       // Fetch metadata via native Android player client
       const infoArgs = [
-        ...ANDROID_EXTRACTOR_ARGS,
+        ...getYtDlpArgs(),
         '--dump-json',
         '--no-playlist',
         url
@@ -345,7 +358,7 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
       const dlArgs = [
         '--ffmpeg-location',
         ffmpegPath,
-        ...ANDROID_EXTRACTOR_ARGS,
+        ...getYtDlpArgs(),
         '-f',
         '18/22/best[height<=720]/bestvideo[height<=720]+bestaudio/best',
         '--merge-output-format',

@@ -120,11 +120,18 @@ function getCookieSources() {
   ].filter(Boolean);
 }
 
-function buildYtDlpArgs(args, cookieSource = null) {
+const PLAYER_CLIENT_STRATEGIES = [
+  'youtube:player_client=android,ios',
+  'youtube:player_client=ios,mweb',
+  'youtube:player_client=tv_embedded,android',
+  'youtube:player_client=default,ios',
+];
+
+function buildYtDlpArgs(args, cookieSource = null, clientStrategy = PLAYER_CLIENT_STRATEGIES[0]) {
   return [
     ...(cookieSource?.args || []),
     '--extractor-args',
-    'youtube:player_client=default,ios',
+    clientStrategy,
     ...args,
   ];
 }
@@ -136,31 +143,35 @@ async function runWithCookieFallback({
   onStdout,
   actionLabel,
 }) {
-  let result = await runYtDlp(ytDlpPath, buildYtDlpArgs(baseArgs), { onStdout });
-  if (result.code === 0 || !isYouTubeAuthError(result.stderr)) {
-    return { ...result, cookieSource: null };
-  }
-
   const cookieSources = getCookieSources();
-  for (const cookieSource of cookieSources) {
-    onProgress({
-      step: 'download',
-      message: `YouTube meminta verifikasi. Mencoba ${actionLabel} dengan ${cookieSource.label}...`,
-      progress: 18,
-    });
+  const allCookieAttempts = cookieSources.length > 0 ? [null, ...cookieSources] : [null];
 
-    result = await runYtDlp(
-      ytDlpPath,
-      buildYtDlpArgs(baseArgs, cookieSource),
-      { onStdout }
-    );
+  // Try strategies across available cookie sources and player clients
+  for (const clientStrategy of PLAYER_CLIENT_STRATEGIES) {
+    for (const cookieSource of allCookieAttempts) {
+      const fullArgs = buildYtDlpArgs(baseArgs, cookieSource, clientStrategy);
+      const result = await runYtDlp(ytDlpPath, fullArgs, { onStdout });
 
-    if (result.code === 0) {
-      return { ...result, cookieSource };
+      if (result.code === 0) {
+        return { ...result, cookieSource };
+      }
+
+      if (!isYouTubeAuthError(result.stderr)) {
+        // Non-auth error (e.g. video unavailable, format error), return immediately
+        return { ...result, cookieSource };
+      }
+
+      onProgress({
+        step: 'download',
+        message: `Bypass bot check: mencoba strategi ${clientStrategy.replace('youtube:player_client=', '')}${cookieSource ? ` + ${cookieSource.label}` : ''}...`,
+        progress: 18,
+      });
     }
   }
 
-  return { ...result, cookieSource: null };
+  // Final attempt with first strategy to capture the final stderr
+  const finalResult = await runYtDlp(ytDlpPath, buildYtDlpArgs(baseArgs, cookieSources[0] || null), { onStdout });
+  return { ...finalResult, cookieSource: cookieSources[0] || null };
 }
 
 function formatYtDlpError(code, stderr) {

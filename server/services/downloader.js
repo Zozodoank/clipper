@@ -22,6 +22,9 @@ function getYtDlpArgs() {
   const residentialProxy = (process.env.RESIDENTIAL_PROXY || process.env.PROXY_URL || '').trim();
   const proxyArgs = residentialProxy ? ['--proxy', residentialProxy] : [];
 
+  const cookiesPath = path.join(serverDir, 'cookies.txt');
+  const cookiesArgs = fs.existsSync(cookiesPath) ? ['--cookies', cookiesPath] : [];
+
   return [
     '--extractor-args', 'youtube:player_client=web_embedded,mweb,ios,android',
     '--referer', 'https://www.google.com/',
@@ -35,6 +38,7 @@ function getYtDlpArgs() {
     '--remote-components', 'ejs:github',
     '--no-check-certificates',
     '--geo-bypass',
+    ...cookiesArgs,
     ...proxyArgs
   ];
 }

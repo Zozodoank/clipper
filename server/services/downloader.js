@@ -23,7 +23,7 @@ function getYtDlpArgs() {
   const proxyArgs = residentialProxy ? ['--proxy', residentialProxy] : [];
 
   return [
-    '--extractor-args', 'youtube:player_client=ios,tv,android,web',
+    '--extractor-args', 'youtube:player_client=android,android_vr,mweb,web',
     '--sleep-requests', '5',
     '--sleep-interval', '5',
     '--max-sleep-interval', '10',

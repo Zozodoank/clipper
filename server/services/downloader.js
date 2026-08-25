@@ -307,15 +307,6 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
   }
 
   const finalExpectedPath = path.join(outputDir, `raw_${videoId}.mp4`);
-
-  // 1. Try YouTube Media Downloader API first (CDN-proxied, works from any cloud IP)
-  const mediaDlResult = await downloadWithYouTubeMediaDownloader(url, finalExpectedPath, onProgress);
-  if (mediaDlResult && fs.existsSync(mediaDlResult.filePath)) {
-    onProgress({ step: 'download', message: 'Video download completed successfully via RapidAPI.', progress: 35 });
-    return mediaDlResult;
-  }
-
-  // 2. Fallback to direct yt-dlp with Android client
   const ytDlpPath = await getYtDlpPath(onProgress);
   const ffmpegPath = getFFmpegPath();
   const outputTemplate = path.join(outputDir, `raw_${videoId}.%(ext)s`);

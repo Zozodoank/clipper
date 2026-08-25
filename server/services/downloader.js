@@ -12,15 +12,47 @@ const serverDir = path.resolve(__dirname, '..');
 const IS_LINUX = process.platform === 'linux';
 
 /**
+ * Check if a local proxy port (e.g. WARP SOCKS5 on 127.0.0.1:40000) is actively listening
+ */
+function isProxyListening(port = 40000, host = '127.0.0.1') {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.setTimeout(250);
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once('timeout', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.once('error', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.connect(port, host);
+  });
+}
+
+/**
  * Returns yt-dlp args configured with:
  * 1. Human-like rate pacing (--sleep-requests 5, --sleep-interval 5, --max-sleep-interval 10)
  * 2. Bandwidth throttling (--limit-rate 5M) to mimic natural video browsing
- * 3. Client manipulation (ios, tv, android, web)
- * 4. Optional Residential Proxy support (via RESIDENTIAL_PROXY or PROXY_URL)
+ * 3. Client manipulation (android, android_vr, mweb, web)
+ * 4. Automatic non-datacenter IP routing (via RESIDENTIAL_PROXY or local Cloudflare WARP proxy)
  */
-function getYtDlpArgs() {
+async function getYtDlpArgs() {
+  let proxyArgs = [];
   const residentialProxy = (process.env.RESIDENTIAL_PROXY || process.env.PROXY_URL || '').trim();
-  const proxyArgs = residentialProxy ? ['--proxy', residentialProxy] : [];
+
+  if (residentialProxy) {
+    proxyArgs = ['--proxy', residentialProxy];
+  } else if (IS_LINUX) {
+    const warpListening = await isProxyListening(40000, '127.0.0.1');
+    if (warpListening) {
+      proxyArgs = ['--proxy', 'socks5://127.0.0.1:40000'];
+    }
+  }
 
   return [
     '--extractor-args', 'youtube:player_client=android,android_vr,mweb,web',
@@ -401,7 +433,7 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
 
   onProgress({ step: 'download', message: 'Fetching video metadata and starting 720p download...', progress: 10 });
 
-  const baseArgs = getYtDlpArgs();
+  const baseArgs = await getYtDlpArgs();
   const infoArgs = [
     ...baseArgs,
     '--dump-json',

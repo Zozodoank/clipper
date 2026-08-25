@@ -81,7 +81,18 @@ function getCookiesFileArgs() {
     path.join(process.cwd(), 'cookies.txt'),
   ].filter(Boolean);
 
-  const cookiesPath = candidates.find((candidate) => fs.existsSync(candidate));
+  const cookiesPath = candidates.find((candidate) => {
+    if (!fs.existsSync(candidate)) return false;
+    try {
+      const stat = fs.statSync(candidate);
+      if (stat.size < 300) return false; // Ignore placeholder / empty template files
+      const content = fs.readFileSync(candidate, 'utf8');
+      return content.includes('youtube.com') || content.includes('.google.com');
+    } catch {
+      return false;
+    }
+  });
+
   return cookiesPath
     ? { label: `cookies file (${cookiesPath})`, args: ['--cookies', cookiesPath] }
     : null;
@@ -121,10 +132,10 @@ function getCookieSources() {
 }
 
 const PLAYER_CLIENT_STRATEGIES = [
+  'youtube:player_client=android',
   'youtube:player_client=android,ios',
   'youtube:player_client=ios,mweb',
-  'youtube:player_client=tv_embedded,android',
-  'youtube:player_client=default,ios',
+  'youtube:player_client=tv_embedded',
 ];
 
 function buildYtDlpArgs(args, cookieSource = null, clientStrategy = PLAYER_CLIENT_STRATEGIES[0]) {
@@ -132,6 +143,8 @@ function buildYtDlpArgs(args, cookieSource = null, clientStrategy = PLAYER_CLIEN
     ...(cookieSource?.args || []),
     '--extractor-args',
     clientStrategy,
+    '--no-check-certificates',
+    '--geo-bypass',
     ...args,
   ];
 }

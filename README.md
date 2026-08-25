@@ -113,34 +113,23 @@ PORT=5000
 # API Key untuk AI Scripting & Visual Analysis
 AIVENE_API_KEY=your_aivene_api_key_here
 
-# RapidAPI (Digunakan untuk Search Video tanpa limit IP Datacenter)
+# RapidAPI (Digunakan untuk Search Video & Download Stream Delegasi)
 RAPIDAPI_KEY=your_rapidapi_key_here
 RAPIDAPI_HOST=yt-api.p.rapidapi.com
-```
 
-> **Catatan:** Pencarian video menggunakan RapidAPI `yt-api.p.rapidapi.com` agar bebas dari blokir IP dan rate limit scraping YouTube.
+# (Opsional) Cobalt API Delegasi Ekstraksi (Bebas Blokir 100%)
+# COBALT_API_URL=https://your-cobalt-instance.up.railway.app
+# COBALT_API_KEY=your_optional_cobalt_token
+```
 
 ---
 
-### 2. Setup Cloudflare WARP (Bypass Blokir IP Datacenter)
+### 2. Arsitektur 3-Tier Multi-Delegasi Downloader
 
-IP bawaan Codespace (Azure Datacenter) langsung diblokir oleh Google. Kita menggunakan Cloudflare WARP untuk mendapatkan rute IP Anycast residensial:
-
-```bash
-# 1. Jalankan daemon WARP di background
-sudo nohup warp-svc > /dev/null 2>&1 &
-
-# 2. Registrasi koneksi (cukup sekali saat setup awal Codespace)
-warp-cli register
-
-# 3. Hubungkan ke Cloudflare WARP
-warp-cli connect
-
-# 4. Verifikasi status koneksi (Pastikan muncul "Status update: Connected")
-warp-cli status
-```
-
-> Backend secara otomatis mendeteksi Linux/Codespace dan mengarahkan lalu lintas `yt-dlp` ke proxy lokal `socks5://127.0.0.1:40000`.
+Backend secara otomatis menggunakan 3 lapisan pengunduhan video:
+1. **Tier 1 (Cobalt API):** Jika `COBALT_API_URL` diatur, backend akan mengirim request ke instance Cobalt untuk mengekstrak dan mengunduh video tanpa batasan scraping.
+2. **Tier 2 (RapidAPI Stream Extractor):** Jika `RAPIDAPI_KEY` aktif, backend mengekstrak link stream langsung dari cluster RapidAPI dan mengunduh file video mentah tanpa login.
+3. **Tier 3 (Direct Client Spoofing `ios, tv, android, web`):** Fallback yt-dlp native dengan jeda request `--sleep-requests 3` dan `--rm-cache-dir`.
 
 ---
 

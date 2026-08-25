@@ -126,6 +126,105 @@ async function searchWithRapidApi(query, limit = 10) {
   }
 }
 
+// ── Native Stream Downloader Helper ──────────────────────────────────────────
+
+async function downloadFileFromUrl(streamUrl, outputPath, { onProgress = () => {} } = {}) {
+  const res = await fetch(streamUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch video stream: HTTP ${res.status}`);
+  }
+
+  const totalBytes = Number(res.headers.get('content-length')) || 0;
+  let downloadedBytes = 0;
+
+  const fileStream = fs.createWriteStream(outputPath);
+  const reader = res.body.getReader();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    fileStream.write(Buffer.from(value));
+    downloadedBytes += value.length;
+    if (totalBytes > 0) {
+      const pct = Math.round((downloadedBytes / totalBytes) * 100);
+      const scaledProgress = 15 + Math.round(pct * 0.20);
+      onProgress({ step: 'download', message: `Downloading video stream: ${pct}%`, progress: scaledProgress });
+    }
+  }
+
+  fileStream.end();
+  await new Promise((resolve, reject) => {
+    fileStream.on('finish', resolve);
+    fileStream.on('error', reject);
+  });
+
+  return outputPath;
+}
+
+// ── Cobalt API Downloader ───────────────────────────────────────────────────
+
+async function downloadWithCobaltApi(url, outputPath, onProgress) {
+  const cobaltEndpoint = process.env.COBALT_API_URL?.trim();
+  const cobaltApiKey = process.env.COBALT_API_KEY?.trim();
+  if (!cobaltEndpoint) return null;
+
+  try {
+    onProgress({ step: 'download', message: 'Delegating extraction to Cobalt API...', progress: 12 });
+    console.log(`[Downloader] Requesting delegated extraction via Cobalt API: ${cobaltEndpoint}`);
+
+    const headers = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'User-Agent': 'Mozilla/5.0'
+    };
+    if (cobaltApiKey) {
+      headers['Authorization'] = `Bearer ${cobaltApiKey}`;
+    }
+
+    const res = await fetch(cobaltEndpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        url,
+        videoQuality: '720',
+        downloadMode: 'auto'
+      }),
+      signal: AbortSignal.timeout(15000)
+    });
+
+    if (!res.ok) {
+      console.warn(`[Downloader] Cobalt API returned HTTP ${res.status}`);
+      return null;
+    }
+
+    const data = await res.json();
+    const downloadUrl = data.url || (data.status === 'redirect' ? data.url : null);
+    if (!downloadUrl) {
+      console.warn(`[Downloader] Cobalt API did not return a stream URL`);
+      return null;
+    }
+
+    onProgress({ step: 'download', message: 'Downloading stream from Cobalt server...', progress: 20 });
+    await downloadFileFromUrl(downloadUrl, outputPath, { onProgress });
+
+    return {
+      filePath: outputPath,
+      metadata: {
+        title: data.filename || 'YouTube Video',
+        duration: 60
+      }
+    };
+  } catch (err) {
+    console.warn(`[Downloader] Cobalt API error: ${err.message}`);
+    return null;
+  }
+}
+
 // ── YouTube Downloader via RapidAPI (yt-api) ──
 
 async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress) {
@@ -172,40 +271,14 @@ async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress) {
                data.formats.find(f => f.audioQuality) || 
                data.formats[0];
 
+    if (!best || !best.url) {
+      return null;
+    }
+
     onProgress({ step: 'download', message: `Downloading video via RapidAPI stream (${best.qualityLabel || '360p'})...`, progress: 18 });
     console.log(`[Downloader] yt-api stream: ${best.qualityLabel}, hasAudio=${!!best.audioQuality}`);
 
-    // Use yt-dlp to download from the direct CDN URL (no YouTube auth needed).
-    // Route through WARP proxy so the Azure datacenter IP doesn't get blocked.
-    const ytDlpPath = await getYtDlpPath();
-    const cdnProxy = IS_LINUX ? 'socks5://127.0.0.1:40000' : null;
-    await new Promise((resolve, reject) => {
-      const ytdlpArgs = [
-        '--no-check-certificates',
-        '--no-playlist',
-        '--no-part',
-        '--no-mtime',
-      ];
-      if (cdnProxy) {
-        ytdlpArgs.push('--proxy', cdnProxy);
-      }
-      ytdlpArgs.push('-o', outputPath, best.url);
-
-      console.log(`[Downloader] yt-dlp CDN download via WARP: ${ytDlpPath}`);
-      const proc = spawn(ytDlpPath, ytdlpArgs);
-      
-      let stderr = '';
-      proc.stderr.on('data', (d) => { stderr += d.toString(); });
-      proc.on('close', (code) => {
-        if (code === 0 && fs.existsSync(outputPath)) {
-          resolve();
-        } else {
-          console.warn(`[Downloader] yt-dlp CDN download failed (code ${code}): ${stderr.slice(-200)}`);
-          reject(new Error(`yt-dlp CDN download failed`));
-        }
-      });
-      proc.on('error', reject);
-    });
+    await downloadFileFromUrl(best.url, outputPath, { onProgress });
 
     return { filePath: outputPath, metadata };
   } catch (e) {
@@ -292,6 +365,26 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
   }
 
   const finalExpectedPath = path.join(outputDir, `raw_${videoId}.mp4`);
+
+  // Tier 1: Try Cobalt API if configured
+  if (process.env.COBALT_API_URL) {
+    const cobaltRes = await downloadWithCobaltApi(url, finalExpectedPath, onProgress);
+    if (cobaltRes) {
+      onProgress({ step: 'download', message: 'Video downloaded via Cobalt API.', progress: 35 });
+      return cobaltRes;
+    }
+  }
+
+  // Tier 2: Try RapidAPI dedicated stream extraction
+  if (process.env.RAPIDAPI_KEY) {
+    const rapidRes = await downloadWithYouTubeMediaDownloader(url, finalExpectedPath, onProgress);
+    if (rapidRes) {
+      onProgress({ step: 'download', message: 'Video downloaded via RapidAPI stream.', progress: 35 });
+      return rapidRes;
+    }
+  }
+
+  // Tier 3: Direct resilient yt-dlp with client spoofing (ios, tv, android, web)
   const ytDlpPath = await getYtDlpPath(onProgress);
   const ffmpegPath = getFFmpegPath();
   const outputTemplate = path.join(outputDir, `raw_${videoId}.%(ext)s`);

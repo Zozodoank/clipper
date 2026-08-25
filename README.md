@@ -97,7 +97,7 @@ Menjalankan backend di cloud server (seperti GitHub Codespaces / Azure / AWS) me
                   │   Cloudflare WARP (socks5://127.0.0.1:40000)            │
                   │        │                                                │
                   │        ▼                                                │
-                  │   YouTube Sesi Asli (via server/cookies.txt) ─────────► │
+                  │   Client Spoofing (android_vr, android, ios, web) ────► │
                   └─────────────────────────────────────────────────────────┘
 ```
 
@@ -128,7 +128,7 @@ IP bawaan Codespace (Azure Datacenter) langsung diblokir oleh Google. Kita mengg
 
 ```bash
 # 1. Jalankan daemon WARP di background
-sudo warp-svc &
+sudo nohup warp-svc > /dev/null 2>&1 &
 
 # 2. Registrasi koneksi (cukup sekali saat setup awal Codespace)
 warp-cli register
@@ -144,31 +144,17 @@ warp-cli status
 
 ---
 
-### 3. Setup Autentikasi YouTube (`server/cookies.txt`)
+### 3. Menjalankan Aplikasi (100% Bebas Cookies)
 
-Untuk mencegah error `Sign in to confirm you're not a bot`, `yt-dlp` membutuhkan cookie dari akun Google/YouTube yang aktif:
-
-1. Buka browser Chrome / Edge di laptop Anda (pastikan sedang **login ke akun Google/YouTube**).
-2. Pasang ekstensi Chrome: **[Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)** atau **Cookie-Editor**.
-3. Buka tab [youtube.com](https://www.youtube.com/).
-4. Klik ekstensi, pilih **Export** (Format: **Netscape**). File akan berisi ~50-200 baris cookie (`LOGIN_INFO`, `__Secure-1PSID`, `SID`, dll.).
-5. Buat atau timpa file `server/cookies.txt` di Codespace dengan isi cookie tersebut:
-   ```bash
-   # Di Codespace:
-   nano server/cookies.txt
-   # (Paste seluruh cookie, lalu simpan dengan Ctrl+O, Enter, Ctrl+X)
-   ```
-
----
-
-### 4. Menjalankan Aplikasi
-
-Setelah WARP aktif dan `cookies.txt` terpasang, jalankan dev server:
+Tidak perlu mengekspor atau menggunakan cookie akun Google pribadi lagi. Arsitektur backend menggunakan teknik **Client Spoofing** (`android_vr`, `android`, `ios`, `web`) sehingga aman dan bebas blokir akun:
 
 ```bash
 # Sinkronkan kode terbaru
 git fetch origin main
 git reset --hard origin/main
+
+# Bersihkan sisa job gagal jika ada
+node server/clean-failed-jobs.js
 
 # Jalankan server
 node dev-runner.js
@@ -178,10 +164,10 @@ node dev-runner.js
 
 ### 🛡️ Parameter Kunci `yt-dlp` yang Digunakan Backend
 
-Backend mengombinasikan 5 teknologi bypass otomatis:
-- `--proxy socks5://127.0.0.1:40000` : Melewati jaringan Cloudflare WARP untuk masking IP.
-- `--cookies server/cookies.txt` : Autentikasi sesi pengguna Google asli.
-- `--extractor-args "youtube:player_client=web,mweb,ios,android"` : Multi-client fallback (jika satu protokol ditantang bot check, otomatis beralih ke protokol klien lainnya).
+Backend mengombinasikan 4 teknologi bypass otomatis tanpa cookies:
+- `--extractor-args "youtube:player_client=android_vr,android,ios,web"` : Memanipulasi protokol player native (VR & Android) yang tidak mewajibkan login akun Google.
 - `--js-runtimes node` : Menggunakan engine Node.js lokal untuk mengeksekusi challenge script YouTube.
 - `--remote-components ejs:github` : Mengunduh solver enkripsi *n-challenge* terbaru langsung dari repository resmi GitHub secara otomatis.
+- `--proxy socks5://127.0.0.1:40000` : Melewati jaringan Cloudflare WARP jika diperlukan masking IP.
+
 

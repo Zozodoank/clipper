@@ -11,15 +11,6 @@ const serverDir = path.resolve(__dirname, '..');
 
 const IS_LINUX = process.platform === 'linux';
 
-// Cookies file path - used by yt-dlp to authenticate as a real YouTube session
-const COOKIES_PATH = path.join(serverDir, 'cookies.txt');
-const cookiesArgs = fs.existsSync(COOKIES_PATH) ? ['--cookies', COOKIES_PATH] : [];
-if (cookiesArgs.length) {
-  console.log('[Downloader] YouTube cookies file found, will use for yt-dlp authentication.');
-} else {
-  console.warn('[Downloader] WARNING: cookies.txt not found at', COOKIES_PATH);
-}
-
 /**
  * Check if a local proxy port (e.g. WARP SOCKS5 on 127.0.0.1:40000) is actively listening
  */
@@ -44,27 +35,25 @@ function isProxyListening(port = 40000, host = '127.0.0.1') {
 }
 
 /**
- * Returns yt-dlp args that work seamlessly through proxy (if active) or direct connection.
+ * Returns yt-dlp args configured with client spoofing (android_vr, android, ios, web).
+ * No cookies are used, keeping backend 100% account-free and safe from bot-check locks.
  */
-async function getYtDlpArgs() {
+async function getYtDlpArgs({ useProxy = false } = {}) {
   let proxyArgs = [];
-  if (IS_LINUX) {
+  if (useProxy && IS_LINUX) {
     const warpListening = await isProxyListening(40000, '127.0.0.1');
     if (warpListening) {
       proxyArgs = ['--proxy', 'socks5://127.0.0.1:40000'];
-    } else {
-      console.warn('[Downloader] Cloudflare WARP proxy (127.0.0.1:40000) not active or connection refused. Falling back to direct connection.');
     }
   }
 
   return [
-    '--extractor-args', 'youtube:player_client=web,mweb,ios,android',
+    '--extractor-args', 'youtube:player_client=android_vr,android,ios,web',
     '--js-runtimes', 'node',
     '--remote-components', 'ejs:github',
     '--no-check-certificates',
     '--geo-bypass',
-    ...proxyArgs,
-    ...cookiesArgs
+    ...proxyArgs
   ];
 }
 

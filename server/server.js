@@ -92,10 +92,21 @@ function loadJobsFromDisk() {
     if (fs.existsSync(jobsFilePath)) {
       const raw = fs.readFileSync(jobsFilePath, 'utf-8');
       const obj = JSON.parse(raw);
+      let cleaned = false;
       for (const [jobId, jobData] of Object.entries(obj)) {
+        // Purge any failed / error jobs so the history only displays valid, successful jobs
+        if (jobData.stage === 'error' || jobData.lastError || (jobData.stage === 'running' && !jobData.silentLocalPath)) {
+          delete obj[jobId];
+          deleteJobFiles(jobId, outputDir, tempDir);
+          cleaned = true;
+          continue;
+        }
         activeJobs.set(jobId, jobData);
       }
-      console.log(`[Jobs] Loaded ${Object.keys(obj).length} persisted job(s) from disk.`);
+      if (cleaned) {
+        fs.writeFileSync(jobsFilePath, JSON.stringify(obj, null, 2), 'utf-8');
+      }
+      console.log(`[Jobs] Loaded ${activeJobs.size} valid persisted job(s) from disk.`);
     }
   } catch (err) {
     console.warn('[Jobs] Could not load jobs.json:', err.message);

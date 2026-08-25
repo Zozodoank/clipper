@@ -8,10 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const serverDir = path.resolve(__dirname, '..');
 
-const YOUTUBE_AUTH_ERROR_PATTERN = /(HTTP Error 429|Too Many Requests|Sign in to confirm|not a bot|cookies-from-browser|cookies for the authentication|confirm you)/i;
-// On Linux/Codespace servers, no desktop browser is installed — skip browser cookie sources entirely
 const IS_LINUX = process.platform === 'linux';
-const DEFAULT_BROWSER_COOKIE_SOURCES = IS_LINUX ? [] : ['chrome', 'edge', 'firefox', 'brave'];
 
 /**
  * Merge separate video and audio files using FFmpeg.
@@ -69,179 +66,13 @@ function runYtDlp(ytDlpPath, args, { onStdout = null } = {}) {
   });
 }
 
-function isYouTubeAuthError(stderr = '') {
-  return YOUTUBE_AUTH_ERROR_PATTERN.test(stderr);
-}
-
-function getCookiesFileArgs() {
-  const configuredPath = process.env.YTDLP_COOKIES_FILE?.trim();
-  const candidates = [
-    ...resolveCookieFileCandidates(configuredPath),
-    path.join(serverDir, 'cookies.txt'),
-    path.join(process.cwd(), 'cookies.txt'),
-  ].filter(Boolean);
-
-  const cookiesPath = candidates.find((candidate) => {
-    if (!fs.existsSync(candidate)) return false;
-    try {
-      const stat = fs.statSync(candidate);
-      if (stat.size < 300) return false; // Ignore placeholder / empty template files
-      const content = fs.readFileSync(candidate, 'utf8');
-      return content.includes('youtube.com') || content.includes('.google.com');
-    } catch {
-      return false;
-    }
-  });
-
-  return cookiesPath
-    ? { label: `cookies file (${cookiesPath})`, args: ['--cookies', cookiesPath] }
-    : null;
-}
-
-function resolveCookieFileCandidates(configuredPath) {
-  if (!configuredPath) return [];
-  if (path.isAbsolute(configuredPath)) return [configuredPath];
-  return [
-    path.resolve(serverDir, configuredPath),
-    path.resolve(process.cwd(), configuredPath),
-  ];
-}
-
-function getBrowserCookieSources() {
-  const configured = process.env.YTDLP_COOKIES_FROM_BROWSER?.trim();
-  if (configured && configured.toLowerCase() === 'none') return [];
-
-  const configuredBrowsers = configured
-    ? configured.split(',').map((item) => item.trim()).filter(Boolean)
-    : [];
-
-  const browsers = [...configuredBrowsers, ...DEFAULT_BROWSER_COOKIE_SOURCES]
-    .filter((browser, index, list) => list.indexOf(browser) === index);
-
-  return browsers.map((browser) => ({
-    label: `browser cookies (${browser})`,
-    args: ['--cookies-from-browser', browser],
-  }));
-}
-
-function getCookieSources() {
-  return [
-    getCookiesFileArgs(),
-    ...getBrowserCookieSources(),
-  ].filter(Boolean);
-}
-
-const PLAYER_CLIENT_STRATEGIES = [
-  'youtube:player_client=android',
-  'youtube:player_client=android,ios',
-  'youtube:player_client=ios,mweb',
-  'youtube:player_client=tv_embedded',
-];
-
-function buildYtDlpArgs(args, cookieSource = null, clientStrategy = PLAYER_CLIENT_STRATEGIES[0]) {
-  return [
-    ...(cookieSource?.args || []),
-    '--extractor-args',
-    clientStrategy,
-    '--no-check-certificates',
-    '--geo-bypass',
-    ...args,
-  ];
-}
-
-async function runWithCookieFallback({
-  ytDlpPath,
-  baseArgs,
-  onProgress,
-  onStdout,
-  actionLabel,
-}) {
-  const cookieSources = getCookieSources();
-  const allCookieAttempts = cookieSources.length > 0 ? [null, ...cookieSources] : [null];
-
-  // Try strategies across available cookie sources and player clients
-  for (const clientStrategy of PLAYER_CLIENT_STRATEGIES) {
-    for (const cookieSource of allCookieAttempts) {
-      const fullArgs = buildYtDlpArgs(baseArgs, cookieSource, clientStrategy);
-      const result = await runYtDlp(ytDlpPath, fullArgs, { onStdout });
-
-      if (result.code === 0) {
-        return { ...result, cookieSource };
-      }
-
-      if (!isYouTubeAuthError(result.stderr)) {
-        // Non-auth error (e.g. video unavailable, format error), return immediately
-        return { ...result, cookieSource };
-      }
-
-      onProgress({
-        step: 'download',
-        message: `Bypass bot check: mencoba strategi ${clientStrategy.replace('youtube:player_client=', '')}${cookieSource ? ` + ${cookieSource.label}` : ''}...`,
-        progress: 18,
-      });
-    }
-  }
-
-  // Final attempt with first strategy to capture the final stderr
-  const finalResult = await runYtDlp(ytDlpPath, buildYtDlpArgs(baseArgs, cookieSources[0] || null), { onStdout });
-  return { ...finalResult, cookieSource: cookieSources[0] || null };
-}
-
-function formatYtDlpError(code, stderr) {
-  if (isYouTubeAuthError(stderr)) {
-    return [
-      `yt-dlp failed with code ${code}: YouTube meminta verifikasi anti-bot / login.`,
-      'Solusi cepat:',
-      '1. Login YouTube di Chrome atau Edge pada komputer ini.',
-      '2. Tutup browser tersebut agar cookies bisa dibaca.',
-      '3. Jalankan ulang generate.',
-      '',
-      'Opsional: set YTDLP_COOKIES_FROM_BROWSER=chrome atau edge di server/.env.',
-      'Alternatif: export cookies YouTube ke server/cookies.txt.',
-      '',
-      stderr.slice(-1200),
-    ].join('\n');
-  }
-
-  return `yt-dlp failed with code ${code}: ${stderr}`;
-}
-
-/**
- * Searches YouTube through yt-dlp without the official YouTube API.
- * @param {string} query - Search query text
- * @param {{ limit?: number, onProgress?: Function }} options
- * @returns {Promise<Array<{ id: string, title: string, url: string, duration: number, channel: string, description: string }>>}
- */
-export async function searchYouTubeVideos(query, { limit = 10, onProgress = () => {} } = {}) {
-  const reportProgress = (data) => {
-    if (typeof data === 'string') {
-      onProgress({ step: 'auto_youtube_search', message: data, progress: 5 });
-    } else {
-      onProgress(data);
-    }
-  };
-  const ytDlpPath = await getYtDlpPath(reportProgress);
-  const safeLimit = Math.max(1, Math.min(20, Number(limit) || 10));
-  const searchTarget = `ytsearch${safeLimit}:${query}`;
-
-  reportProgress({
-    step: 'auto_youtube_search',
-    message: `Searching YouTube candidates: ${query}`,
-    progress: 8,
-  });
-
-  const baseArgs = [
-    '--extractor-args', 'youtube:player_client=android',
-    '--flat-playlist',
-    '--dump-json',
-    '--skip-download',
-    searchTarget
-  ];
 export function extractVideoId(url) {
   if (!url) return null;
   const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
   return match ? match[1] : null;
 }
+
+// ── RapidAPI YT-API Integration ─────────────────────────────────────────────
 
 async function searchWithRapidApi(query, limit = 10) {
   const apiKey = process.env.RAPIDAPI_KEY?.trim();
@@ -249,6 +80,7 @@ async function searchWithRapidApi(query, limit = 10) {
   if (!apiKey) return null;
 
   try {
+    console.log(`[Downloader] Searching YouTube via RapidAPI: "${query}"`);
     const res = await fetch(`https://${host}/search?query=${encodeURIComponent(query)}`, {
       headers: {
         'x-rapidapi-key': apiKey,
@@ -256,7 +88,10 @@ async function searchWithRapidApi(query, limit = 10) {
       },
       signal: AbortSignal.timeout(10000)
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`[Downloader] RapidAPI search returned HTTP ${res.status}`);
+      return null;
+    }
     const data = await res.json();
     const items = data.data || data.results || [];
     return items
@@ -317,10 +152,13 @@ async function downloadWithRapidApi(url, outputFilePath, onProgress) {
       },
       signal: AbortSignal.timeout(15000)
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`[Downloader] RapidAPI /dl returned HTTP ${res.status}`);
+      return null;
+    }
     const data = await res.json();
     
-    // Find suitable format (720p or 360p or progressive format)
+    // Find suitable format (720p or 360p or progressive MP4 format)
     const formats = data.formats || data.adaptiveFormats || [];
     const directFormat = formats.find(f => f.qualityLabel?.includes('720') && f.url && f.mimeType?.includes('video/mp4') && f.audioQuality)
       || formats.find(f => f.url && f.mimeType?.includes('video/mp4') && f.audioQuality)
@@ -328,7 +166,10 @@ async function downloadWithRapidApi(url, outputFilePath, onProgress) {
       || formats[0];
 
     const streamUrl = directFormat?.url || data.link || data.downloadUrl;
-    if (!streamUrl) return null;
+    if (!streamUrl) {
+      console.warn('[Downloader] No stream URL found in RapidAPI response');
+      return null;
+    }
 
     onProgress({ step: 'download', message: 'Downloading video via RapidAPI direct stream...', progress: 20 });
     await downloadStreamFromDirectUrl(streamUrl, outputFilePath, onProgress);
@@ -348,6 +189,8 @@ async function downloadWithRapidApi(url, outputFilePath, onProgress) {
   }
 }
 
+// ── Search & Download Functions ─────────────────────────────────────────────
+
 /**
  * Searches YouTube through RapidAPI or yt-dlp.
  * @param {string} query - Search query text
@@ -363,7 +206,7 @@ export async function searchYouTubeVideos(query, { limit = 10, onProgress = () =
     }
   };
 
-  // 1. Try RapidAPI search first if key exists
+  // 1. Prioritize RapidAPI search if key is provided
   const rapidResults = await searchWithRapidApi(query, limit);
   if (rapidResults && rapidResults.length > 0) {
     return rapidResults;
@@ -382,32 +225,17 @@ export async function searchYouTubeVideos(query, { limit = 10, onProgress = () =
 
   const baseArgs = [
     '--extractor-args', 'youtube:player_client=android',
+    '--no-check-certificates',
+    '--geo-bypass',
     '--flat-playlist',
     '--dump-json',
     '--skip-download',
     searchTarget
   ];
-  let result = await runYtDlp(ytDlpPath, baseArgs);
-  if (result.code !== 0 && isYouTubeAuthError(result.stderr)) {
-    for (const clientStrategy of PLAYER_CLIENT_STRATEGIES) {
-      for (const cookieSource of (getCookieSources().length > 0 ? getCookieSources() : [null])) {
-        const attemptArgs = [
-          ...(cookieSource?.args || []),
-          '--extractor-args', clientStrategy,
-          '--flat-playlist',
-          '--dump-json',
-          '--skip-download',
-          searchTarget
-        ];
-        result = await runYtDlp(ytDlpPath, attemptArgs);
-        if (result.code === 0) break;
-      }
-      if (result.code === 0) break;
-    }
-  }
+  const result = await runYtDlp(ytDlpPath, baseArgs);
 
   if (result.code !== 0) {
-    throw new Error(formatYtDlpError(result.code, result.stderr));
+    throw new Error(`yt-dlp search failed with code ${result.code}: ${result.stderr.slice(-600)}`);
   }
 
   return result.stdout
@@ -455,7 +283,7 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
     return rapidResult;
   }
 
-  // 2. Fallback to yt-dlp pipeline
+  // 2. Fallback to direct yt-dlp pipeline
   const ytDlpPath = await getYtDlpPath(onProgress);
   const ffmpegPath = getFFmpegPath();
   const outputTemplate = path.join(outputDir, `raw_${videoId}.%(ext)s`);
@@ -464,14 +292,16 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
 
   return new Promise((resolve, reject) => {
     (async () => {
-      // 1. First fetch JSON metadata
-      const infoArgs = ['--dump-json', '--no-playlist', url];
-      const infoResult = await runWithCookieFallback({
-        ytDlpPath,
-        baseArgs: infoArgs,
-        onProgress,
-        actionLabel: 'metadata',
-      });
+      // Fetch JSON metadata
+      const infoArgs = [
+        '--extractor-args', 'youtube:player_client=android',
+        '--no-check-certificates',
+        '--geo-bypass',
+        '--dump-json',
+        '--no-playlist',
+        url
+      ];
+      const infoResult = await runYtDlp(ytDlpPath, infoArgs);
 
       let metadata = { title: 'YouTube Video', duration: 60 };
       if (infoResult.code === 0 && infoResult.stdout) {
@@ -487,22 +317,22 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
         } catch (e) {
           console.warn('[Downloader] Warning: Could not parse video metadata JSON');
         }
-      } else if (isYouTubeAuthError(infoResult.stderr)) {
-        console.warn('[Downloader] Metadata requires cookies/auth; continuing to download fallback.');
       }
 
-      // 2. Download the video file capped at 720p with explicit ffmpeg-location and Windows-safe flags
+      // Download the video file capped at 720p
       const dlArgs = [
         '--ffmpeg-location',
         ffmpegPath,
+        '--extractor-args', 'youtube:player_client=android',
+        '--no-check-certificates',
+        '--geo-bypass',
         '-f',
         'best[height<=720]/bestvideo[height<=720]+bestaudio/18/22/best',
         '--merge-output-format',
         'mp4',
         '--no-playlist',
-        '--no-part',             // Disables .part file creation to prevent Windows [WinError 32] file locking on rename
-        '--no-mtime',            // Avoids timestamp modification lock
-        // --windows-filenames is only needed on Windows; skip on Linux/Codespace
+        '--no-part',
+        '--no-mtime',
         ...(IS_LINUX ? [] : ['--windows-filenames']),
         '--retries', '5',
         '--fragment-retries', '5',
@@ -514,77 +344,66 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
       console.log(`[Downloader] Spawning yt-dlp: ${ytDlpPath} ${dlArgs.join(' ')}`);
       onProgress({ step: 'download', message: `Downloading "${metadata.title}" (720p)...`, progress: 20 });
 
-      const downloadResult = await runWithCookieFallback({
-        ytDlpPath,
-        baseArgs: dlArgs,
-        onProgress,
-        actionLabel: 'download',
+      const downloadResult = await runYtDlp(ytDlpPath, dlArgs, {
         onStdout: (text) => {
           const match = text.match(/(\d+(\.\d+)?)%/);
           if (match) {
             const percent = parseFloat(match[1]);
-            const scaledProgress = 20 + Math.round(percent * 0.15); // scales 20% to 35%
+            const scaledProgress = 20 + Math.round(percent * 0.15);
             onProgress({ step: 'download', message: `Downloading video: ${Math.round(percent)}%`, progress: scaledProgress });
           }
         },
       });
 
       if (downloadResult.code === 0) {
-        if (downloadResult.cookieSource) {
-          console.log(`[Downloader] yt-dlp succeeded with ${downloadResult.cookieSource.label}.`);
-        }
+        try {
+          let downloadedFile = finalExpectedPath;
 
-          try {
-            // Verify file exists
-            let downloadedFile = finalExpectedPath;
+          if (!fs.existsSync(downloadedFile)) {
+            const videoFiles = fs.readdirSync(outputDir).filter(f =>
+              f.startsWith(`raw_${videoId}`) &&
+              !f.endsWith('.m4a') &&
+              !f.endsWith('.mp3') &&
+              !f.endsWith('.aac') &&
+              !f.endsWith('.opus') &&
+              !f.endsWith('.part') &&
+              !f.endsWith('.ytdl') &&
+              (f.endsWith('.mp4') || f.endsWith('.webm') || f.endsWith('.mkv') || f.endsWith('.mov'))
+            );
 
-            if (!fs.existsSync(downloadedFile)) {
-              // Find video files (exclude audio files like .m4a, .mp3, .aac)
-              const videoFiles = fs.readdirSync(outputDir).filter(f =>
-                f.startsWith(`raw_${videoId}`) &&
-                !f.endsWith('.m4a') &&
-                !f.endsWith('.mp3') &&
-                !f.endsWith('.aac') &&
-                !f.endsWith('.opus') &&
-                !f.endsWith('.part') &&
-                !f.endsWith('.ytdl') &&
-                (f.endsWith('.mp4') || f.endsWith('.webm') || f.endsWith('.mkv') || f.endsWith('.mov'))
-              );
+            const audioFiles = fs.readdirSync(outputDir).filter(f =>
+              f.startsWith(`raw_${videoId}`) &&
+              (f.endsWith('.m4a') || f.endsWith('.mp3') || f.endsWith('.aac') || f.endsWith('.opus'))
+            );
 
-              const audioFiles = fs.readdirSync(outputDir).filter(f =>
-                f.startsWith(`raw_${videoId}`) &&
-                (f.endsWith('.m4a') || f.endsWith('.mp3') || f.endsWith('.aac') || f.endsWith('.opus'))
-              );
-
-              if (videoFiles.length > 0) {
-                const primaryVideo = path.join(outputDir, videoFiles[0]);
-                if (audioFiles.length > 0) {
-                  const primaryAudio = path.join(outputDir, audioFiles[0]);
-                  onProgress({ step: 'download', message: 'Merging video & audio streams with FFmpeg...', progress: 32 });
-                  try {
-                    await mergeStreamsWithFfmpeg(primaryVideo, primaryAudio, finalExpectedPath);
-                    downloadedFile = finalExpectedPath;
-                  } catch (mErr) {
-                    console.warn('[Downloader] Stream merge fallback, using video stream directly:', mErr.message);
-                    downloadedFile = primaryVideo;
-                  }
-                } else {
+            if (videoFiles.length > 0) {
+              const primaryVideo = path.join(outputDir, videoFiles[0]);
+              if (audioFiles.length > 0) {
+                const primaryAudio = path.join(outputDir, audioFiles[0]);
+                onProgress({ step: 'download', message: 'Merging video & audio streams with FFmpeg...', progress: 32 });
+                try {
+                  await mergeStreamsWithFfmpeg(primaryVideo, primaryAudio, finalExpectedPath);
+                  downloadedFile = finalExpectedPath;
+                } catch (mErr) {
                   downloadedFile = primaryVideo;
                 }
               } else {
-                return reject(new Error(`Video file not found in ${outputDir} after download.`));
+                downloadedFile = primaryVideo;
               }
+            } else {
+              return reject(new Error(`Video file not found in ${outputDir} after download.`));
             }
-
-            onProgress({ step: 'download', message: 'Video download completed successfully.', progress: 35 });
-            resolve({ filePath: downloadedFile, metadata });
-          } catch (resErr) {
-            reject(resErr);
           }
-          return;
+
+          onProgress({ step: 'download', message: 'Video download completed successfully.', progress: 35 });
+          resolve({ filePath: downloadedFile, metadata });
+        } catch (resErr) {
+          reject(resErr);
+        }
+        return;
       }
 
-      reject(new Error(formatYtDlpError(downloadResult.code, downloadResult.stderr)));
+      reject(new Error(`Download failed with code ${downloadResult.code}: ${downloadResult.stderr.slice(-600)}`));
     })().catch(reject);
   });
 }

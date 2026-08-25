@@ -217,16 +217,28 @@ export async function searchYouTubeVideos(query, { limit = 10, onProgress = () =
     progress: 8,
   });
 
-  const baseArgs = ['--flat-playlist', '--dump-json', '--skip-download', searchTarget];
+  const baseArgs = [
+    '--extractor-args', 'youtube:player_client=android',
+    '--flat-playlist',
+    '--dump-json',
+    '--skip-download',
+    searchTarget
+  ];
   let result = await runYtDlp(ytDlpPath, baseArgs);
   if (result.code !== 0 && isYouTubeAuthError(result.stderr)) {
-    for (const cookieSource of getCookieSources()) {
-      reportProgress({
-        step: 'auto_youtube_search',
-        message: `YouTube meminta verifikasi. Mencoba search dengan ${cookieSource.label}...`,
-        progress: 9,
-      });
-      result = await runYtDlp(ytDlpPath, [...cookieSource.args, ...baseArgs]);
+    for (const clientStrategy of PLAYER_CLIENT_STRATEGIES) {
+      for (const cookieSource of (getCookieSources().length > 0 ? getCookieSources() : [null])) {
+        const attemptArgs = [
+          ...(cookieSource?.args || []),
+          '--extractor-args', clientStrategy,
+          '--flat-playlist',
+          '--dump-json',
+          '--skip-download',
+          searchTarget
+        ];
+        result = await runYtDlp(ytDlpPath, attemptArgs);
+        if (result.code === 0) break;
+      }
       if (result.code === 0) break;
     }
   }
@@ -312,7 +324,7 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
         '--ffmpeg-location',
         ffmpegPath,
         '-f',
-        'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best',
+        'best[height<=720]/bestvideo[height<=720]+bestaudio/18/22/best',
         '--merge-output-format',
         'mp4',
         '--no-playlist',

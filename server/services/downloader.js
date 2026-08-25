@@ -184,8 +184,9 @@ async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress) {
 
     // Stream the download using curl. 
     // Add --fail so curl exits with error if it downloads an HTML error page.
-    // We intentionally DO NOT use the proxy here because yt-api stream URLs are not IP-bound
-    // and using the proxy actually causes HTTP 403 from Google's redirector.
+    // Extract the original RapidAPI Server IP to bypass Google IP binding
+    const ipMatch = best.url.match(/&ip=([^&]+)/);
+    const originIp = ipMatch ? ipMatch[1] : '';
     
     await new Promise((resolve, reject) => {
       const curlArgs = [
@@ -194,9 +195,11 @@ async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress) {
         '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         '-H', 'Referer: https://www.youtube.com/',
         '-H', 'Origin: https://www.youtube.com',
-        '-o', outputPath
       ];
-      curlArgs.push(best.url);
+      if (originIp) {
+        curlArgs.push('-H', `X-Forwarded-For: ${originIp}`);
+      }
+      curlArgs.push('-o', outputPath, best.url);
 
       const curlProc = spawn('curl', curlArgs);
       

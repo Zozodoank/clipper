@@ -12,48 +12,18 @@ const serverDir = path.resolve(__dirname, '..');
 const IS_LINUX = process.platform === 'linux';
 
 /**
- * Check if a local proxy port (e.g. WARP SOCKS5 on 127.0.0.1:40000) is actively listening
+ * Returns yt-dlp args configured with client spoofing (ios, tv, android, web).
+ * No proxy, no cookies, with request delays and cache clearing to avoid rate-limits.
  */
-function isProxyListening(port = 40000, host = '127.0.0.1') {
-  return new Promise((resolve) => {
-    const socket = new net.Socket();
-    socket.setTimeout(250);
-    socket.once('connect', () => {
-      socket.destroy();
-      resolve(true);
-    });
-    socket.once('timeout', () => {
-      socket.destroy();
-      resolve(false);
-    });
-    socket.once('error', () => {
-      socket.destroy();
-      resolve(false);
-    });
-    socket.connect(port, host);
-  });
-}
-
-/**
- * Returns yt-dlp args configured with client spoofing (android_vr, android, ios, web).
- * No cookies are used, keeping backend 100% account-free and safe from bot-check locks.
- */
-async function getYtDlpArgs({ useProxy = false } = {}) {
-  let proxyArgs = [];
-  if (useProxy && IS_LINUX) {
-    const warpListening = await isProxyListening(40000, '127.0.0.1');
-    if (warpListening) {
-      proxyArgs = ['--proxy', 'socks5://127.0.0.1:40000'];
-    }
-  }
-
+function getYtDlpArgs() {
   return [
     '--extractor-args', 'youtube:player_client=ios,tv,android,web',
+    '--sleep-requests', '3',
+    '--rm-cache-dir',
     '--js-runtimes', 'node',
     '--remote-components', 'ejs:github',
     '--no-check-certificates',
-    '--geo-bypass',
-    ...proxyArgs
+    '--geo-bypass'
   ];
 }
 
@@ -328,82 +298,63 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
 
   onProgress({ step: 'download', message: 'Fetching video metadata and starting 720p download...', progress: 10 });
 
-  async function executeDownload(useProxy) {
-    const baseArgs = await getYtDlpArgs({ useProxy });
-    const infoArgs = [
-      ...baseArgs,
-      '--dump-json',
-      '--no-playlist',
-      url
-    ];
-    const infoResult = await runYtDlp(ytDlpPath, infoArgs);
+  const baseArgs = getYtDlpArgs();
+  const infoArgs = [
+    ...baseArgs,
+    '--dump-json',
+    '--no-playlist',
+    url
+  ];
+  const infoResult = await runYtDlp(ytDlpPath, infoArgs);
 
-    let metadata = { title: 'YouTube Video', duration: 60 };
-    if (infoResult.code === 0 && infoResult.stdout) {
-      try {
-        const parsed = JSON.parse(infoResult.stdout);
-        metadata = {
-          title: parsed.title || 'YouTube Video',
-          duration: parsed.duration || 60,
-          description: (parsed.description || '').slice(0, 500),
-          channel: parsed.uploader || parsed.channel || '',
-          tags: parsed.tags || [],
-        };
-      } catch (e) {
-        console.warn('[Downloader] Warning: Could not parse video metadata JSON');
+  let metadata = { title: 'YouTube Video', duration: 60 };
+  if (infoResult.code === 0 && infoResult.stdout) {
+    try {
+      const parsed = JSON.parse(infoResult.stdout);
+      metadata = {
+        title: parsed.title || 'YouTube Video',
+        duration: parsed.duration || 60,
+        description: (parsed.description || '').slice(0, 500),
+        channel: parsed.uploader || parsed.channel || '',
+        tags: parsed.tags || [],
+      };
+    } catch (e) {
+      console.warn('[Downloader] Warning: Could not parse video metadata JSON');
+    }
+  }
+
+  const dlArgs = [
+    '--ffmpeg-location',
+    ffmpegPath,
+    ...baseArgs,
+    '-f',
+    '18/22/best[height<=720]/bestvideo[height<=720]+bestaudio/best',
+    '--merge-output-format',
+    'mp4',
+    '--no-playlist',
+    '--no-part',
+    '--no-mtime',
+    ...(IS_LINUX ? [] : ['--windows-filenames']),
+    '--retries', '5',
+    '--fragment-retries', '5',
+    '-o',
+    outputTemplate,
+    url,
+  ];
+
+  console.log(`[Downloader] Spawning yt-dlp: ${ytDlpPath} ${dlArgs.join(' ')}`);
+  onProgress({ step: 'download', message: `Downloading "${metadata.title}" (720p)...`, progress: 20 });
+
+  const downloadResult = await runYtDlp(ytDlpPath, dlArgs, {
+    onStdout: (text) => {
+      const match = text.match(/(\d+(\.\d+)?)%/);
+      if (match) {
+        const percent = parseFloat(match[1]);
+        const scaledProgress = 20 + Math.round(percent * 0.15);
+        onProgress({ step: 'download', message: `Downloading video: ${Math.round(percent)}%`, progress: scaledProgress });
       }
-    }
-
-    const dlArgs = [
-      '--ffmpeg-location',
-      ffmpegPath,
-      ...baseArgs,
-      '-f',
-      '18/22/best[height<=720]/bestvideo[height<=720]+bestaudio/best',
-      '--merge-output-format',
-      'mp4',
-      '--no-playlist',
-      '--no-part',
-      '--no-mtime',
-      ...(IS_LINUX ? [] : ['--windows-filenames']),
-      '--retries', '5',
-      '--fragment-retries', '5',
-      '-o',
-      outputTemplate,
-      url,
-    ];
-
-    console.log(`[Downloader] Spawning yt-dlp (proxy=${useProxy}): ${ytDlpPath} ${dlArgs.join(' ')}`);
-    onProgress({ step: 'download', message: `Downloading "${metadata.title}" (720p)...`, progress: 20 });
-
-    const downloadResult = await runYtDlp(ytDlpPath, dlArgs, {
-      onStdout: (text) => {
-        const match = text.match(/(\d+(\.\d+)?)%/);
-        if (match) {
-          const percent = parseFloat(match[1]);
-          const scaledProgress = 20 + Math.round(percent * 0.15);
-          onProgress({ step: 'download', message: `Downloading video: ${Math.round(percent)}%`, progress: scaledProgress });
-        }
-      },
-    });
-
-    return { downloadResult, metadata };
-  }
-
-  // Attempt 1: Direct connection (cleanest reputation with authentic cookies)
-  let { downloadResult, metadata } = await executeDownload(false);
-
-  // Attempt 2: If direct connection failed, retry via Cloudflare WARP proxy
-  if (downloadResult.code !== 0 && IS_LINUX) {
-    const warpListening = await isProxyListening(40000, '127.0.0.1');
-    if (warpListening) {
-      console.warn(`[Downloader] Direct download failed (code ${downloadResult.code}). Retrying via Cloudflare WARP proxy...`);
-      onProgress({ step: 'download', message: 'Retrying video download via proxy...', progress: 15 });
-      const retryRes = await executeDownload(true);
-      downloadResult = retryRes.downloadResult;
-      metadata = retryRes.metadata;
-    }
-  }
+    },
+  });
 
   if (downloadResult.code === 0) {
     let downloadedFile = finalExpectedPath;

@@ -643,6 +643,12 @@ async function runAutoStage1Worker(run) {
           message: `❌ [${currentTargetIndex}/${run.maxJobs}] Gagal: "${product.title.slice(0, 30)}..."`,
         });
       }
+
+      // Graceful jitter delay between product batches to prevent aggressive scraping blocks
+      if (currentTargetIndex < run.maxJobs && (run.status === 'running' || run.status === 'starting')) {
+        const delayMs = 3000 + Math.floor(Math.random() * 2000);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
     }
 
     const finalStatus = run.status === 'stopping' ? 'stopped' : 'completed';

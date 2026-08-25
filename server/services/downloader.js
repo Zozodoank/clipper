@@ -23,14 +23,12 @@ if (cookiesArgs.length) {
  * Returns yt-dlp args that work seamlessly through proxy or Cloudflare WARP.
  */
 function getYtDlpArgs() {
-  const proxy = process.env.YTDLP_PROXY?.trim() || (IS_LINUX ? 'socks5://127.0.0.1:40000' : null);
-  const proxyArgs = proxy ? ['--proxy', proxy] : [];
-
+  // Do NOT use WARP proxy here - it gets rate-limited (429) by Google quickly.
+  // Instead use tv_embedded client which is more permissive from datacenter IPs.
   return [
-    '--extractor-args', 'youtube:player_client=android;player_skip=web,configs',
+    '--extractor-args', 'youtube:player_client=android,tv_embedded;player_skip=configs',
     '--no-check-certificates',
-    '--geo-bypass',
-    ...proxyArgs
+    '--geo-bypass'
   ];
 }
 
@@ -182,41 +180,32 @@ async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress) {
     onProgress({ step: 'download', message: `Downloading video via RapidAPI stream (${best.qualityLabel || '360p'})...`, progress: 18 });
     console.log(`[Downloader] yt-api stream: ${best.qualityLabel}, hasAudio=${!!best.audioQuality}`);
 
-    // Stream the download using curl. 
-    // Add --fail so curl exits with error if it downloads an HTML error page.
-    // Extract the original RapidAPI Server IP to bypass Google IP binding
-    const ipMatch = best.url.match(/&ip=([^&]+)/);
-    const originIp = ipMatch ? ipMatch[1] : '';
-    
+    // Use yt-dlp to download from the direct CDN URL (no YouTube auth needed).
+    // yt-dlp's generic downloader handles googlevideo.com URLs without IP binding checks.
+    const ytDlpPath = getYtDlpPath();
     await new Promise((resolve, reject) => {
-      const curlArgs = [
-        '-L', // follow redirects
-        '--fail', // exit with code > 0 on HTTP errors
-        '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        '-H', 'Referer: https://www.youtube.com/',
-        '-H', 'Origin: https://www.youtube.com',
+      const ytdlpArgs = [
+        '--no-check-certificates',
+        '--no-playlist',
+        '--no-part',
+        '--no-mtime',
+        '-o', outputPath,
+        best.url
       ];
-      if (originIp) {
-        curlArgs.push('-H', `X-Forwarded-For: ${originIp}`);
-      }
-      curlArgs.push('-o', outputPath, best.url);
-
-      const curlProc = spawn('curl', curlArgs);
+      console.log(`[Downloader] yt-dlp CDN download: ${ytDlpPath} ${ytdlpArgs.slice(-2).join(' ')}`);
+      const proc = spawn(ytDlpPath, ytdlpArgs);
       
       let stderr = '';
-      curlProc.stderr.on('data', (d) => {
-        stderr += d.toString();
-      });
-
-      curlProc.on('close', (code) => {
+      proc.stderr.on('data', (d) => { stderr += d.toString(); });
+      proc.on('close', (code) => {
         if (code === 0 && fs.existsSync(outputPath)) {
           resolve();
         } else {
-          console.warn(`[Downloader] curl failed with code ${code}. HTTP Error or Proxy issue.`);
-          reject(new Error(`curl download failed with code ${code}`));
+          console.warn(`[Downloader] yt-dlp CDN download failed (code ${code}): ${stderr.slice(-200)}`);
+          reject(new Error(`yt-dlp CDN download failed`));
         }
       });
-      curlProc.on('error', reject);
+      proc.on('error', reject);
     });
 
     return { filePath: outputPath, metadata };

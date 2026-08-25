@@ -185,7 +185,8 @@ async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress) {
 
     // Stream the download using curl. 
     // Add --fail so curl exits with error if it downloads an HTML error page.
-    const proxy = process.env.YTDLP_PROXY?.trim() || (IS_LINUX ? 'socks5h://127.0.0.1:40000' : null);
+    // We intentionally DO NOT use the proxy here because yt-api stream URLs are not IP-bound
+    // and using the proxy actually causes HTTP 403 from Google's redirector.
     
     await new Promise((resolve, reject) => {
       const curlArgs = [
@@ -196,10 +197,6 @@ async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress) {
         '-H', 'Origin: https://www.youtube.com',
         '-o', outputPath
       ];
-      // Use proxy if configured to bypass strict IP blocks
-      if (proxy) {
-        curlArgs.push('-x', proxy);
-      }
       curlArgs.push(best.url);
 
       const curlProc = spawn('curl', curlArgs);

@@ -1,0 +1,3 @@
+# Netscape HTTP Cookie File
+# Paste your exported youtube.com cookies here
+# (Export using "Get cookies.txt LOCALLY" extension from Chrome/Edge)

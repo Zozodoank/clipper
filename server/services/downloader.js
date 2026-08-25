@@ -55,7 +55,7 @@ async function getYtDlpArgs() {
   }
 
   return [
-    '--extractor-args', 'youtube:player_client=android,android_vr,mweb,web',
+    '--extractor-args', 'youtube:player_client=web_embedded,mweb,android',
     '--sleep-requests', '5',
     '--sleep-interval', '5',
     '--max-sleep-interval', '10',

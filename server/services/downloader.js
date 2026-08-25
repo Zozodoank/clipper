@@ -3,13 +3,20 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { getYtDlpPath, getFFmpegPath } from './binaryChecker.js';
-import { getYouTubePoTokenArgs } from './poTokenService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const serverDir = path.resolve(__dirname, '..');
 
 const IS_LINUX = process.platform === 'linux';
+
+// Android Native App Protocol flags (completely bypasses web CAPTCHA and Cloud Datacenter blocks)
+const ANDROID_EXTRACTOR_ARGS = [
+  '--extractor-args', 'youtube:player_client=android;player_skip=web,configs',
+  '--user-agent', 'com.google.android.youtube/19.29.37',
+  '--no-check-certificates',
+  '--geo-bypass'
+];
 
 /**
  * Merge separate video and audio files using FFmpeg.
@@ -73,7 +80,7 @@ export function extractVideoId(url) {
   return match ? match[1] : null;
 }
 
-// ── RapidAPI YT-API Integration ─────────────────────────────────────────────
+// ── RapidAPI Search Helper ──────────────────────────────────────────────────
 
 async function searchWithRapidApi(query, limit = 10) {
   const apiKey = process.env.RAPIDAPI_KEY?.trim();
@@ -89,10 +96,7 @@ async function searchWithRapidApi(query, limit = 10) {
       },
       signal: AbortSignal.timeout(10000)
     });
-    if (!res.ok) {
-      console.warn(`[Downloader] RapidAPI search returned HTTP ${res.status}`);
-      return null;
-    }
+    if (!res.ok) return null;
     const data = await res.json();
     const items = data.data || data.results || [];
     return items
@@ -108,99 +112,14 @@ async function searchWithRapidApi(query, limit = 10) {
       }))
       .filter(item => item.id && item.url);
   } catch (e) {
-    console.warn('[Downloader] RapidAPI search error:', e.message);
     return null;
   }
 }
 
-async function downloadStreamFromDirectUrl(streamUrl, outputPath, onProgress) {
-  const res = await fetch(streamUrl, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Origin': 'https://www.youtube.com',
-      'Referer': 'https://www.youtube.com/',
-      'Accept': '*/*',
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Connection': 'keep-alive'
-    }
-  });
-  if (!res.ok) throw new Error(`Stream download failed with HTTP ${res.status}`);
-  const totalBytes = Number(res.headers.get('content-length')) || 0;
-  let downloadedBytes = 0;
-
-  const fileStream = fs.createWriteStream(outputPath);
-  return new Promise((resolve, reject) => {
-    res.body.on('data', (chunk) => {
-      downloadedBytes += chunk.length;
-      if (totalBytes > 0 && onProgress) {
-        const percent = Math.round((downloadedBytes / totalBytes) * 100);
-        const scaledProgress = 20 + Math.round(percent * 0.15);
-        onProgress({ step: 'download', message: `Downloading video via RapidAPI: ${percent}%`, progress: scaledProgress });
-      }
-    });
-    res.body.pipe(fileStream);
-    fileStream.on('finish', () => resolve(outputPath));
-    fileStream.on('error', reject);
-    res.body.on('error', reject);
-  });
-}
-
-async function downloadWithRapidApi(url, outputFilePath, onProgress) {
-  const apiKey = process.env.RAPIDAPI_KEY?.trim();
-  const host = process.env.RAPIDAPI_HOST?.trim() || 'yt-api.p.rapidapi.com';
-  const videoId = extractVideoId(url);
-  if (!apiKey || !videoId) return null;
-
-  try {
-    onProgress({ step: 'download', message: 'Fetching video stream link from RapidAPI...', progress: 12 });
-    const res = await fetch(`https://${host}/dl?id=${videoId}`, {
-      headers: {
-        'x-rapidapi-key': apiKey,
-        'x-rapidapi-host': host
-      },
-      signal: AbortSignal.timeout(15000)
-    });
-    if (!res.ok) {
-      console.warn(`[Downloader] RapidAPI /dl returned HTTP ${res.status}`);
-      return null;
-    }
-    const data = await res.json();
-    
-    // Find suitable format (720p or 360p or progressive MP4 format)
-    const formats = data.formats || data.adaptiveFormats || [];
-    const directFormat = formats.find(f => f.qualityLabel?.includes('720') && f.url && f.mimeType?.includes('video/mp4') && f.audioQuality)
-      || formats.find(f => f.url && f.mimeType?.includes('video/mp4') && f.audioQuality)
-      || formats.find(f => f.url && f.mimeType?.includes('video/mp4'))
-      || formats[0];
-
-    const streamUrl = directFormat?.url || data.link || data.downloadUrl;
-    if (!streamUrl) {
-      console.warn('[Downloader] No stream URL found in RapidAPI response');
-      return null;
-    }
-
-    onProgress({ step: 'download', message: 'Downloading video via RapidAPI direct stream...', progress: 20 });
-    await downloadStreamFromDirectUrl(streamUrl, outputFilePath, onProgress);
-
-    const metadata = {
-      title: data.title || 'YouTube Video',
-      duration: Number(data.lengthSeconds || data.duration) || 60,
-      description: (data.description || '').slice(0, 500),
-      channel: data.channelTitle || data.author || '',
-      tags: data.keywords || []
-    };
-
-    return { filePath: outputFilePath, metadata };
-  } catch (e) {
-    console.warn('[Downloader] RapidAPI download error, falling back to yt-dlp:', e.message);
-    return null;
-  }
-}
-
-// ── Search & Download Functions ─────────────────────────────────────────────
+// ── Main Search & Download Functions ────────────────────────────────────────
 
 /**
- * Searches YouTube through RapidAPI or yt-dlp.
+ * Searches YouTube candidates using RapidAPI or direct Android API client.
  * @param {string} query - Search query text
  * @param {{ limit?: number, onProgress?: Function }} options
  * @returns {Promise<Array<{ id: string, title: string, url: string, duration: number, channel: string, description: string }>>}
@@ -214,13 +133,13 @@ export async function searchYouTubeVideos(query, { limit = 10, onProgress = () =
     }
   };
 
-  // 1. Prioritize RapidAPI search if key is provided
+  // 1. Prioritize RapidAPI search if key is configured
   const rapidResults = await searchWithRapidApi(query, limit);
   if (rapidResults && rapidResults.length > 0) {
     return rapidResults;
   }
 
-  // 2. Fallback to yt-dlp search
+  // 2. Fallback to direct Android API yt-dlp search
   const ytDlpPath = await getYtDlpPath(reportProgress);
   const safeLimit = Math.max(1, Math.min(20, Number(limit) || 10));
   const searchTarget = `ytsearch${safeLimit}:${query}`;
@@ -231,11 +150,8 @@ export async function searchYouTubeVideos(query, { limit = 10, onProgress = () =
     progress: 8,
   });
 
-  const poTokenArgs = await getYouTubePoTokenArgs();
   const baseArgs = [
-    ...poTokenArgs,
-    '--no-check-certificates',
-    '--geo-bypass',
+    ...ANDROID_EXTRACTOR_ARGS,
     '--flat-playlist',
     '--dump-json',
     '--skip-download',
@@ -244,7 +160,7 @@ export async function searchYouTubeVideos(query, { limit = 10, onProgress = () =
   const result = await runYtDlp(ytDlpPath, baseArgs);
 
   if (result.code !== 0) {
-    throw new Error(`yt-dlp search failed with code ${result.code}: ${result.stderr.slice(-600)}`);
+    throw new Error(`yt-dlp search failed with code ${result.code}: ${result.stderr.slice(-400)}`);
   }
 
   return result.stdout
@@ -271,7 +187,7 @@ export async function searchYouTubeVideos(query, { limit = 10, onProgress = () =
 }
 
 /**
- * Downloads a YouTube video at max 720p resolution using RapidAPI or yt-dlp.
+ * Downloads a YouTube video using native Android protocol in Codespaces.
  * @param {string} url - YouTube URL
  * @param {string} outputDir - Directory to store the downloaded file
  * @param {string} videoId - Unique identifier for the job
@@ -284,15 +200,6 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
   }
 
   const finalExpectedPath = path.join(outputDir, `raw_${videoId}.mp4`);
-
-  // 1. Try RapidAPI first if API Key is configured
-  const rapidResult = await downloadWithRapidApi(url, finalExpectedPath, onProgress);
-  if (rapidResult && fs.existsSync(rapidResult.filePath)) {
-    onProgress({ step: 'download', message: 'Video download completed successfully via RapidAPI.', progress: 35 });
-    return rapidResult;
-  }
-
-  // 2. Fallback to direct yt-dlp pipeline with PO-Token generator
   const ytDlpPath = await getYtDlpPath(onProgress);
   const ffmpegPath = getFFmpegPath();
   const outputTemplate = path.join(outputDir, `raw_${videoId}.%(ext)s`);
@@ -301,13 +208,9 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
 
   return new Promise((resolve, reject) => {
     (async () => {
-      const poTokenArgs = await getYouTubePoTokenArgs();
-
-      // Fetch JSON metadata
+      // 1. Fetch metadata via native Android player client
       const infoArgs = [
-        ...poTokenArgs,
-        '--no-check-certificates',
-        '--geo-bypass',
+        ...ANDROID_EXTRACTOR_ARGS,
         '--dump-json',
         '--no-playlist',
         url
@@ -330,15 +233,13 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
         }
       }
 
-      // Download the video file capped at 720p
+      // 2. Download the video file with Android Player protocol
       const dlArgs = [
         '--ffmpeg-location',
         ffmpegPath,
-        ...poTokenArgs,
-        '--no-check-certificates',
-        '--geo-bypass',
+        ...ANDROID_EXTRACTOR_ARGS,
         '-f',
-        'best[height<=720]/bestvideo[height<=720]+bestaudio/18/22/best',
+        '18/22/best[height<=720]/bestvideo[height<=720]+bestaudio/best',
         '--merge-output-format',
         'mp4',
         '--no-playlist',
@@ -352,7 +253,7 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
         url,
       ];
 
-      console.log(`[Downloader] Spawning yt-dlp: ${ytDlpPath} ${dlArgs.join(' ')}`);
+      console.log(`[Downloader] Spawning yt-dlp Android client: ${ytDlpPath} ${dlArgs.join(' ')}`);
       onProgress({ step: 'download', message: `Downloading "${metadata.title}" (720p)...`, progress: 20 });
 
       const downloadResult = await runYtDlp(ytDlpPath, dlArgs, {

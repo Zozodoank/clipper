@@ -23,7 +23,9 @@ function getYtDlpArgs() {
   const proxyArgs = residentialProxy ? ['--proxy', residentialProxy] : [];
 
   return [
-    '--extractor-args', 'youtube:player_client=web_embedded,mweb,android',
+    '--extractor-args', 'youtube:player_client=web_embedded,mweb,ios,android',
+    '--referer', 'https://www.google.com/',
+    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     '--sleep-requests', '3',
     '--sleep-interval', '3',
     '--max-sleep-interval', '6',

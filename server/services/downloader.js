@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { getYtDlpPath, getFFmpegPath } from './binaryChecker.js';
+import { getYouTubePoTokenArgs } from './poTokenService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -230,8 +231,9 @@ export async function searchYouTubeVideos(query, { limit = 10, onProgress = () =
     progress: 8,
   });
 
+  const poTokenArgs = await getYouTubePoTokenArgs();
   const baseArgs = [
-    '--extractor-args', 'youtube:player_client=android',
+    ...poTokenArgs,
     '--no-check-certificates',
     '--geo-bypass',
     '--flat-playlist',
@@ -290,7 +292,7 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
     return rapidResult;
   }
 
-  // 2. Fallback to direct yt-dlp pipeline
+  // 2. Fallback to direct yt-dlp pipeline with PO-Token generator
   const ytDlpPath = await getYtDlpPath(onProgress);
   const ffmpegPath = getFFmpegPath();
   const outputTemplate = path.join(outputDir, `raw_${videoId}.%(ext)s`);
@@ -299,9 +301,11 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
 
   return new Promise((resolve, reject) => {
     (async () => {
+      const poTokenArgs = await getYouTubePoTokenArgs();
+
       // Fetch JSON metadata
       const infoArgs = [
-        '--extractor-args', 'youtube:player_client=android',
+        ...poTokenArgs,
         '--no-check-certificates',
         '--geo-bypass',
         '--dump-json',
@@ -330,7 +334,7 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
       const dlArgs = [
         '--ffmpeg-location',
         ffmpegPath,
-        '--extractor-args', 'youtube:player_client=android',
+        ...poTokenArgs,
         '--no-check-certificates',
         '--geo-bypass',
         '-f',

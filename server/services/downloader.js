@@ -19,13 +19,18 @@ if (cookiesArgs.length) {
   console.warn('[Downloader] WARNING: cookies.txt not found at', COOKIES_PATH);
 }
 
-// Android Native App Protocol flags + cookies for Codespace/datacenter bypass
+/**
+ * Returns yt-dlp args that work seamlessly through proxy or Cloudflare WARP.
+ */
 function getYtDlpArgs() {
+  const proxy = process.env.YTDLP_PROXY?.trim() || (IS_LINUX ? 'socks5://127.0.0.1:40000' : null);
+  const proxyArgs = proxy ? ['--proxy', proxy] : [];
+
   return [
-    '--extractor-args', 'youtube:player_client=android;player_skip=web,configs',
-    '--user-agent', 'com.google.android.youtube/19.29.37',
+    '--extractor-args', 'youtube:player_client=android',
     '--no-check-certificates',
     '--geo-bypass',
+    ...proxyArgs,
     ...cookiesArgs
   ];
 }

@@ -134,77 +134,69 @@ async function searchWithRapidApi(query, limit = 10) {
   }
 }
 
-// ── YouTube Media Downloader API (CDN-proxied streams, works from any IP) ──
-
-const YT_MEDIA_DL_HOST = 'youtube-media-downloader.p.rapidapi.com';
+// ── YouTube Downloader via RapidAPI (yt-api) ──
 
 async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress) {
   const apiKey = process.env.RAPIDAPI_KEY?.trim();
+  const host = process.env.RAPIDAPI_HOST?.trim() || 'yt-api.p.rapidapi.com';
   if (!apiKey) return null;
 
   const videoId = extractVideoId(url);
   if (!videoId) return null;
 
   try {
-    onProgress({ step: 'download', message: 'Fetching video stream link from RapidAPI (Media Downloader)...', progress: 12 });
+    onProgress({ step: 'download', message: 'Fetching video stream link from RapidAPI...', progress: 12 });
 
-    const detailRes = await fetch(`https://${YT_MEDIA_DL_HOST}/v2/video/details?videoId=${videoId}`, {
+    const detailRes = await fetch(`https://${host}/dl?id=${videoId}`, {
       headers: {
         'x-rapidapi-key': apiKey,
-        'x-rapidapi-host': YT_MEDIA_DL_HOST
+        'x-rapidapi-host': host
       },
       signal: AbortSignal.timeout(15000)
     });
 
     if (!detailRes.ok) {
-      console.warn(`[Downloader] YouTube Media Downloader API returned HTTP ${detailRes.status}`);
+      console.warn(`[Downloader] yt-api returned HTTP ${detailRes.status}`);
       return null;
     }
 
     const data = await detailRes.json();
-    if (data.errorId !== 'Success' && data.errorId) {
-      console.warn(`[Downloader] YouTube Media Downloader API error: ${data.errorId}`);
+    if (!data.formats || data.formats.length === 0) {
+      console.warn(`[Downloader] yt-api error: No formats returned`);
       return null;
     }
 
     const metadata = {
       title: data.title || 'YouTube Video',
-      duration: Math.round((data.lengthSeconds || data.videos?.items?.[0]?.lengthMs / 1000) || 60),
+      duration: Math.round(Number(data.lengthSeconds) || 60),
       description: (data.description || '').slice(0, 500),
-      channel: data.channel?.name || data.channel || '',
+      channel: data.channelTitle || '',
       tags: []
     };
 
-    // Pick best combined audio+video format at <=720p
-    const videos = data.videos?.items || [];
-    let best = null;
-    for (const v of videos) {
-      if (!v.url || !v.hasAudio || v.extension !== 'mp4') continue;
-      const h = v.height || v.width || 0;
-      if (h > 720) continue;
-      if (!best || h > (best.height || best.width || 0)) best = v;
-    }
-    // Fallback: any mp4
-    if (!best) best = videos.find(v => v.url && v.extension === 'mp4');
-    if (!best) {
-      console.warn('[Downloader] YouTube Media Downloader: no suitable mp4 format found');
-      return null;
-    }
+    // Pick best combined audio+video format at <=720p (itag 22 or 18)
+    let best = data.formats.find(f => f.qualityLabel === '720p' && f.audioQuality) ||
+               data.formats.find(f => f.qualityLabel === '360p' && f.audioQuality) ||
+               data.formats.find(f => f.audioQuality) || 
+               data.formats[0];
 
-    onProgress({ step: 'download', message: `Downloading video via RapidAPI stream (${best.quality || '360p'})...`, progress: 18 });
-    console.log(`[Downloader] YouTube Media Downloader stream: ${best.quality}, hasAudio=${best.hasAudio}, size=${best.sizeText}`);
+    onProgress({ step: 'download', message: `Downloading video via RapidAPI stream (${best.qualityLabel || '360p'})...`, progress: 18 });
+    console.log(`[Downloader] yt-api stream: ${best.qualityLabel}, hasAudio=${!!best.audioQuality}`);
 
-    // Stream the download using curl to support SOCKS5 proxy natively
+    // Stream the download using curl. 
+    // Add --fail so curl exits with error if it downloads an HTML error page.
     const proxy = process.env.YTDLP_PROXY?.trim() || (IS_LINUX ? 'socks5h://127.0.0.1:40000' : null);
     
     await new Promise((resolve, reject) => {
       const curlArgs = [
         '-L', // follow redirects
+        '--fail', // exit with code > 0 on HTTP errors
         '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         '-H', 'Referer: https://www.youtube.com/',
         '-H', 'Origin: https://www.youtube.com',
         '-o', outputPath
       ];
+      // Use proxy if configured to bypass strict IP blocks
       if (proxy) {
         curlArgs.push('-x', proxy);
       }
@@ -215,15 +207,14 @@ async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress) {
       let stderr = '';
       curlProc.stderr.on('data', (d) => {
         stderr += d.toString();
-        // Simple progress report from curl output could be added here
       });
 
       curlProc.on('close', (code) => {
         if (code === 0 && fs.existsSync(outputPath)) {
           resolve();
         } else {
-          console.warn(`[Downloader] curl failed with code ${code}. Error: ${stderr.slice(-200)}`);
-          reject(new Error(`curl download failed`));
+          console.warn(`[Downloader] curl failed with code ${code}. HTTP Error or Proxy issue.`);
+          reject(new Error(`curl download failed with code ${code}`));
         }
       });
       curlProc.on('error', reject);
@@ -231,7 +222,7 @@ async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress) {
 
     return { filePath: outputPath, metadata };
   } catch (e) {
-    console.warn(`[Downloader] YouTube Media Downloader error: ${e.message}`);
+    console.warn(`[Downloader] RapidAPI download error: ${e.message}`);
     return null;
   }
 }

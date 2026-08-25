@@ -30,8 +30,7 @@ function getYtDlpArgs() {
     '--extractor-args', 'youtube:player_client=android;player_skip=web,configs',
     '--no-check-certificates',
     '--geo-bypass',
-    ...proxyArgs,
-    ...cookiesArgs
+    ...proxyArgs
   ];
 }
 

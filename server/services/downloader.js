@@ -27,7 +27,7 @@ function getYtDlpArgs() {
   const proxyArgs = proxy ? ['--proxy', proxy] : [];
 
   return [
-    '--extractor-args', 'youtube:player_client=android',
+    '--extractor-args', 'youtube:player_client=android;player_skip=web,configs',
     '--no-check-certificates',
     '--geo-bypass',
     ...proxyArgs,

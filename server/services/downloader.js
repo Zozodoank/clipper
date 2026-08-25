@@ -23,10 +23,9 @@ if (cookiesArgs.length) {
  * Returns yt-dlp args that work seamlessly through proxy or Cloudflare WARP.
  */
 function getYtDlpArgs() {
-  // Do NOT use WARP proxy here - it gets rate-limited (429) by Google quickly.
-  // Instead use tv_embedded client which is more permissive from datacenter IPs.
+  // Do NOT use WARP proxy - it gets rate-limited (429) by Google quickly.
   return [
-    '--extractor-args', 'youtube:player_client=android,tv_embedded;player_skip=configs',
+    '--extractor-args', 'youtube:player_client=android;player_skip=web,configs',
     '--no-check-certificates',
     '--geo-bypass'
   ];
@@ -182,7 +181,7 @@ async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress) {
 
     // Use yt-dlp to download from the direct CDN URL (no YouTube auth needed).
     // yt-dlp's generic downloader handles googlevideo.com URLs without IP binding checks.
-    const ytDlpPath = getYtDlpPath();
+    const ytDlpPath = await getYtDlpPath();
     await new Promise((resolve, reject) => {
       const ytdlpArgs = [
         '--no-check-certificates',

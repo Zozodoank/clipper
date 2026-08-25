@@ -12,53 +12,21 @@ const serverDir = path.resolve(__dirname, '..');
 const IS_LINUX = process.platform === 'linux';
 
 /**
- * Check if a local proxy port (e.g. WARP SOCKS5 on 127.0.0.1:40000) is actively listening
- */
-function isProxyListening(port = 40000, host = '127.0.0.1') {
-  return new Promise((resolve) => {
-    const socket = new net.Socket();
-    socket.setTimeout(250);
-    socket.once('connect', () => {
-      socket.destroy();
-      resolve(true);
-    });
-    socket.once('timeout', () => {
-      socket.destroy();
-      resolve(false);
-    });
-    socket.once('error', () => {
-      socket.destroy();
-      resolve(false);
-    });
-    socket.connect(port, host);
-  });
-}
-
-/**
  * Returns yt-dlp args configured with:
- * 1. Human-like rate pacing (--sleep-requests 5, --sleep-interval 5, --max-sleep-interval 10)
+ * 1. Human-like rate pacing (--sleep-requests 3, --sleep-interval 3, --max-sleep-interval 6)
  * 2. Bandwidth throttling (--limit-rate 5M) to mimic natural video browsing
- * 3. Client manipulation (android, android_vr, mweb, web)
- * 4. Automatic non-datacenter IP routing (via RESIDENTIAL_PROXY or local Cloudflare WARP proxy)
+ * 3. Client manipulation (web_embedded, mweb, android)
+ * 4. Optional Residential Proxy support (via RESIDENTIAL_PROXY or PROXY_URL)
  */
-async function getYtDlpArgs() {
-  let proxyArgs = [];
+function getYtDlpArgs() {
   const residentialProxy = (process.env.RESIDENTIAL_PROXY || process.env.PROXY_URL || '').trim();
-
-  if (residentialProxy) {
-    proxyArgs = ['--proxy', residentialProxy];
-  } else if (IS_LINUX) {
-    const warpListening = await isProxyListening(40000, '127.0.0.1');
-    if (warpListening) {
-      proxyArgs = ['--proxy', 'socks5://127.0.0.1:40000'];
-    }
-  }
+  const proxyArgs = residentialProxy ? ['--proxy', residentialProxy] : [];
 
   return [
     '--extractor-args', 'youtube:player_client=web_embedded,mweb,android',
-    '--sleep-requests', '5',
-    '--sleep-interval', '5',
-    '--max-sleep-interval', '10',
+    '--sleep-requests', '3',
+    '--sleep-interval', '3',
+    '--max-sleep-interval', '6',
     '--limit-rate', '5M',
     '--rm-cache-dir',
     '--js-runtimes', 'node',
@@ -417,23 +385,14 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
     }
   }
 
-  // Tier 2: Try RapidAPI dedicated stream extraction
-  if (process.env.RAPIDAPI_KEY) {
-    const rapidRes = await downloadWithYouTubeMediaDownloader(url, finalExpectedPath, onProgress);
-    if (rapidRes) {
-      onProgress({ step: 'download', message: 'Video downloaded via RapidAPI stream.', progress: 35 });
-      return rapidRes;
-    }
-  }
-
-  // Tier 3: Direct resilient yt-dlp with client spoofing (ios, tv, android, web)
+  // Tier 2: Direct resilient yt-dlp with client spoofing (web_embedded, mweb, android)
   const ytDlpPath = await getYtDlpPath(onProgress);
   const ffmpegPath = getFFmpegPath();
   const outputTemplate = path.join(outputDir, `raw_${videoId}.%(ext)s`);
 
   onProgress({ step: 'download', message: 'Fetching video metadata and starting 720p download...', progress: 10 });
 
-  const baseArgs = await getYtDlpArgs();
+  const baseArgs = getYtDlpArgs();
   const infoArgs = [
     ...baseArgs,
     '--dump-json',

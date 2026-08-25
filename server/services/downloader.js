@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import net from 'net';
 import { fileURLToPath } from 'url';
 import { getYtDlpPath, getFFmpegPath } from './binaryChecker.js';
 
@@ -20,13 +21,41 @@ if (cookiesArgs.length) {
 }
 
 /**
- * Returns yt-dlp args that work seamlessly through proxy or Cloudflare WARP.
+ * Check if a local proxy port (e.g. WARP SOCKS5 on 127.0.0.1:40000) is actively listening
  */
-function getYtDlpArgs() {
-  // Use WARP proxy (socks5://127.0.0.1:40000) to bypass Azure datacenter IP block.
-  // Cookies authenticate the session to prevent bot detection.
-  const proxy = IS_LINUX ? 'socks5://127.0.0.1:40000' : null;
-  const proxyArgs = proxy ? ['--proxy', proxy] : [];
+function isProxyListening(port = 40000, host = '127.0.0.1') {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.setTimeout(250);
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once('timeout', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.once('error', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.connect(port, host);
+  });
+}
+
+/**
+ * Returns yt-dlp args that work seamlessly through proxy (if active) or direct connection.
+ */
+async function getYtDlpArgs() {
+  let proxyArgs = [];
+  if (IS_LINUX) {
+    const warpListening = await isProxyListening(40000, '127.0.0.1');
+    if (warpListening) {
+      proxyArgs = ['--proxy', 'socks5://127.0.0.1:40000'];
+    } else {
+      console.warn('[Downloader] Cloudflare WARP proxy (127.0.0.1:40000) not active or connection refused. Falling back to direct connection.');
+    }
+  }
 
   return [
     '--extractor-args', 'youtube:player_client=web,mweb,ios,android',
@@ -317,9 +346,10 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
 
   return new Promise((resolve, reject) => {
     (async () => {
-      // Fetch metadata via native Android player client
+      // Fetch metadata via yt-dlp
+      const baseArgs = await getYtDlpArgs();
       const infoArgs = [
-        ...getYtDlpArgs(),
+        ...baseArgs,
         '--dump-json',
         '--no-playlist',
         url
@@ -342,11 +372,11 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
         }
       }
 
-      // 2. Download the video file with Android Player protocol
+      // 2. Download the video file
       const dlArgs = [
         '--ffmpeg-location',
         ffmpegPath,
-        ...getYtDlpArgs(),
+        ...baseArgs,
         '-f',
         '18/22/best[height<=720]/bestvideo[height<=720]+bestaudio/best',
         '--merge-output-format',
@@ -362,7 +392,7 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
         url,
       ];
 
-      console.log(`[Downloader] Spawning yt-dlp Android client: ${ytDlpPath} ${dlArgs.join(' ')}`);
+      console.log(`[Downloader] Spawning yt-dlp client: ${ytDlpPath} ${dlArgs.join(' ')}`);
       onProgress({ step: 'download', message: `Downloading "${metadata.title}" (720p)...`, progress: 20 });
 
       const downloadResult = await runYtDlp(ytDlpPath, dlArgs, {

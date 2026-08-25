@@ -116,7 +116,106 @@ async function searchWithRapidApi(query, limit = 10) {
   }
 }
 
-// ── Main Search & Download Functions ────────────────────────────────────────
+// ── YouTube Media Downloader API (CDN-proxied streams, works from any IP) ──
+
+const YT_MEDIA_DL_HOST = 'youtube-media-downloader.p.rapidapi.com';
+
+async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress) {
+  const apiKey = process.env.RAPIDAPI_KEY?.trim();
+  if (!apiKey) return null;
+
+  const videoId = extractVideoId(url);
+  if (!videoId) return null;
+
+  try {
+    onProgress({ step: 'download', message: 'Fetching video stream link from RapidAPI (Media Downloader)...', progress: 12 });
+
+    const detailRes = await fetch(`https://${YT_MEDIA_DL_HOST}/v2/video/details?videoId=${videoId}`, {
+      headers: {
+        'x-rapidapi-key': apiKey,
+        'x-rapidapi-host': YT_MEDIA_DL_HOST
+      },
+      signal: AbortSignal.timeout(15000)
+    });
+
+    if (!detailRes.ok) {
+      console.warn(`[Downloader] YouTube Media Downloader API returned HTTP ${detailRes.status}`);
+      return null;
+    }
+
+    const data = await detailRes.json();
+    if (data.errorId !== 'Success' && data.errorId) {
+      console.warn(`[Downloader] YouTube Media Downloader API error: ${data.errorId}`);
+      return null;
+    }
+
+    const metadata = {
+      title: data.title || 'YouTube Video',
+      duration: Math.round((data.lengthSeconds || data.videos?.items?.[0]?.lengthMs / 1000) || 60),
+      description: (data.description || '').slice(0, 500),
+      channel: data.channel?.name || data.channel || '',
+      tags: []
+    };
+
+    // Pick best combined audio+video format at <=720p
+    const videos = data.videos?.items || [];
+    let best = null;
+    for (const v of videos) {
+      if (!v.url || !v.hasAudio || v.extension !== 'mp4') continue;
+      const h = v.height || v.width || 0;
+      if (h > 720) continue;
+      if (!best || h > (best.height || best.width || 0)) best = v;
+    }
+    // Fallback: any mp4
+    if (!best) best = videos.find(v => v.url && v.extension === 'mp4');
+    if (!best) {
+      console.warn('[Downloader] YouTube Media Downloader: no suitable mp4 format found');
+      return null;
+    }
+
+    onProgress({ step: 'download', message: `Downloading video via RapidAPI stream (${best.quality || '360p'})...`, progress: 18 });
+    console.log(`[Downloader] YouTube Media Downloader stream: ${best.quality}, hasAudio=${best.hasAudio}, size=${best.sizeText}`);
+
+    // Stream the download
+    const streamRes = await fetch(best.url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://www.youtube.com/',
+        'Origin': 'https://www.youtube.com',
+        'Accept': '*/*'
+      }
+    });
+    if (!streamRes.ok) {
+      console.warn(`[Downloader] YouTube Media Downloader stream HTTP ${streamRes.status}`);
+      return null;
+    }
+
+    const totalBytes = Number(streamRes.headers.get('content-length')) || best.size || 0;
+    let downloadedBytes = 0;
+    const fileStream = fs.createWriteStream(outputPath);
+
+    await new Promise((resolve, reject) => {
+      streamRes.body.on('data', (chunk) => {
+        downloadedBytes += chunk.length;
+        if (totalBytes > 0) {
+          const percent = Math.round((downloadedBytes / totalBytes) * 100);
+          const scaledProgress = 18 + Math.round(percent * 0.17);
+          onProgress({ step: 'download', message: `Downloading: ${percent}%`, progress: scaledProgress });
+        }
+      });
+      streamRes.body.pipe(fileStream);
+      fileStream.on('finish', resolve);
+      fileStream.on('error', reject);
+      streamRes.body.on('error', reject);
+    });
+
+    return { filePath: outputPath, metadata };
+  } catch (e) {
+    console.warn(`[Downloader] YouTube Media Downloader error: ${e.message}`);
+    return null;
+  }
+}
+
 
 /**
  * Searches YouTube candidates using RapidAPI or direct Android API client.
@@ -200,6 +299,15 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
   }
 
   const finalExpectedPath = path.join(outputDir, `raw_${videoId}.mp4`);
+
+  // 1. Try YouTube Media Downloader API first (CDN-proxied, works from any cloud IP)
+  const mediaDlResult = await downloadWithYouTubeMediaDownloader(url, finalExpectedPath, onProgress);
+  if (mediaDlResult && fs.existsSync(mediaDlResult.filePath)) {
+    onProgress({ step: 'download', message: 'Video download completed successfully via RapidAPI.', progress: 35 });
+    return mediaDlResult;
+  }
+
+  // 2. Fallback to direct yt-dlp with Android client
   const ytDlpPath = await getYtDlpPath(onProgress);
   const ffmpegPath = getFFmpegPath();
   const outputTemplate = path.join(outputDir, `raw_${videoId}.%(ext)s`);
@@ -208,7 +316,7 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
 
   return new Promise((resolve, reject) => {
     (async () => {
-      // 1. Fetch metadata via native Android player client
+      // Fetch metadata via native Android player client
       const infoArgs = [
         ...ANDROID_EXTRACTOR_ARGS,
         '--dump-json',

@@ -30,6 +30,7 @@ function getYtDlpArgs() {
 
   return [
     '--js-runtimes', 'node',
+    '--remote-components', 'ejs:github',
     '--no-check-certificates',
     '--geo-bypass',
     ...proxyArgs,

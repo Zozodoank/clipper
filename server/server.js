@@ -889,6 +889,34 @@ app.get('/api/open-folder', (req, res) => {
   });
 });
 
+// ── Cookie Management Routes (for Codespace / Linux servers with no browser) ──
+
+// GET /api/cookies-status – check if cookies.txt is present on the server
+app.get('/api/cookies-status', (req, res) => {
+  const cookiesPath = path.join(__dirname, 'cookies.txt');
+  if (fs.existsSync(cookiesPath)) {
+    const stat = fs.statSync(cookiesPath);
+    res.json({ exists: true, sizeBytes: stat.size, path: cookiesPath });
+  } else {
+    res.json({ exists: false });
+  }
+});
+
+// POST /api/upload-cookies – receive cookies.txt content and save to server/cookies.txt
+app.post('/api/upload-cookies', express.text({ type: '*/*', limit: '10mb' }), (req, res) => {
+  const content = req.body;
+  if (!content || typeof content !== 'string' || content.trim().length === 0) {
+    return res.status(400).json({ success: false, error: 'Request body is empty. Please send cookies.txt content.' });
+  }
+  if (!content.includes('youtube.com') && !content.includes('# Netscape HTTP Cookie File')) {
+    return res.status(400).json({ success: false, error: 'File tidak terdeteksi sebagai YouTube cookies.txt yang valid. Pastikan Anda mengekspor cookies dari youtube.com.' });
+  }
+  const cookiesPath = path.join(__dirname, 'cookies.txt');
+  fs.writeFileSync(cookiesPath, content, 'utf8');
+  console.log(`[Cookies] cookies.txt saved to ${cookiesPath} (${content.length} bytes)`);
+  res.json({ success: true, message: 'cookies.txt berhasil disimpan. Sekarang retry job Anda.', path: cookiesPath });
+});
+
 app.listen(PORT, () => {
   const aiveneKey = process.env.AIVENE_API_KEY ? process.env.AIVENE_API_KEY.trim() : '';
   const maskedKey = aiveneKey

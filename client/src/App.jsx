@@ -9,6 +9,7 @@ import VoiceoverUploader from './components/VoiceoverUploader';
 import SettingsModal from './components/SettingsModal';
 import JobHistoryPanel from './components/JobHistoryPanel';
 import AutoModePanel from './components/AutoModePanel';
+import CookiesUploader from './components/CookiesUploader';
 import { Sparkles, Clapperboard } from 'lucide-react';
 
 export default function App() {
@@ -223,6 +224,9 @@ export default function App() {
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         <DependenciesStatus status={engineStatus} onRefresh={fetchEngineHealth} loading={checkingEngine} />
+
+        <CookiesUploader />
+
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 

@@ -79,24 +79,108 @@ npm run dev
 
 ---
 
-## YouTube 429 / Not-a-Bot Fix
+---
 
-Jika yt-dlp gagal dengan pesan `HTTP Error 429`, `Too Many Requests`, atau `Sign in to confirm you're not a bot`, backend akan otomatis mencoba ulang memakai cookies browser lokal.
+## ☁️ Panduan Lengkap: Menjalankan di GitHub Codespaces / Cloud Server
 
-Untuk hasil paling stabil:
+Menjalankan backend di cloud server (seperti GitHub Codespaces / Azure / AWS) memerlukan penanganan khusus karena YouTube secara aktif memblokir IP Datacenter. Berikut adalah prosedur resmi dan teruji agar pencarian dan pengunduhan video berjalan 100% lancar:
 
-1. Login ke YouTube di Chrome atau Edge pada komputer ini.
-2. Tutup browser tersebut agar file cookies bisa dibaca yt-dlp.
-3. Jalankan ulang generate.
-
-Opsional, set browser tertentu di `server/.env`:
-
-```env
-YTDLP_COOKIES_FROM_BROWSER=chrome
+```
+                  ┌─────────────────────────────────────────────────────────┐
+                  │                 GITHUB CODESPACES                       │
+                  │                                                         │
+   [Search Video] ├─► RapidAPI (yt-api.p.rapidapi.com) ───────────────────► │
+                  │                                                         │
+ [Download Video] ├─► yt-dlp + Node JS Runtime + EJS Solver                 │
+                  │        │                                                │
+                  │        ▼                                                │
+                  │   Cloudflare WARP (socks5://127.0.0.1:40000)            │
+                  │        │                                                │
+                  │        ▼                                                │
+                  │   YouTube Sesi Asli (via server/cookies.txt) ─────────► │
+                  └─────────────────────────────────────────────────────────┘
 ```
 
-Alternatif manual, export cookies YouTube format Netscape ke `server/cookies.txt` atau set:
+---
+
+### 1. Konfigurasi Environment (`server/.env`)
+
+Buat file `server/.env` di Codespace dengan konfigurasi berikut:
 
 ```env
-YTDLP_COOKIES_FILE=./cookies.txt
+PORT=5000
+
+# API Key untuk AI Scripting & Visual Analysis
+AIVENE_API_KEY=your_aivene_api_key_here
+
+# RapidAPI (Digunakan untuk Search Video tanpa limit IP Datacenter)
+RAPIDAPI_KEY=your_rapidapi_key_here
+RAPIDAPI_HOST=yt-api.p.rapidapi.com
 ```
+
+> **Catatan:** Pencarian video menggunakan RapidAPI `yt-api.p.rapidapi.com` agar bebas dari blokir IP dan rate limit scraping YouTube.
+
+---
+
+### 2. Setup Cloudflare WARP (Bypass Blokir IP Datacenter)
+
+IP bawaan Codespace (Azure Datacenter) langsung diblokir oleh Google. Kita menggunakan Cloudflare WARP untuk mendapatkan rute IP Anycast residensial:
+
+```bash
+# 1. Jalankan daemon WARP di background
+sudo warp-svc &
+
+# 2. Registrasi koneksi (cukup sekali saat setup awal Codespace)
+warp-cli register
+
+# 3. Hubungkan ke Cloudflare WARP
+warp-cli connect
+
+# 4. Verifikasi status koneksi (Pastikan muncul "Status update: Connected")
+warp-cli status
+```
+
+> Backend secara otomatis mendeteksi Linux/Codespace dan mengarahkan lalu lintas `yt-dlp` ke proxy lokal `socks5://127.0.0.1:40000`.
+
+---
+
+### 3. Setup Autentikasi YouTube (`server/cookies.txt`)
+
+Untuk mencegah error `Sign in to confirm you're not a bot`, `yt-dlp` membutuhkan cookie dari akun Google/YouTube yang aktif:
+
+1. Buka browser Chrome / Edge di laptop Anda (pastikan sedang **login ke akun Google/YouTube**).
+2. Pasang ekstensi Chrome: **[Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)** atau **Cookie-Editor**.
+3. Buka tab [youtube.com](https://www.youtube.com/).
+4. Klik ekstensi, pilih **Export** (Format: **Netscape**). File akan berisi ~50-200 baris cookie (`LOGIN_INFO`, `__Secure-1PSID`, `SID`, dll.).
+5. Buat atau timpa file `server/cookies.txt` di Codespace dengan isi cookie tersebut:
+   ```bash
+   # Di Codespace:
+   nano server/cookies.txt
+   # (Paste seluruh cookie, lalu simpan dengan Ctrl+O, Enter, Ctrl+X)
+   ```
+
+---
+
+### 4. Menjalankan Aplikasi
+
+Setelah WARP aktif dan `cookies.txt` terpasang, jalankan dev server:
+
+```bash
+# Sinkronkan kode terbaru
+git fetch origin main
+git reset --hard origin/main
+
+# Jalankan server
+node dev-runner.js
+```
+
+---
+
+### 🛡️ Parameter Kunci `yt-dlp` yang Digunakan Backend
+
+Backend mengombinasikan 4 teknologi bypass otomatis:
+- `--proxy socks5://127.0.0.1:40000` : Melewati jaringan Cloudflare WARP untuk masking IP.
+- `--cookies server/cookies.txt` : Autentikasi sesi pengguna Google asli.
+- `--js-runtimes node` : Menggunakan engine Node.js lokal untuk mengeksekusi challenge script YouTube.
+- `--remote-components ejs:github` : Mengunduh solver enkripsi *n-challenge* terbaru langsung dari repository resmi GitHub secara otomatis.
+

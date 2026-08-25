@@ -140,19 +140,22 @@ Backend secara otomatis menggunakan 3 lapisan pengunduhan video:
 
 ---
 
-### 3. Menjalankan Aplikasi (100% Bebas Cookies)
+### 3. Menjalankan Aplikasi di Codespace
 
-Tidak perlu mengekspor atau menggunakan cookie akun Google pribadi lagi. Arsitektur backend menggunakan teknik **Client Spoofing** (`android_vr`, `android`, `ios`, `web`) sehingga aman dan bebas blokir akun:
+Untuk memastikan `yt-dlp` dapat men-generate **PO Token (Proof-of-Origin)** secara otomatis menggunakan browser headless internal dan bebas dari bot-check:
 
 ```bash
-# Sinkronkan kode terbaru
+# 1. Update yt-dlp dan pasang plugin PO Token Provider
+python3 -m pip install -U yt-dlp yt-dlp-getpot-wpc bgutil-ytdlp-pot-provider
+
+# 2. Sinkronkan kode terbaru
 git fetch origin main
 git reset --hard origin/main
 
-# Bersihkan sisa job gagal jika ada
+# 3. Bersihkan sisa job gagal jika ada
 node server/clean-failed-jobs.js
 
-# Jalankan server
+# 4. Jalankan server
 node dev-runner.js
 ```
 
@@ -160,10 +163,11 @@ node dev-runner.js
 
 ### 🛡️ Parameter Kunci `yt-dlp` yang Digunakan Backend
 
-Backend mengombinasikan 4 teknologi bypass otomatis tanpa cookies:
-- `--extractor-args "youtube:player_client=ios,tv,android,web"` : Memanipulasi protokol player native (iOS & Smart TV) yang tidak memerlukan cookies maupun GVS PO Token.
+Backend mengombinasikan 5 teknologi bypass otomatis:
+- `--extractor-args "youtube:player_client=android,android_vr,mweb,web"` : Memanipulasi protokol player native Android dan Mobile Web.
 - `--js-runtimes node` : Menggunakan engine Node.js lokal untuk mengeksekusi challenge script YouTube.
 - `--remote-components ejs:github` : Mengunduh solver enkripsi *n-challenge* terbaru langsung dari repository resmi GitHub secara otomatis.
-- `--proxy socks5://127.0.0.1:40000` : Melewati jaringan Cloudflare WARP jika diperlukan masking IP.
+- `--sleep-requests 5` & `--sleep-interval 5` : Pacing human-like untuk mencegah rate limit.
+- `--limit-rate 5M` : Membatasi bandwidth agar traffic stabil seperti streaming video manusia.
 
 

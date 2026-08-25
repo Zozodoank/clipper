@@ -23,11 +23,17 @@ if (cookiesArgs.length) {
  * Returns yt-dlp args that work seamlessly through proxy or Cloudflare WARP.
  */
 function getYtDlpArgs() {
-  // Do NOT use WARP proxy - it gets rate-limited (429) by Google quickly.
+  // Use WARP proxy (socks5://127.0.0.1:40000) to bypass Azure datacenter IP block.
+  // Cookies authenticate the session to prevent bot detection.
+  const proxy = IS_LINUX ? 'socks5://127.0.0.1:40000' : null;
+  const proxyArgs = proxy ? ['--proxy', proxy] : [];
+
   return [
     '--extractor-args', 'youtube:player_client=android;player_skip=web,configs',
     '--no-check-certificates',
-    '--geo-bypass'
+    '--geo-bypass',
+    ...proxyArgs,
+    ...cookiesArgs
   ];
 }
 
@@ -180,18 +186,22 @@ async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress) {
     console.log(`[Downloader] yt-api stream: ${best.qualityLabel}, hasAudio=${!!best.audioQuality}`);
 
     // Use yt-dlp to download from the direct CDN URL (no YouTube auth needed).
-    // yt-dlp's generic downloader handles googlevideo.com URLs without IP binding checks.
+    // Route through WARP proxy so the Azure datacenter IP doesn't get blocked.
     const ytDlpPath = await getYtDlpPath();
+    const cdnProxy = IS_LINUX ? 'socks5://127.0.0.1:40000' : null;
     await new Promise((resolve, reject) => {
       const ytdlpArgs = [
         '--no-check-certificates',
         '--no-playlist',
         '--no-part',
         '--no-mtime',
-        '-o', outputPath,
-        best.url
       ];
-      console.log(`[Downloader] yt-dlp CDN download: ${ytDlpPath} ${ytdlpArgs.slice(-2).join(' ')}`);
+      if (cdnProxy) {
+        ytdlpArgs.push('--proxy', cdnProxy);
+      }
+      ytdlpArgs.push('-o', outputPath, best.url);
+
+      console.log(`[Downloader] yt-dlp CDN download via WARP: ${ytDlpPath}`);
       const proc = spawn(ytDlpPath, ytdlpArgs);
       
       let stderr = '';

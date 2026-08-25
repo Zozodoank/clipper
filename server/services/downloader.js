@@ -12,18 +12,28 @@ const serverDir = path.resolve(__dirname, '..');
 const IS_LINUX = process.platform === 'linux';
 
 /**
- * Returns yt-dlp args configured with client spoofing (ios, tv, android, web).
- * No proxy, no cookies, with request delays and cache clearing to avoid rate-limits.
+ * Returns yt-dlp args configured with:
+ * 1. Human-like rate pacing (--sleep-requests 5, --sleep-interval 5, --max-sleep-interval 10)
+ * 2. Bandwidth throttling (--limit-rate 5M) to mimic natural video browsing
+ * 3. Client manipulation (ios, tv, android, web)
+ * 4. Optional Residential Proxy support (via RESIDENTIAL_PROXY or PROXY_URL)
  */
 function getYtDlpArgs() {
+  const residentialProxy = (process.env.RESIDENTIAL_PROXY || process.env.PROXY_URL || '').trim();
+  const proxyArgs = residentialProxy ? ['--proxy', residentialProxy] : [];
+
   return [
     '--extractor-args', 'youtube:player_client=ios,tv,android,web',
-    '--sleep-requests', '3',
+    '--sleep-requests', '5',
+    '--sleep-interval', '5',
+    '--max-sleep-interval', '10',
+    '--limit-rate', '5M',
     '--rm-cache-dir',
     '--js-runtimes', 'node',
     '--remote-components', 'ejs:github',
     '--no-check-certificates',
-    '--geo-bypass'
+    '--geo-bypass',
+    ...proxyArgs
   ];
 }
 

@@ -120,6 +120,9 @@ RAPIDAPI_HOST=yt-api.p.rapidapi.com
 # (Opsional) Cobalt API Delegasi Ekstraksi (Bebas Blokir 100%)
 # COBALT_API_URL=https://your-cobalt-instance.up.railway.app
 # COBALT_API_KEY=your_optional_cobalt_token
+
+# (Opsional) Residential Proxy Rotasi IP Asli (Bukan Datacenter VPN)
+# RESIDENTIAL_PROXY=http://username:password@proxy-provider.com:port
 ```
 
 ---
@@ -129,7 +132,11 @@ RAPIDAPI_HOST=yt-api.p.rapidapi.com
 Backend secara otomatis menggunakan 3 lapisan pengunduhan video:
 1. **Tier 1 (Cobalt API):** Jika `COBALT_API_URL` diatur, backend akan mengirim request ke instance Cobalt untuk mengekstrak dan mengunduh video tanpa batasan scraping.
 2. **Tier 2 (RapidAPI Stream Extractor):** Jika `RAPIDAPI_KEY` aktif, backend mengekstrak link stream langsung dari cluster RapidAPI dan mengunduh file video mentah tanpa login.
-3. **Tier 3 (Direct Client Spoofing `ios, tv, android, web`):** Fallback yt-dlp native dengan jeda request `--sleep-requests 3` dan `--rm-cache-dir`.
+3. **Tier 3 (Direct Client Spoofing `ios, tv, android, web`):** Fallback yt-dlp native dengan parameter human-like:
+   - `--sleep-requests 5` : Jeda 5 detik tiap request fragment/api.
+   - `--sleep-interval 5` & `--max-sleep-interval 10` : Jeda acak 5-10 detik antar video untuk mensimulasikan jeda penelusuran manusia normal.
+   - `--limit-rate 5M` : Membatasi bandwidth download maksimum 5MB/s agar traffic wajar seperti streaming video biasa dan tidak memicu alarm DDoS/Scraping rakus.
+   - `--proxy` : Otomatis menggunakan `RESIDENTIAL_PROXY` jika dikonfigurasi di `server/.env`.
 
 ---
 

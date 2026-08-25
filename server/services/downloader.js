@@ -289,7 +289,7 @@ export async function searchYouTubeVideos(query, { limit = 10, onProgress = () =
   });
 
   const baseArgs = [
-    ...getYtDlpArgs(),
+    ...(await getYtDlpArgs({ useProxy: false })),
     '--flat-playlist',
     '--dump-json',
     '--skip-download',
@@ -325,12 +325,7 @@ export async function searchYouTubeVideos(query, { limit = 10, onProgress = () =
 }
 
 /**
- * Downloads a YouTube video using native Android protocol in Codespaces.
- * @param {string} url - YouTube URL
- * @param {string} outputDir - Directory to store the downloaded file
- * @param {string} videoId - Unique identifier for the job
- * @param {Function} onProgress - Progress status callback
- * @returns {Promise<{ filePath: string, metadata: object }>}
+ * Downloads a YouTube video using authentic cookies with automatic direct/proxy retry.
  */
 export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress = () => {}) {
   if (!fs.existsSync(outputDir)) {
@@ -344,117 +339,125 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
 
   onProgress({ step: 'download', message: 'Fetching video metadata and starting 720p download...', progress: 10 });
 
-  return new Promise((resolve, reject) => {
-    (async () => {
-      // Fetch metadata via yt-dlp
-      const baseArgs = await getYtDlpArgs();
-      const infoArgs = [
-        ...baseArgs,
-        '--dump-json',
-        '--no-playlist',
-        url
-      ];
-      const infoResult = await runYtDlp(ytDlpPath, infoArgs);
+  async function executeDownload(useProxy) {
+    const baseArgs = await getYtDlpArgs({ useProxy });
+    const infoArgs = [
+      ...baseArgs,
+      '--dump-json',
+      '--no-playlist',
+      url
+    ];
+    const infoResult = await runYtDlp(ytDlpPath, infoArgs);
 
-      let metadata = { title: 'YouTube Video', duration: 60 };
-      if (infoResult.code === 0 && infoResult.stdout) {
-        try {
-          const parsed = JSON.parse(infoResult.stdout);
-          metadata = {
-            title: parsed.title || 'YouTube Video',
-            duration: parsed.duration || 60,
-            description: (parsed.description || '').slice(0, 500),
-            channel: parsed.uploader || parsed.channel || '',
-            tags: parsed.tags || [],
-          };
-        } catch (e) {
-          console.warn('[Downloader] Warning: Could not parse video metadata JSON');
-        }
+    let metadata = { title: 'YouTube Video', duration: 60 };
+    if (infoResult.code === 0 && infoResult.stdout) {
+      try {
+        const parsed = JSON.parse(infoResult.stdout);
+        metadata = {
+          title: parsed.title || 'YouTube Video',
+          duration: parsed.duration || 60,
+          description: (parsed.description || '').slice(0, 500),
+          channel: parsed.uploader || parsed.channel || '',
+          tags: parsed.tags || [],
+        };
+      } catch (e) {
+        console.warn('[Downloader] Warning: Could not parse video metadata JSON');
       }
+    }
 
-      // 2. Download the video file
-      const dlArgs = [
-        '--ffmpeg-location',
-        ffmpegPath,
-        ...baseArgs,
-        '-f',
-        '18/22/best[height<=720]/bestvideo[height<=720]+bestaudio/best',
-        '--merge-output-format',
-        'mp4',
-        '--no-playlist',
-        '--no-part',
-        '--no-mtime',
-        ...(IS_LINUX ? [] : ['--windows-filenames']),
-        '--retries', '5',
-        '--fragment-retries', '5',
-        '-o',
-        outputTemplate,
-        url,
-      ];
+    const dlArgs = [
+      '--ffmpeg-location',
+      ffmpegPath,
+      ...baseArgs,
+      '-f',
+      '18/22/best[height<=720]/bestvideo[height<=720]+bestaudio/best',
+      '--merge-output-format',
+      'mp4',
+      '--no-playlist',
+      '--no-part',
+      '--no-mtime',
+      ...(IS_LINUX ? [] : ['--windows-filenames']),
+      '--retries', '5',
+      '--fragment-retries', '5',
+      '-o',
+      outputTemplate,
+      url,
+    ];
 
-      console.log(`[Downloader] Spawning yt-dlp client: ${ytDlpPath} ${dlArgs.join(' ')}`);
-      onProgress({ step: 'download', message: `Downloading "${metadata.title}" (720p)...`, progress: 20 });
+    console.log(`[Downloader] Spawning yt-dlp (proxy=${useProxy}): ${ytDlpPath} ${dlArgs.join(' ')}`);
+    onProgress({ step: 'download', message: `Downloading "${metadata.title}" (720p)...`, progress: 20 });
 
-      const downloadResult = await runYtDlp(ytDlpPath, dlArgs, {
-        onStdout: (text) => {
-          const match = text.match(/(\d+(\.\d+)?)%/);
-          if (match) {
-            const percent = parseFloat(match[1]);
-            const scaledProgress = 20 + Math.round(percent * 0.15);
-            onProgress({ step: 'download', message: `Downloading video: ${Math.round(percent)}%`, progress: scaledProgress });
-          }
-        },
-      });
-
-      if (downloadResult.code === 0) {
-        try {
-          let downloadedFile = finalExpectedPath;
-
-          if (!fs.existsSync(downloadedFile)) {
-            const videoFiles = fs.readdirSync(outputDir).filter(f =>
-              f.startsWith(`raw_${videoId}`) &&
-              !f.endsWith('.m4a') &&
-              !f.endsWith('.mp3') &&
-              !f.endsWith('.aac') &&
-              !f.endsWith('.opus') &&
-              !f.endsWith('.part') &&
-              !f.endsWith('.ytdl') &&
-              (f.endsWith('.mp4') || f.endsWith('.webm') || f.endsWith('.mkv') || f.endsWith('.mov'))
-            );
-
-            const audioFiles = fs.readdirSync(outputDir).filter(f =>
-              f.startsWith(`raw_${videoId}`) &&
-              (f.endsWith('.m4a') || f.endsWith('.mp3') || f.endsWith('.aac') || f.endsWith('.opus'))
-            );
-
-            if (videoFiles.length > 0) {
-              const primaryVideo = path.join(outputDir, videoFiles[0]);
-              if (audioFiles.length > 0) {
-                const primaryAudio = path.join(outputDir, audioFiles[0]);
-                onProgress({ step: 'download', message: 'Merging video & audio streams with FFmpeg...', progress: 32 });
-                try {
-                  await mergeStreamsWithFfmpeg(primaryVideo, primaryAudio, finalExpectedPath);
-                  downloadedFile = finalExpectedPath;
-                } catch (mErr) {
-                  downloadedFile = primaryVideo;
-                }
-              } else {
-                downloadedFile = primaryVideo;
-              }
-            } else {
-              return reject(new Error(`Video file not found in ${outputDir} after download.`));
-            }
-          }
-
-          onProgress({ step: 'download', message: 'Video download completed successfully.', progress: 35 });
-          resolve({ filePath: downloadedFile, metadata });
-        } catch (resErr) {
-          reject(resErr);
+    const downloadResult = await runYtDlp(ytDlpPath, dlArgs, {
+      onStdout: (text) => {
+        const match = text.match(/(\d+(\.\d+)?)%/);
+        if (match) {
+          const percent = parseFloat(match[1]);
+          const scaledProgress = 20 + Math.round(percent * 0.15);
+          onProgress({ step: 'download', message: `Downloading video: ${Math.round(percent)}%`, progress: scaledProgress });
         }
-        return;
-      }
+      },
+    });
 
-      reject(new Error(`Download failed with code ${downloadResult.code}: ${downloadResult.stderr.slice(-600)}`));
-    })().catch(reject);
-  });
+    return { downloadResult, metadata };
+  }
+
+  // Attempt 1: Direct connection (cleanest reputation with authentic cookies)
+  let { downloadResult, metadata } = await executeDownload(false);
+
+  // Attempt 2: If direct connection failed, retry via Cloudflare WARP proxy
+  if (downloadResult.code !== 0 && IS_LINUX) {
+    const warpListening = await isProxyListening(40000, '127.0.0.1');
+    if (warpListening) {
+      console.warn(`[Downloader] Direct download failed (code ${downloadResult.code}). Retrying via Cloudflare WARP proxy...`);
+      onProgress({ step: 'download', message: 'Retrying video download via proxy...', progress: 15 });
+      const retryRes = await executeDownload(true);
+      downloadResult = retryRes.downloadResult;
+      metadata = retryRes.metadata;
+    }
+  }
+
+  if (downloadResult.code === 0) {
+    let downloadedFile = finalExpectedPath;
+
+    if (!fs.existsSync(downloadedFile)) {
+      const videoFiles = fs.readdirSync(outputDir).filter(f =>
+        f.startsWith(`raw_${videoId}`) &&
+        !f.endsWith('.m4a') &&
+        !f.endsWith('.mp3') &&
+        !f.endsWith('.aac') &&
+        !f.endsWith('.opus') &&
+        !f.endsWith('.part') &&
+        !f.endsWith('.ytdl') &&
+        (f.endsWith('.mp4') || f.endsWith('.webm') || f.endsWith('.mkv') || f.endsWith('.mov'))
+      );
+
+      const audioFiles = fs.readdirSync(outputDir).filter(f =>
+        f.startsWith(`raw_${videoId}`) &&
+        (f.endsWith('.m4a') || f.endsWith('.mp3') || f.endsWith('.aac') || f.endsWith('.opus'))
+      );
+
+      if (videoFiles.length > 0) {
+        const primaryVideo = path.join(outputDir, videoFiles[0]);
+        if (audioFiles.length > 0) {
+          const primaryAudio = path.join(outputDir, audioFiles[0]);
+          onProgress({ step: 'download', message: 'Merging video & audio streams with FFmpeg...', progress: 32 });
+          try {
+            await mergeStreamsWithFfmpeg(primaryVideo, primaryAudio, finalExpectedPath);
+            downloadedFile = finalExpectedPath;
+          } catch (mErr) {
+            downloadedFile = primaryVideo;
+          }
+        } else {
+          downloadedFile = primaryVideo;
+        }
+      } else {
+        throw new Error(`Video file not found in ${outputDir} after download.`);
+      }
+    }
+
+    onProgress({ step: 'download', message: 'Video download completed successfully.', progress: 35 });
+    return { filePath: downloadedFile, metadata };
+  }
+
+  throw new Error(`Download failed with code ${downloadResult.code}: ${downloadResult.stderr.slice(-600)}`);
 }

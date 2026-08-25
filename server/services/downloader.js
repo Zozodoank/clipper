@@ -48,7 +48,7 @@ async function getYtDlpArgs({ useProxy = false } = {}) {
   }
 
   return [
-    '--extractor-args', 'youtube:player_client=android_vr,android,ios,web',
+    '--extractor-args', 'youtube:player_client=ios,tv,android,web',
     '--js-runtimes', 'node',
     '--remote-components', 'ejs:github',
     '--no-check-certificates',

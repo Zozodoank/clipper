@@ -9,7 +9,9 @@ const __dirname = path.dirname(__filename);
 const serverDir = path.resolve(__dirname, '..');
 
 const YOUTUBE_AUTH_ERROR_PATTERN = /(HTTP Error 429|Too Many Requests|Sign in to confirm|not a bot|cookies-from-browser|cookies for the authentication|confirm you)/i;
-const DEFAULT_BROWSER_COOKIE_SOURCES = ['chrome', 'edge', 'firefox', 'brave'];
+// On Linux/Codespace servers, no desktop browser is installed — skip browser cookie sources entirely
+const IS_LINUX = process.platform === 'linux';
+const DEFAULT_BROWSER_COOKIE_SOURCES = IS_LINUX ? [] : ['chrome', 'edge', 'firefox', 'brave'];
 
 /**
  * Merge separate video and audio files using FFmpeg.
@@ -305,7 +307,8 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
         '--no-playlist',
         '--no-part',             // Disables .part file creation to prevent Windows [WinError 32] file locking on rename
         '--no-mtime',            // Avoids timestamp modification lock
-        '--windows-filenames',   // Ensures fully compliant Windows filenames
+        // --windows-filenames is only needed on Windows; skip on Linux/Codespace
+        ...(IS_LINUX ? [] : ['--windows-filenames']),
         '--retries', '5',
         '--fragment-retries', '5',
         '-o',

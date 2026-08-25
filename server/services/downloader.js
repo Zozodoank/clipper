@@ -194,37 +194,39 @@ async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress) {
     onProgress({ step: 'download', message: `Downloading video via RapidAPI stream (${best.quality || '360p'})...`, progress: 18 });
     console.log(`[Downloader] YouTube Media Downloader stream: ${best.quality}, hasAudio=${best.hasAudio}, size=${best.sizeText}`);
 
-    // Stream the download
-    const streamRes = await fetch(best.url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': 'https://www.youtube.com/',
-        'Origin': 'https://www.youtube.com',
-        'Accept': '*/*'
-      }
-    });
-    if (!streamRes.ok) {
-      console.warn(`[Downloader] YouTube Media Downloader stream HTTP ${streamRes.status}`);
-      return null;
-    }
-
-    const totalBytes = Number(streamRes.headers.get('content-length')) || best.size || 0;
-    let downloadedBytes = 0;
-    const fileStream = fs.createWriteStream(outputPath);
-
+    // Stream the download using curl to support SOCKS5 proxy natively
+    const proxy = process.env.YTDLP_PROXY?.trim() || (IS_LINUX ? 'socks5h://127.0.0.1:40000' : null);
+    
     await new Promise((resolve, reject) => {
-      streamRes.body.on('data', (chunk) => {
-        downloadedBytes += chunk.length;
-        if (totalBytes > 0) {
-          const percent = Math.round((downloadedBytes / totalBytes) * 100);
-          const scaledProgress = 18 + Math.round(percent * 0.17);
-          onProgress({ step: 'download', message: `Downloading: ${percent}%`, progress: scaledProgress });
+      const curlArgs = [
+        '-L', // follow redirects
+        '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        '-H', 'Referer: https://www.youtube.com/',
+        '-H', 'Origin: https://www.youtube.com',
+        '-o', outputPath
+      ];
+      if (proxy) {
+        curlArgs.push('-x', proxy);
+      }
+      curlArgs.push(best.url);
+
+      const curlProc = spawn('curl', curlArgs);
+      
+      let stderr = '';
+      curlProc.stderr.on('data', (d) => {
+        stderr += d.toString();
+        // Simple progress report from curl output could be added here
+      });
+
+      curlProc.on('close', (code) => {
+        if (code === 0 && fs.existsSync(outputPath)) {
+          resolve();
+        } else {
+          console.warn(`[Downloader] curl failed with code ${code}. Error: ${stderr.slice(-200)}`);
+          reject(new Error(`curl download failed`));
         }
       });
-      streamRes.body.pipe(fileStream);
-      fileStream.on('finish', resolve);
-      fileStream.on('error', reject);
-      streamRes.body.on('error', reject);
+      curlProc.on('error', reject);
     });
 
     return { filePath: outputPath, metadata };

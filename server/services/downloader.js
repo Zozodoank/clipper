@@ -23,10 +23,15 @@ function getYtDlpArgs() {
   const proxyArgs = residentialProxy ? ['--proxy', residentialProxy] : [];
 
   const cookiesPath = path.join(serverDir, 'cookies.txt');
-  const cookiesArgs = fs.existsSync(cookiesPath) ? ['--cookies', cookiesPath] : [];
+  const hasCookies = fs.existsSync(cookiesPath);
+  const cookiesArgs = hasCookies ? ['--cookies', cookiesPath] : [];
+  
+  if (hasCookies) {
+    console.log(`[Downloader] 🍪 Authenticated cloud session active: using ${cookiesPath}`);
+  }
 
   return [
-    '--extractor-args', 'youtube:player_client=web_embedded,mweb,ios,android',
+    '--extractor-args', 'youtube:player_client=web,mweb,ios,android',
     '--referer', 'https://www.google.com/',
     '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     '--sleep-requests', '3',

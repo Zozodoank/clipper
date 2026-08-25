@@ -165,7 +165,7 @@ node dev-runner.js
 ### 🛡️ Parameter Kunci `yt-dlp` yang Digunakan Backend
 
 Backend mengombinasikan 4 teknologi bypass otomatis tanpa cookies:
-- `--extractor-args "youtube:player_client=android_vr,android,ios,web"` : Memanipulasi protokol player native (VR & Android) yang tidak mewajibkan login akun Google.
+- `--extractor-args "youtube:player_client=ios,tv,android,web"` : Memanipulasi protokol player native (iOS & Smart TV) yang tidak memerlukan cookies maupun GVS PO Token.
 - `--js-runtimes node` : Menggunakan engine Node.js lokal untuk mengeksekusi challenge script YouTube.
 - `--remote-components ejs:github` : Mengunduh solver enkripsi *n-challenge* terbaru langsung dari repository resmi GitHub secara otomatis.
 - `--proxy socks5://127.0.0.1:40000` : Melewati jaringan Cloudflare WARP jika diperlukan masking IP.

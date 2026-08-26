@@ -240,12 +240,13 @@ export async function discoverYouTubeCandidatesForProduct({
   onProgress = () => {},
 } = {}) {
   const coreTitle = cleanTitle(productTitle);
-  const productWords = normalizeText(coreTitle).split(' ').filter((word) => word.length >= 4);
-  const compactTitle = productWords.slice(0, 6).join(' ');
+  const productWords = normalizeText(coreTitle).split(' ').filter((word) => word.length >= 3);
+  const compactTitle = productWords.slice(0, 5).join(' ');
   const queryCandidates = [
-    [coreTitle, 'review demo hands only faceless tanpa wajah produk viral'].filter(Boolean).join(' '),
-    [compactTitle, 'review produk viral'].filter(Boolean).join(' '),
-    [compactTitle, 'unboxing review'].filter(Boolean).join(' '),
+    `${compactTitle} review`,
+    `${compactTitle} unboxing review`,
+    `${compactTitle} produk`,
+    coreTitle,
   ].filter(Boolean);
 
   let candidates = [];
@@ -256,10 +257,10 @@ export async function discoverYouTubeCandidatesForProduct({
       usedQuery = query;
       break;
     }
-    await delayWithJitter(1000, 2000);
+    await delayWithJitter(500, 1000);
   }
 
-  return candidates
+  const cleanCandidates = candidates
     .filter((candidate) => isLikelyCleanYouTubeCandidate(candidate))
     .map((candidate) => ({
       ...candidate,
@@ -268,6 +269,8 @@ export async function discoverYouTubeCandidatesForProduct({
     }))
     .filter((candidate) => candidate.matchScore >= 0)
     .sort((a, b) => b.matchScore - a.matchScore);
+
+  return cleanCandidates.length > 0 ? cleanCandidates : candidates;
 }
 
 export function delayWithJitter(minMs, maxMs) {
@@ -502,21 +505,14 @@ function isShopeeProductUrl(url) {
 }
 
 function isLikelyCleanYouTubeCandidate(candidate) {
-  const text = normalizeText(`${candidate.title} ${candidate.description} ${candidate.channel}`);
   if (!candidate.url || !candidate.id) return false;
-  if (candidate.duration < 20 || candidate.duration > 900) return false;
-  if (isBulkyOrUnsuitableProduct(text)) return false;
+  if (candidate.duration < 15 || candidate.duration > 1800) return false;
 
-  return ![
-    'shorts',
-    'podcast',
-    'live',
-    'reaction',
-    'kompilasi',
-    'compilation',
-    'music',
-    'lyrics',
-  ].some((keyword) => text.includes(keyword));
+  const titleText = normalizeText(candidate.title || '');
+  if (isBulkyOrUnsuitableProduct(titleText)) return false;
+
+  const excludedTitleWords = ['podcast', 'reaction', 'kompilasi', 'compilation', 'full album', 'playlist'];
+  return !excludedTitleWords.some((keyword) => titleText.includes(keyword));
 }
 
 function scoreCandidateMatch(candidate, productWords, productDescription) {

@@ -65,13 +65,9 @@ function getYtDlpArgs() {
 
   if (foundCookies) {
     console.log(`[Downloader] 🍪 Found active session cookies: ${foundCookies}`);
-  } else {
-    console.warn(`[Downloader] ⚠️ No cookies.txt found. Running in unauthenticated mode.`);
   }
 
   return [
-    '--extractor-args', 'youtube:player_client=android,web_embedded,mweb',
-    '--user-agent', 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
     '--no-check-certificates',
     '--geo-bypass',
     ...cookiesArgs,

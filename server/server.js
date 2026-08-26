@@ -979,7 +979,7 @@ app.post('/api/upload-cookies', express.text({ type: '*/*', limit: '10mb' }), (r
   res.json({ success: true, message: 'cookies.txt berhasil disimpan. Sekarang retry job Anda.', path: cookiesPath });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   const aiveneKey = process.env.AIVENE_API_KEY ? process.env.AIVENE_API_KEY.trim() : '';
   const maskedKey = aiveneKey
     ? `${aiveneKey.slice(0, 8)}...${aiveneKey.slice(-4)}`

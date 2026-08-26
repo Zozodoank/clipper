@@ -8,7 +8,9 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     server: {
+      host: '0.0.0.0', // Listen on all network interfaces (LAN / Wi-Fi)
       port: 3000,
+      cors: true,
       proxy: {
         '/api': {
           target: apiTarget,

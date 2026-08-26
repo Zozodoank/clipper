@@ -1,5 +1,6 @@
 import { spawn } from 'child_process';
 import net from 'net';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -9,13 +10,29 @@ const __dirname = path.dirname(__filename);
 const isWindows = process.platform === 'win32';
 const npmCmd = isWindows ? 'npm.cmd' : 'npm';
 const SERVER_PORT_START = 5000;
+const CLIENT_PORT = 3000;
+
+function getNetworkIpAddresses() {
+  const interfaces = os.networkInterfaces();
+  const addresses = [];
+  for (const devName in interfaces) {
+    const iface = interfaces[devName];
+    for (let i = 0; i < iface.length; i++) {
+      const alias = iface[i];
+      if (alias.family === 'IPv4' && !alias.internal) {
+        addresses.push(alias.address);
+      }
+    }
+  }
+  return addresses;
+}
 
 async function isPortFree(port) {
   return new Promise((resolve) => {
     const server = net.createServer();
     server.unref();
     server.once('error', () => resolve(false));
-    server.listen({ port, host: '::' }, () => {
+    server.listen({ port, host: '0.0.0.0' }, () => {
       server.close(() => resolve(true));
     });
   });
@@ -28,10 +45,20 @@ async function findFreePort(startPort) {
   throw new Error(`Tidak menemukan port backend kosong mulai dari ${startPort}.`);
 }
 
-console.log('🚀 Starting Local AI Affiliate Clipper Development Environment...');
+console.log('\n======================================================');
+console.log('🚀 Starting Local AI Affiliate Clipper Server...');
+console.log('======================================================');
 
 const serverPort = await findFreePort(SERVER_PORT_START);
-console.log(`Backend proxy target: http://localhost:${serverPort}`);
+const networkIps = getNetworkIpAddresses();
+
+console.log(`\n📱 Local:   http://localhost:${CLIENT_PORT}`);
+if (networkIps.length > 0) {
+  networkIps.forEach((ip) => {
+    console.log(`💻 Network: http://${ip}:${CLIENT_PORT} (Akses dari PC / HP lain di Wi-Fi yang sama)`);
+  });
+}
+console.log(`🌐 Backend: http://0.0.0.0:${serverPort}\n`);
 
 const serverProcess = spawn(npmCmd, ['run', 'dev'], {
   cwd: path.join(__dirname, 'server'),
@@ -43,7 +70,7 @@ const serverProcess = spawn(npmCmd, ['run', 'dev'], {
   shell: true,
 });
 
-const clientProcess = spawn(npmCmd, ['run', 'dev'], {
+const clientProcess = spawn(npmCmd, ['run', 'dev', '--', '--host', '0.0.0.0', '--port', String(CLIENT_PORT)], {
   cwd: path.join(__dirname, 'client'),
   env: {
     ...process.env,

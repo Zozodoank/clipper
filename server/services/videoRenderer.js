@@ -142,9 +142,22 @@ export async function mergeVoiceoverAndBurnSubtitles({
 
   const videoDuration = await getMediaDurationSec(silentVideoPath, ffmpegPath) || Number(targetDurationSec) || 45;
   const audioDuration = await getMediaDurationSec(voiceoverAudioPath, ffmpegPath);
-  const atempoFactor = audioDuration && videoDuration
-    ? Math.max(0.1, audioDuration / videoDuration)
-    : 1;
+  
+  // Natural audio tempo constraint:
+  // If audio duration is close to video duration (within ~15%), gently adjust tempo (0.88 - 1.2).
+  // If audio is noticeably shorter, NEVER slow it down into a weird slow-motion drag.
+  // Keep the speaking voice 100% natural (tempo 1.0) and pad silence at the end cleanly with apad.
+  let atempoFactor = 1;
+  if (audioDuration && videoDuration) {
+    const rawRatio = audioDuration / videoDuration;
+    if (rawRatio >= 0.88 && rawRatio <= 1.2) {
+      atempoFactor = rawRatio;
+    } else if (rawRatio > 1.2) {
+      atempoFactor = Math.min(1.3, rawRatio);
+    } else {
+      atempoFactor = 1.0; // Preserve 100% natural human speaking tempo
+    }
+  }
 
   onProgress({
     step: 'merge_final',

@@ -279,10 +279,21 @@ export async function generateAdAdvisorScriptWithGemini({
 
   const effectiveTitle = (productTitle || '').trim() || videoMetadata?.title || 'Produk Viral Shopee';
   const effectiveDesc = (productDescription || '').trim();
+  const targetDuration = Math.max(15, Math.round(Number(segmentDuration) || 45));
+  const targetWords = Math.round(targetDuration * 2.6);
+  const minWords = Math.round(targetDuration * 2.4);
+  const maxWords = Math.round(targetDuration * 2.8);
 
   const systemPrompt = `You are a Senior Creative Director and Ad Advisor specializing in Indonesian Short-Form Affiliate Video Marketing (TikTok Shop, Shopee Video, Instagram Reels).
 
-You will receive the explicit Product Title, Product Description, and the sampled frames of a ${segmentDuration}-second video clip. Use this precise product knowledge together with the visual frames to generate 5 high-converting marketing assets without making incorrect assumptions:
+You will receive the explicit Product Title, Product Description, and the sampled frames of a ${targetDuration}-second video clip. Use this precise product knowledge together with the visual frames to generate 5 high-converting marketing assets without making incorrect assumptions:
+
+CRITICAL DURATION & WORD-COUNT TIMING RULES (MANDATORY):
+- The final video duration is EXACTLY ${targetDuration} seconds.
+- In standard, engaging Indonesian voiceover tempo (2.5 - 2.8 words/second), the TOTAL voiceover script MUST contain between ${minWords} and ${maxWords} words (Target ideal: exactly ~${targetWords} words).
+- DO NOT make the script too short (fewer than ${minWords} words)! A short script will leave dead silence or force the backend to unnaturally slow down audio playback.
+- DO NOT make the script too long (more than ${maxWords} words)! A script that is too long will be cut off before the video finishes.
+- Distribute narration evenly across scenes: For every 5-second scene beat, write approximately 12 to 14 words of spoken narration so the voiceover flows continuously from second 00:00 to second ${targetDuration}.
 
 1. 'sampleContext':
    - 'productName': Explicit product name.
@@ -292,22 +303,22 @@ You will receive the explicit Product Title, Product Description, and the sample
    - 'buyingTrigger': Psychological trigger (FOMO, convenience, discount, viral trend).
 
 2. 'scenes' (Kotak Scene / Scene-by-Scene Breakdown):
-   - Break the ${segmentDuration}-second video into short editing beats of 4 to 5 seconds each.
-   - Produce enough scenes to cover the full clip duration, usually ${Math.ceil(segmentDuration / 5)} to ${Math.ceil(segmentDuration / 4)} scenes.
+   - Break the ${targetDuration}-second video into short editing beats of 4 to 5 seconds each.
+   - Produce enough scenes to cover the full clip duration, usually ${Math.ceil(targetDuration / 5)} to ${Math.ceil(targetDuration / 4)} scenes.
    - No single scene may be longer than 5 seconds unless it is the final leftover scene.
    - For each scene provide:
      * 'sceneNumber': integer (1, 2, 3...)
      * 'timeRange': e.g. "00:00 - 00:05"
      * 'visualDescription': What is happening visually in Indonesian.
-     * 'voiceover': The exact spoken narration line for this scene, short enough to fit 4-5 seconds.
+     * 'voiceover': The exact spoken narration line for this scene (around 12-14 words per 5-second scene).
      * 'adAdvisorNotes': Director notes for sound effects (SFX), visual text overlays, or emotional pacing.
 
 3. 'voiceoverScript' (Naskah Voiceover Lengkap):
-   - A complete Indonesian spoken narration formatted cleanly with sections:
+   - A complete Indonesian spoken narration (${minWords} - ${maxWords} words total) formatted cleanly with sections:
      [HOOK 0-3s]: Bold, curiosity-inducing hook line mentioning the product.
      [PROBLEM & DEMO 3-20s]: Story / problem and benefit demonstration based on product description and video visual.
      [VALUE PROPOSITION 20-35s]: Key advantages, specifications, and quality assurance.
-     [CALL TO ACTION 35-${segmentDuration}s]: Direct CTA directing viewer to check the product below (e.g., "Cek produk di bawah sekarang sebelum kehabisan!").
+     [CALL TO ACTION 35-${targetDuration}s]: Direct CTA directing viewer to check the product below (e.g., "Cek produk di bawah sekarang sebelum kehabisan!").
 
 STRICT RULES FOR VOICE OVER & CALL TO ACTION:
 - NEVER use the word "Shopee" in the voiceover script or scene spoken lines.
@@ -325,7 +336,7 @@ Sample Context
 [One or two sentences describing tone, pacing, and style of the ad. e.g. "Iklan affiliate viral. Dimulai dengan hook yang menarik perhatian, membangun ke demonstrasi produk, diakhiri CTA yang meyakinkan. Nada suara hangat, antusias, dan persuasif."]
 
 Speaker 1 - Orus
-[voiceover script with emotion tags inline. Use ONLY these emotion tags: [intrigue] [desire] [information] [excited] [inspiration] [confident]. Each sentence or phrase should start with the most fitting emotion tag. Write the full Indonesian voiceover narration here from hook to CTA, using the product's actual name and details.]
+[voiceover script with emotion tags inline. Use ONLY these emotion tags: [intrigue] [desire] [information] [excited] [inspiration] [confident]. Each sentence or phrase should start with the most fitting emotion tag. Write the full Indonesian voiceover narration (${minWords} - ${maxWords} words) here from hook to CTA, using the product's actual name and details.]
 
    - IMPORTANT: The output of 'aiStudioPrompt' must be a plain string (not JSON) ready to paste directly into AI Studio. Do NOT add any JSON object inside it.
 
@@ -339,7 +350,7 @@ Judul / Nama Produk: "${effectiveTitle}"
 ${effectiveDesc ? `Deskripsi & Spesifikasi Produk: "${effectiveDesc}"` : 'Deskripsi: (Analisis dari visual frame video)'}
 Shopee Affiliate Link: ${shopeeLink || 'https://shope.ee/link'}
 Visual Hook: "${productHook || 'Racun Viral Wajib Punya!'}"
-Durasi Video Potongan: ${segmentDuration} detik
+Durasi Video Potongan: ${targetDuration} detik (Wajib naskah dengan panjang ${minWords} - ${maxWords} kata, target ideal: ~${targetWords} kata)
 
 Visual Frames of the concatenated 5-second Gemini-selected product clips (${trimmedFrames.length} frames):
 ${trimmedFrames.map((f, i) => `Frame #${i + 1} at timestamp ${f.timeFormatted} (${f.timestamp}s)`).join('\n')}
@@ -347,10 +358,11 @@ ${trimmedFrames.map((f, i) => `Frame #${i + 1} at timestamp ${f.timeFormatted} (
 Gunakan informasi judul dan deskripsi produk di atas agar naskah sangat relevan dan akurat.
 Buat Kotak Scene, Sample Context, Naskah Voiceover Ad Advisor, dan AI Studio prompt.
 
-PENTING - ATURAN CTA & NARASI:
-1. JANGAN PERNAH gunakan kata "Shopee" dalam naskah voiceover maupun Kotak Scene.
-2. JANGAN PERNAH gunakan kata "link di bio".
-3. Selalu gunakan ajakan seperti "Cek produk di bawah sekarang", "Klik produk di bawah", atau "Checkout produk di bawah sebelum kehabisan".
+PENTING - ATURAN DURASI & TEMPO NASKAH:
+1. Durasi video adalah ${targetDuration} detik. Naskah voiceover HARUS pas ${minWords} s/d ${maxWords} kata (sekitar 12-14 kata tiap scene 5 detik) agar pas dengan durasi video tanpa perlu diperlambat!
+2. JANGAN PERNAH gunakan kata "Shopee" dalam naskah voiceover maupun Kotak Scene.
+3. JANGAN PERNAH gunakan kata "link di bio".
+4. Selalu gunakan ajakan seperti "Cek produk di bawah sekarang", "Klik produk di bawah", atau "Checkout produk di bawah sebelum kehabisan".
 
 Return strict JSON in this format:
 {

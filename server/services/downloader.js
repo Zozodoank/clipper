@@ -52,34 +52,53 @@ function findCookiesFile() {
  * 4. Optional Residential Proxy support (via RESIDENTIAL_PROXY or PROXY_URL)
  * 5. Automatic detection of session cookies.txt across root and server/ folders
  */
+/**
+ * Base yt-dlp args used for all requests (search + download).
+ * Stripped of --remote-components and --js-runtimes which break on Android/Termux.
+ */
 function getYtDlpArgs() {
   const residentialProxy = (process.env.RESIDENTIAL_PROXY || process.env.PROXY_URL || '').trim();
   const proxyArgs = residentialProxy ? ['--proxy', residentialProxy] : [];
 
   const foundCookies = findCookiesFile();
   const cookiesArgs = foundCookies ? ['--cookies', foundCookies] : [];
-  
+
   if (foundCookies) {
     console.log(`[Downloader] 🍪 Found active session cookies: ${foundCookies}`);
   } else {
-    console.warn(`[Downloader] ⚠️ No cookies.txt found in server/ or root directory. Running in unauthenticated mode.`);
+    console.warn(`[Downloader] ⚠️ No cookies.txt found. Running in unauthenticated mode.`);
   }
 
   return [
-    '--extractor-args', 'youtube:player_client=android,android_vr,web_embedded,mweb',
-    '--referer', 'https://www.google.com/',
-    '--user-agent', 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/UD1A.230803.041) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
-    '--sleep-requests', '3',
-    '--sleep-interval', '3',
-    '--max-sleep-interval', '6',
-    '--limit-rate', '5M',
-    '--rm-cache-dir',
-    '--js-runtimes', 'node',
-    '--remote-components', 'ejs:github',
+    '--extractor-args', 'youtube:player_client=android,web_embedded,mweb',
+    '--user-agent', 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
     '--no-check-certificates',
     '--geo-bypass',
     ...cookiesArgs,
     ...proxyArgs
+  ];
+}
+
+/**
+ * Minimal fast args for search-only / metadata-only calls (no sleep delay).
+ */
+function getFastArgs() {
+  return [
+    ...getYtDlpArgs(),
+    '--rm-cache-dir',
+  ];
+}
+
+/**
+ * Download args with gentle rate-limiting to avoid bot detection.
+ */
+function getDownloadArgs() {
+  return [
+    ...getYtDlpArgs(),
+    '--limit-rate', '4M',
+    '--sleep-interval', '1',
+    '--max-sleep-interval', '3',
+    '--rm-cache-dir',
   ];
 }
 
@@ -377,9 +396,10 @@ export async function searchYouTubeVideos(query, { limit = 10, onProgress = () =
   });
 
   const baseArgs = [
-    ...(await getYtDlpArgs({ useProxy: false })),
+    ...getFastArgs(),
     '--flat-playlist',
     '--dump-json',
+    '--no-playlist',
     '--skip-download',
     searchTarget
   ];
@@ -437,42 +457,47 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
   const ffmpegPath = getFFmpegPath();
   const outputTemplate = path.join(outputDir, `${prefix}_${videoId}.%(ext)s`);
 
-  const qualityLabel = isPreview ? '240p/360p (Hemat Kuota)' : '720p HD';
-  onProgress({ step: 'download', message: `Fetching video metadata and starting ${qualityLabel} download...`, progress: 10 });
+  const qualityLabel = isPreview ? '360p (Hemat Kuota)' : '720p HD';
+  onProgress({ step: 'download', message: `Downloading preview (${qualityLabel}) for AI analysis...`, progress: 10 });
 
-  const baseArgs = getYtDlpArgs();
-  const infoArgs = [
-    ...baseArgs,
-    '--dump-json',
-    '--no-playlist',
-    url
-  ];
-  const infoResult = await runYtDlp(ytDlpPath, infoArgs);
+  const dlBaseArgs = getDownloadArgs();
 
+  // For preview mode: use a single combined download call (skip metadata step to save time)
+  // For full 720p: also fetch metadata first for scripting
   let metadata = { title: 'YouTube Video', duration: 60 };
-  if (infoResult.code === 0 && infoResult.stdout) {
-    try {
-      const parsed = JSON.parse(infoResult.stdout);
-      metadata = {
-        title: parsed.title || 'YouTube Video',
-        duration: parsed.duration || 60,
-        description: (parsed.description || '').slice(0, 500),
-        channel: parsed.uploader || parsed.channel || '',
-        tags: parsed.tags || [],
-      };
-    } catch (e) {
-      console.warn('[Downloader] Warning: Could not parse video metadata JSON');
+  if (!isPreview) {
+    const infoArgs = [
+      ...getFastArgs(),
+      '--dump-json',
+      '--no-playlist',
+      url
+    ];
+    const infoResult = await runYtDlp(ytDlpPath, infoArgs);
+    if (infoResult.code === 0 && infoResult.stdout) {
+      try {
+        const parsed = JSON.parse(infoResult.stdout);
+        metadata = {
+          title: parsed.title || 'YouTube Video',
+          duration: parsed.duration || 60,
+          description: (parsed.description || '').slice(0, 500),
+          channel: parsed.uploader || parsed.channel || '',
+          tags: parsed.tags || [],
+        };
+      } catch (e) {
+        console.warn('[Downloader] Warning: Could not parse video metadata JSON');
+      }
     }
   }
 
+  // Format 18 = YouTube's standard 360p MP4 with audio (universally available, no merge needed)
   const formatSelector = isPreview
-    ? '18/best[height<=360][ext=mp4]/bestvideo[height<=360]+bestaudio[ext=m4a]/best[height<=360]/best'
-    : '22/18/best[height<=720][ext=mp4]/bestvideo[height<=720]+bestaudio/best';
+    ? '18/bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best[height<=480]/worst[ext=mp4]'
+    : '22/18/bestvideo[height<=720]+bestaudio/best[height<=720]/best';
 
   const dlArgs = [
     '--ffmpeg-location',
     ffmpegPath,
-    ...baseArgs,
+    ...dlBaseArgs,
     '-f',
     formatSelector,
     '--merge-output-format',
@@ -480,16 +505,15 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
     '--no-playlist',
     '--no-part',
     '--no-mtime',
-    ...(IS_LINUX ? [] : ['--windows-filenames']),
-    '--retries', '5',
-    '--fragment-retries', '5',
+    '--retries', '3',
+    '--fragment-retries', '3',
     '-o',
     outputTemplate,
     url,
   ];
 
   console.log(`[Downloader] Spawning yt-dlp (${qualityLabel}): ${ytDlpPath} ${dlArgs.join(' ')}`);
-  onProgress({ step: 'download', message: `Downloading "${metadata.title}" (${qualityLabel})...`, progress: 20 });
+  onProgress({ step: 'download', message: `Downloading (${qualityLabel})...`, progress: 20 });
 
   const downloadResult = await runYtDlp(ytDlpPath, dlArgs, {
     onStdout: (text) => {

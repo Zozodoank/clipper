@@ -194,7 +194,12 @@ Return strict JSON in this format:
       }
 
       if (parsed.isProductMatch === false || parsed.isUsableSourceVideo === false) {
-        throw new Error(parsed.rejectionReason || 'Video YouTube tidak cocok atau tidak bersih untuk produk ini.');
+        if (!allowFallbackClips) {
+          throw new Error(parsed.rejectionReason || 'Video YouTube tidak cocok atau tidak bersih untuk produk ini.');
+        }
+        // When fallback is allowed, log the AI's rejection reason but still try fallback clips
+        console.warn(`[AIService] Gemini flagged video as unclean: "${parsed.rejectionReason}". Applying fallback clip plan...`);
+        parsed.clips = [];
       }
 
       const clips = normalizeClipPlan(parsed.clips, totalDuration, { allowFallback: allowFallbackClips });

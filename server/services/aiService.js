@@ -81,9 +81,8 @@ CRITICAL REJECTION & QUALITY RULES:
    - REJECT ANY CLIP containing watermarks, TikTok/IG usernames (@username), source channel branding, or prices.
 3. ABSOLUTE ZERO-TOLERANCE ON CREATOR FACES / TALKING HEADS:
    - FACELESS is mandatory: If a creator's face or head is visible in a candidate moment, REJECT IT. Only accept hands-only, product-only, or demonstration shots.
-4. REJECT SOURCE OWNER IDENTITY: Intro/outro bumpers, subscribe/like animations, channel end cards.
-5. IF NO CLEAN CLIPS EXIST: If the entire source video is covered in subtitles, stickers, or creator faces such that you cannot find at least 5 clean 5-second shots, set "isUsableSourceVideo": false, and write the clear rejection reason in "rejectionReason" (e.g. "Video ditolak: Mengandung subtitle / stiker / teks tambahan pada visual").
-6. RETURN 6 TO 12 CLEAN 5-SECOND CLIPS: Each clip MUST be exactly 5 seconds long (e.g., 00:05 to 00:10). Clips must not overlap.
+5. REJECTION THRESHOLD: If the source video has ZERO product demonstration shots (e.g. 100% creator face talking head or 100% unrelated gaming/vlog), set "isProductMatch": false, "isUsableSourceVideo": false, and write the reason in "rejectionReason".
+6. RETURN 3 TO 8 CLEAN 5-SECOND CLIPS: Each clip MUST be exactly 5 seconds long (e.g. 00:05 to 00:10, 00:15 to 00:20). Total duration 15 to 40 seconds. Prioritize hand/product close-ups, unboxing, and usage demonstration.
 7. VISUAL REFRAME FOR 9:16:
    - 'focusX' (0.0 left to 1.0 right) & 'focusY' (0.0 top to 1.0 bottom) centered on the product action.
    - 'renderMode': 'preserve_full_product' (for landscape 16:9 videos, stages 720x720 clean product over blurred backdrop) or 'vertical_crop' (for clean vertical sources).

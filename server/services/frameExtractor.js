@@ -44,13 +44,13 @@ export async function extractFrames(videoPath, framesDir, onProgress = () => {},
   onProgress({ step: 'frames', message: `Extracting source timeline frames (1 frame every ${safeInterval}s)...`, progress: 40 });
 
   return new Promise((resolve, reject) => {
-    // 256px wide, q:v 8 JPEG (~8-12 KB/frame) is sufficient for Gemini Flash product & text recognition
-    // while reducing base64 payload by ~55% vs the previous 320px/q:v5 setting.
+    // 360px wide, q:v 5 JPEG (~25-35 KB/frame) gives crystal clear vision recognition for Gemini Flash
+    // while keeping total API request payload under 500 KB.
     const args = [
       '-y',
       '-i', targetVideoPath,
-      '-vf', `fps=1/${safeInterval},scale=256:-1`,
-      '-q:v', '8',
+      '-vf', `fps=1/${safeInterval},scale=360:-1`,
+      '-q:v', '5',
       outputPattern
     ];
 

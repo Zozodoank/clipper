@@ -466,8 +466,8 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
   }
 
   const formatSelector = isPreview
-    ? 'worst[ext=mp4]/18/best[height<=360]/best[height<=240]/worst'
-    : '18/22/best[height<=720]/bestvideo[height<=720]+bestaudio/best';
+    ? '18/best[height<=360][ext=mp4]/bestvideo[height<=360]+bestaudio[ext=m4a]/best[height<=360]/best'
+    : '22/18/best[height<=720][ext=mp4]/bestvideo[height<=720]+bestaudio/best';
 
   const dlArgs = [
     '--ffmpeg-location',

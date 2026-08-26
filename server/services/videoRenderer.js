@@ -174,8 +174,9 @@ export async function mergeVoiceoverAndBurnSubtitles({
         .replace(/\\/g, '/')
         .replace(/:/g, '\\:');
 
-      // Compact bottom subtitles: readable without covering product/action.
-      const subtitleStyle = 'FontName=Arial,FontSize=15,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Bold=1,Alignment=2,MarginV=70,MarginL=76,MarginR=76';
+      // Position subtitles in the bottom blurred banner (y: 1000-1280, below the 720x720 main product video)
+      // Alignment=2 (Bottom-Center), MarginV=120 places text centered at y ≈ 1140, leaving the main video 100% unobstructed.
+      const subtitleStyle = 'PlayResX=720,PlayResY=1280,FontName=Arial,FontSize=26,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=2,Bold=1,Alignment=2,MarginV=120,MarginL=30,MarginR=30';
       filterChains.push(`[0:v]subtitles='${sanitizedSrt}':force_style='${subtitleStyle}'[v]`);
       mapArgs.push('-map', '[v]');
     } else {

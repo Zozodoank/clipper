@@ -82,23 +82,23 @@ export function generateSrtSubtitles(scriptText, totalDurationSec, srtOutputPath
     return srtOutputPath;
   }
 
-  // 2. Break lines into concise subtitle display chunks (3 to 6 words each)
-  // so subtitles are comfortable to read on vertical mobile screens without covering the product.
+  // 2. Break lines into concise subtitle display chunks (max 3 to 4 words each)
+  // so subtitles stay neatly on 1 line inside the bottom blurred banner.
   const subtitleChunks = [];
 
   for (let idx = 0; idx < lineItems.length; idx++) {
     const item = lineItems[idx];
     const words = item.text.split(/\s+/).filter(Boolean);
 
-    if (words.length <= 6) {
+    if (words.length <= 4) {
       subtitleChunks.push({
         text: words.join(' '),
         wordCount: words.length,
         anchorSec: item.timestampSec,
       });
     } else {
-      // Split into 2 or 3 natural phrases
-      const chunkSize = words.length <= 10 ? Math.ceil(words.length / 2) : 5;
+      // Split into concise 3 to 4 word phrases
+      const chunkSize = words.length <= 8 ? Math.ceil(words.length / 2) : 4;
       for (let w = 0; w < words.length; w += chunkSize) {
         const subWords = words.slice(w, w + chunkSize);
         if (subWords.length > 0) {

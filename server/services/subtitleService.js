@@ -2,19 +2,19 @@ import fs from 'fs';
 import path from 'path';
 
 /**
- * Generates an Advanced SubStation Alpha (.ass) subtitle file.
+ * Generates an Advanced SubStation Alpha (.ass) subtitle file synchronized to the voiceover audio.
  * Native ASS format gives pixel-perfect control over canvas resolution (PlayResX/PlayResY),
  * font size, stroke outline, shadow, and position without relying on inconsistent FFmpeg CLI parsing.
  * 
- * Ensures the generated subtitles match the exact spoken voiceover word-for-word in natural sentences.
+ * Synchronizes timing directly with the spoken audio duration using syllable/character weighting.
  *
  * @param {string} scriptText - Spoken voiceover narration
- * @param {number} totalDurationSec - Segment duration in seconds
+ * @param {number} totalDurationSec - Actual voiceover audio duration in seconds
  * @param {string} assOutputPath - Absolute path to write the .ass file
  * @returns {string} The path to the generated ASS file
  */
 export function generateAssSubtitles(scriptText, totalDurationSec, assOutputPath) {
-  const safeTotalDuration = Math.max(5, Number(totalDurationSec) || 30);
+  const safeTotalDuration = Math.max(3, Number(totalDurationSec) || 25);
 
   // 1. Extract pure spoken dialogue and strip headers, prompt instructions, etc.
   let cleaned = String(scriptText || '').trim();
@@ -66,6 +66,7 @@ export function generateAssSubtitles(scriptText, totalDurationSec, assOutputPath
         rawPhrases.push({
           text: sentence,
           wordCount: words.length,
+          charCount: sentence.replace(/\s+/g, '').length,
           anchorSec: sIdx === 0 ? timestampSec : null,
         });
       } else {
@@ -79,6 +80,7 @@ export function generateAssSubtitles(scriptText, totalDurationSec, assOutputPath
               rawPhrases.push({
                 text: partText,
                 wordCount: partWords.length,
+                charCount: partText.replace(/\s+/g, '').length,
                 anchorSec: sIdx === 0 && cpIdx === 0 ? timestampSec : null,
               });
             }
@@ -91,12 +93,14 @@ export function generateAssSubtitles(scriptText, totalDurationSec, assOutputPath
           rawPhrases.push({
             text: firstHalf,
             wordCount: half,
+            charCount: firstHalf.replace(/\s+/g, '').length,
             anchorSec: sIdx === 0 ? timestampSec : null,
           });
           if (secondHalf) {
             rawPhrases.push({
               text: secondHalf,
               wordCount: words.length - half,
+              charCount: secondHalf.replace(/\s+/g, '').length,
               anchorSec: null,
             });
           }
@@ -113,16 +117,28 @@ export function generateAssSubtitles(scriptText, totalDurationSec, assOutputPath
       .replace(/\s+/g, ' ')
       .trim();
     if (rawClean) {
-      rawPhrases.push({ text: rawClean, wordCount: rawClean.split(/\s+/).length, anchorSec: null });
+      rawPhrases.push({
+        text: rawClean,
+        wordCount: rawClean.split(/\s+/).length,
+        charCount: rawClean.replace(/\s+/g, '').length,
+        anchorSec: null
+      });
     }
   }
 
   if (rawPhrases.length === 0) {
-    rawPhrases.push({ text: 'Cek produk pilihan sekarang!', wordCount: 4, anchorSec: 0 });
+    rawPhrases.push({ text: 'Cek produk pilihan sekarang!', wordCount: 4, charCount: 24, anchorSec: 0 });
   }
 
-  // 2. Assign timing to each subtitle chunk proportionally or based on line anchors
-  const totalWords = rawPhrases.reduce((sum, c) => sum + c.wordCount, 0) || rawPhrases.length;
+  // 2. Calculate speech weight per phrase based on character count + sentence pause buffer
+  // In Indonesian narration, syllables & character count give far more accurate speech pacing than raw word count.
+  const weights = rawPhrases.map((p) => {
+    const baseWeight = Math.max(8, p.charCount);
+    const pauseWeight = p.text.endsWith('?') || p.text.endsWith('!') || p.text.endsWith('.') ? 6 : (p.text.endsWith(',') ? 3 : 0);
+    return baseWeight + pauseWeight;
+  });
+
+  const totalWeight = weights.reduce((sum, w) => sum + w, 0) || 1;
   let currentCursor = 0;
   const events = [];
 
@@ -137,15 +153,17 @@ export function generateAssSubtitles(scriptText, totalDurationSec, assOutputPath
     const nextAnchor = rawPhrases.slice(i + 1).find((c) => c.anchorSec !== null)?.anchorSec;
     const remainingTime = (nextAnchor ? nextAnchor : safeTotalDuration) - startSec;
     const nextAnchorIndex = nextAnchor ? rawPhrases.findIndex((c, ci) => ci > i && c.anchorSec === nextAnchor) : rawPhrases.length;
-    const sliceWords = rawPhrases.slice(i, nextAnchorIndex).reduce((sum, c) => sum + c.wordCount, 0) || chunk.wordCount;
+    const sliceWeights = weights.slice(i, nextAnchorIndex).reduce((sum, w) => sum + w, 0) || weights[i];
 
     const proportionalDuration = remainingTime > 0
-      ? remainingTime * (chunk.wordCount / sliceWords)
-      : safeTotalDuration * (chunk.wordCount / totalWords);
+      ? remainingTime * (weights[i] / sliceWeights)
+      : safeTotalDuration * (weights[i] / totalWeight);
 
+    // Ensure minimum display duration so quick phrases are readable
+    const minDisplaySec = Math.min(1.2, safeTotalDuration / rawPhrases.length);
     const endSec = i === rawPhrases.length - 1
       ? safeTotalDuration
-      : Math.min(safeTotalDuration, startSec + Math.max(1.0, proportionalDuration));
+      : Math.min(safeTotalDuration, startSec + Math.max(minDisplaySec, proportionalDuration));
 
     currentCursor = endSec;
 
@@ -178,7 +196,7 @@ ${events.map((e) => `Dialogue: 0,${e.start},${e.end},Default,,0,0,0,,${e.text}`)
 `;
 
   fs.writeFileSync(assOutputPath, assContent, 'utf8');
-  console.log(`[SubtitleService] Generated ${events.length} native ASS subtitle blocks from exact spoken script at ${assOutputPath}`);
+  console.log(`[SubtitleService] Generated ${events.length} native ASS subtitle blocks synchronized to ${safeTotalDuration.toFixed(1)}s audio at ${assOutputPath}`);
   return assOutputPath;
 }
 

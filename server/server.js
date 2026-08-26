@@ -792,12 +792,19 @@ app.post('/api/upload-voiceover', upload.single('audio'), async (req, res) => {
 
   try {
     const silentDurationSec = await getMediaDurationSec(silentPath) || job.highlight?.duration || 45;
+    const audioDurationSec = await getMediaDurationSec(audioFile.path);
+
+    // Synchronize subtitle timeline directly to the exact duration of the voiceover audio
+    const narrationDurationSec = (audioDurationSec && audioDurationSec > 0)
+      ? Math.min(silentDurationSec, audioDurationSec)
+      : silentDurationSec;
+
     const scriptToUse = (req.body?.customScript && req.body.customScript.trim())
       ? req.body.customScript.trim()
       : (job.aiStudioPrompt || job.voiceoverScript || '');
 
-    updateProgress({ step: 'subtitles', message: `Generating synchronized subtitle captions for ${silentDurationSec.toFixed(1)}s video...`, progress: 40, status: 'running' });
-    generateSrtSubtitles(scriptToUse, silentDurationSec, srtPath);
+    updateProgress({ step: 'subtitles', message: `Generating synchronized subtitle captions for ${narrationDurationSec.toFixed(1)}s voiceover...`, progress: 40, status: 'running' });
+    generateSrtSubtitles(scriptToUse, narrationDurationSec, srtPath);
 
     updateProgress({ step: 'render_final', message: 'Rendering final 9:16 video with Voiceover & Subtitles...', progress: 60, status: 'running' });
     await mergeVoiceoverAndBurnSubtitles({

@@ -413,17 +413,18 @@ export async function searchYouTubeVideos(query, { limit = 10, onProgress = () =
 }
 
 /**
- * Downloads a YouTube video using authentic cookies with automatic direct/proxy retry.
+ * Downloads a YouTube video with configurable quality (preview 240p vs full 720p HD).
  */
-export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress = () => {}) {
+export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress = () => {}, { quality = '720p', prefix = 'raw' } = {}) {
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  const finalExpectedPath = path.join(outputDir, `raw_${videoId}.mp4`);
+  const isPreview = quality === 'preview' || quality === 'low' || quality === '240p';
+  const finalExpectedPath = path.join(outputDir, `${prefix}_${videoId}.mp4`);
 
-  // Tier 1: Try Cobalt API if configured
-  if (process.env.COBALT_API_URL) {
+  // Tier 1: Try Cobalt API if configured (only for full download)
+  if (process.env.COBALT_API_URL && !isPreview) {
     const cobaltRes = await downloadWithCobaltApi(url, finalExpectedPath, onProgress);
     if (cobaltRes) {
       onProgress({ step: 'download', message: 'Video downloaded via Cobalt API.', progress: 35 });
@@ -431,12 +432,13 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
     }
   }
 
-  // Tier 2: Direct resilient yt-dlp with client spoofing (web_embedded, mweb, android)
+  // Tier 2: Direct resilient yt-dlp with client spoofing (web, mweb, ios, android)
   const ytDlpPath = await getYtDlpPath(onProgress);
   const ffmpegPath = getFFmpegPath();
-  const outputTemplate = path.join(outputDir, `raw_${videoId}.%(ext)s`);
+  const outputTemplate = path.join(outputDir, `${prefix}_${videoId}.%(ext)s`);
 
-  onProgress({ step: 'download', message: 'Fetching video metadata and starting 720p download...', progress: 10 });
+  const qualityLabel = isPreview ? '240p/360p (Hemat Kuota)' : '720p HD';
+  onProgress({ step: 'download', message: `Fetching video metadata and starting ${qualityLabel} download...`, progress: 10 });
 
   const baseArgs = getYtDlpArgs();
   const infoArgs = [
@@ -463,12 +465,16 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
     }
   }
 
+  const formatSelector = isPreview
+    ? 'worst[ext=mp4]/18/best[height<=360]/best[height<=240]/worst'
+    : '18/22/best[height<=720]/bestvideo[height<=720]+bestaudio/best';
+
   const dlArgs = [
     '--ffmpeg-location',
     ffmpegPath,
     ...baseArgs,
     '-f',
-    '18/22/best[height<=720]/bestvideo[height<=720]+bestaudio/best',
+    formatSelector,
     '--merge-output-format',
     'mp4',
     '--no-playlist',
@@ -482,8 +488,8 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
     url,
   ];
 
-  console.log(`[Downloader] Spawning yt-dlp: ${ytDlpPath} ${dlArgs.join(' ')}`);
-  onProgress({ step: 'download', message: `Downloading "${metadata.title}" (720p)...`, progress: 20 });
+  console.log(`[Downloader] Spawning yt-dlp (${qualityLabel}): ${ytDlpPath} ${dlArgs.join(' ')}`);
+  onProgress({ step: 'download', message: `Downloading "${metadata.title}" (${qualityLabel})...`, progress: 20 });
 
   const downloadResult = await runYtDlp(ytDlpPath, dlArgs, {
     onStdout: (text) => {
@@ -501,7 +507,7 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
 
     if (!fs.existsSync(downloadedFile)) {
       const videoFiles = fs.readdirSync(outputDir).filter(f =>
-        f.startsWith(`raw_${videoId}`) &&
+        f.startsWith(`${prefix}_${videoId}`) &&
         !f.endsWith('.m4a') &&
         !f.endsWith('.mp3') &&
         !f.endsWith('.aac') &&
@@ -512,7 +518,7 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
       );
 
       const audioFiles = fs.readdirSync(outputDir).filter(f =>
-        f.startsWith(`raw_${videoId}`) &&
+        f.startsWith(`${prefix}_${videoId}`) &&
         (f.endsWith('.m4a') || f.endsWith('.mp3') || f.endsWith('.aac') || f.endsWith('.opus'))
       );
 
@@ -535,7 +541,7 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
       }
     }
 
-    onProgress({ step: 'download', message: 'Video download completed successfully.', progress: 35 });
+    onProgress({ step: 'download', message: `Video download (${qualityLabel}) completed successfully.`, progress: 35 });
     return { filePath: downloadedFile, metadata };
   }
 

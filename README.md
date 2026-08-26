@@ -140,34 +140,13 @@ Backend secara otomatis menggunakan 3 lapisan pengunduhan video:
 
 ---
 
-### 3. Menjalankan Aplikasi di Codespace
+### 4. Mode Hemat Kuota (Smart Two-Stage Download untuk Android / Termux)
 
-Untuk memastikan `yt-dlp` dapat men-generate **PO Token (Proof-of-Origin)** secara otomatis menggunakan browser headless internal dan bebas dari bot-check:
+Aplikasi secara default mengaktifkan fitur **Smart Two-Stage Download** untuk menghemat kuota internet hingga **90%**:
+1. **Tahap 1 (Analisa Ringan 240p/360p):** Video diunduh dalam format ultra-ringan (hanya berukuran **~1 - 3 MB**) untuk diekstrak framenya dan dianalisis oleh Gemini Flash Vision.
+2. **Eliminasi Cepat:** Jika kandidat video tidak cocok (ditolak karena ada wajah manusia/bukan review produk), kandidat langsung dibuang. Kuota yang terpakai **hanya ~1.5 MB** (bukan 50 MB!).
+3. **Tahap 2 (Unduh 720p HD HANYA untuk Video yang Lolos):** Begitu Gemini memvalidasi video layak dipotong, barulah sistem mendownload video 720p HD asli untuk proses pemotongan 9:16 vertikal dan dubbing voiceover.
 
-```bash
-# 1. Update yt-dlp dan pasang plugin PO Token Provider
-python3 -m pip install -U yt-dlp yt-dlp-getpot-wpc bgutil-ytdlp-pot-provider
-
-# 2. Sinkronkan kode terbaru
-git fetch origin main
-git reset --hard origin/main
-
-# 3. Bersihkan sisa job gagal jika ada
-node server/clean-failed-jobs.js
-
-# 4. Jalankan server
-node dev-runner.js
-```
-
----
-
-### 🛡️ Parameter Kunci `yt-dlp` yang Digunakan Backend
-
-Backend mengombinasikan 5 teknologi bypass otomatis:
-- `--extractor-args "youtube:player_client=android,android_vr,mweb,web"` : Memanipulasi protokol player native Android dan Mobile Web.
-- `--js-runtimes node` : Menggunakan engine Node.js lokal untuk mengeksekusi challenge script YouTube.
-- `--remote-components ejs:github` : Mengunduh solver enkripsi *n-challenge* terbaru langsung dari repository resmi GitHub secara otomatis.
-- `--sleep-requests 5` & `--sleep-interval 5` : Pacing human-like untuk mencegah rate limit.
-- `--limit-rate 5M` : Membatasi bandwidth agar traffic stabil seperti streaming video manusia.
+*(Opsional)* Anda dapat mengatur `LOW_DATA_MODE=true` atau `LOW_DATA_MODE=false` di file `server/.env`.
 
 

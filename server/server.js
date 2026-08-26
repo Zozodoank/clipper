@@ -335,6 +335,8 @@ export async function runStage1Pipeline({
         ? existingJob.downloadedVideoPath
         : null);
 
+    const isLowDataMode = process.env.LOW_DATA_MODE !== 'false'; // Default to Smart Low Data Mode enabled
+
     if (cachedVideoPath) {
       rawVideoPath = cachedVideoPath;
       updateProgress({
@@ -343,9 +345,15 @@ export async function runStage1Pipeline({
         progress: 30,
         status: 'running'
       });
+    } else if (isLowDataMode) {
+      // TAHAP 1 (Hemat Kuota): Unduh preview super ringan (240p/360p ~1-3 MB) untuk analisa visual Gemini
+      updateProgress({ step: 'download', message: 'Downloading lightweight preview (240p/360p - Low Data Mode)...', progress: 12, status: 'running' });
+      const previewDl = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: 'preview', prefix: 'preview' });
+      rawVideoPath = previewDl.filePath;
+      videoMeta = previewDl.metadata;
     } else {
       updateProgress({ step: 'download', message: 'Downloading source video (720p) via yt-dlp...', progress: 12, status: 'running' });
-      const dlResult = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress);
+      const dlResult = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: '720p', prefix: 'raw' });
       rawVideoPath = dlResult.filePath;
       videoMeta = dlResult.metadata;
 
@@ -367,6 +375,23 @@ export async function runStage1Pipeline({
       allowFallbackClips: !requireCleanGeminiPlan,
       onProgress: updateProgress,
     });
+
+    // TAHAP 2 (Lolos Seleksi): Video lolos seleksi Gemini! Baru unduh video 720p HD asli untuk proses render
+    if (isLowDataMode && !cachedVideoPath) {
+      updateProgress({ step: 'download_hd', message: '✅ Video lolos seleksi Gemini! Mengunduh kualitas 720p HD...', progress: 55, status: 'running' });
+      const hdDl = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: '720p', prefix: 'raw' });
+      // Hapus file preview 240p untuk menghemat ruang memori HP
+      try {
+        if (fs.existsSync(rawVideoPath) && rawVideoPath !== hdDl.filePath) {
+          fs.unlinkSync(rawVideoPath);
+        }
+      } catch {}
+      rawVideoPath = hdDl.filePath;
+
+      const updatedMeta = { ...jobMeta, downloadedVideoPath: rawVideoPath, stage: 'downloaded' };
+      activeJobs.set(jobId, updatedMeta);
+      persistJob(jobId, updatedMeta);
+    }
 
     updateProgress({ step: 'render_silent', message: `Rendering ${highlight.clips.length} Gemini-selected 5-second full-product shots...`, progress: 62, status: 'running' });
     await renderSilentAntiDetectionVideo({

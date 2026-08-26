@@ -66,9 +66,9 @@ function getYtDlpArgs() {
   }
 
   return [
-    '--extractor-args', 'youtube:player_client=web,mweb,ios,android',
+    '--extractor-args', 'youtube:player_client=android,android_vr,web_embedded,mweb',
     '--referer', 'https://www.google.com/',
-    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    '--user-agent', 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/UD1A.230803.041) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
     '--sleep-requests', '3',
     '--sleep-interval', '3',
     '--max-sleep-interval', '6',

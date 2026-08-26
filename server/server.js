@@ -346,11 +346,18 @@ export async function runStage1Pipeline({
         status: 'running'
       });
     } else if (isLowDataMode) {
-      // TAHAP 1 (Hemat Kuota): Unduh preview super ringan (240p/360p ~1-3 MB) untuk analisa visual Gemini
-      updateProgress({ step: 'download', message: 'Downloading lightweight preview (240p/360p - Low Data Mode)...', progress: 12, status: 'running' });
+      // TAHAP 1 (Hemat Kuota): Unduh preview 360p ringan untuk analisa visual Gemini
+      updateProgress({ step: 'download', message: 'Downloading lightweight preview (360p - Low Data Mode)...', progress: 12, status: 'running' });
       const previewDl = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: 'preview', prefix: 'preview' });
       rawVideoPath = previewDl.filePath;
       videoMeta = previewDl.metadata;
+
+      // Always verify real duration from the downloaded file using FFprobe (most reliable)
+      const realDuration = await getMediaDurationSec(rawVideoPath);
+      if (realDuration && realDuration > 5) {
+        videoMeta.duration = realDuration;
+      }
+      console.log(`[Job ${jobId}] Preview ready: "${videoMeta.title}" duration=${videoMeta.duration}s file=${rawVideoPath}`);
     } else {
       updateProgress({ step: 'download', message: 'Downloading source video (720p) via yt-dlp...', progress: 12, status: 'running' });
       const dlResult = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: '720p', prefix: 'raw' });
@@ -368,6 +375,7 @@ export async function runStage1Pipeline({
       maxSampleFrames: 18,
     });
 
+    console.log(`[Job ${jobId}] Sending to Gemini: videoMeta.duration=${videoMeta.duration}s, ${rawFrames.length} frames`);
     updateProgress({ step: 'gemini_vision', message: 'Gemini analyzing faceless product frames and crop focus...', progress: 48, status: 'running' });
     const highlight = await selectHighlightWithGeminiFlash({
       apiKey, frames: rawFrames, videoMetadata: videoMeta,

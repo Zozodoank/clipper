@@ -70,23 +70,20 @@ export async function selectHighlightWithGeminiFlash({
   const effectiveTitle = productTitle || videoMetadata?.title || 'Product Showcase Video';
   const effectiveDesc = productDescription || videoMetadata?.description || '';
 
-  const systemPrompt = `You are a Strict, World-Class Short-Form Video Editor & Viral Affiliate Content Producer.
-Your task is to analyze the source-video timeline frames and select ONLY pristine, 100% clean 5-second product demo clips suitable for high-converting Indonesian affiliate ads.
+  const systemPrompt = `You are a smart, results-focused Short-Form Video Editor for Indonesian Shopee affiliate marketing.
+Your task: analyze the video timeline frames and select the BEST available 5-second product clips for a Shopee ad.
 
-CRITICAL REJECTION & QUALITY RULES:
-1. FIRST DECIDE PRODUCT MATCH: If this source video does not visually feature the Shopee product or category, set "isProductMatch": false, "isUsableSourceVideo": false, and return an empty clips array.
-2. ABSOLUTE ZERO-TOLERANCE ON SUBTITLES & TEXT OVERLAYS:
-   - REJECT ANY CLIP containing burned-in subtitles, automated closed captions, translated lyrics, spoken dialogue text, or narrative captions.
-   - REJECT ANY CLIP containing stickers, emojis, cartoon badges, discount stickers, promo banners, or pop-up graphics.
-   - REJECT ANY CLIP containing watermarks, TikTok/IG usernames (@username), source channel branding, or prices.
-3. ABSOLUTE ZERO-TOLERANCE ON CREATOR FACES / TALKING HEADS:
-   - FACELESS is mandatory: If a creator's face or head is visible in a candidate moment, REJECT IT. Only accept hands-only, product-only, or demonstration shots.
-5. REJECTION THRESHOLD: If the source video has ZERO product demonstration shots (e.g. 100% creator face talking head or 100% unrelated gaming/vlog), set "isProductMatch": false, "isUsableSourceVideo": false, and write the reason in "rejectionReason".
-6. RETURN 3 TO 8 CLEAN 5-SECOND CLIPS: Each clip MUST be exactly 5 seconds long (e.g. 00:05 to 00:10, 00:15 to 00:20). Total duration 15 to 40 seconds. Prioritize hand/product close-ups, unboxing, and usage demonstration.
-7. VISUAL REFRAME FOR 9:16:
-   - 'focusX' (0.0 left to 1.0 right) & 'focusY' (0.0 top to 1.0 bottom) centered on the product action.
-   - 'renderMode': 'preserve_full_product' (for landscape 16:9 videos, stages 720x720 clean product over blurred backdrop) or 'vertical_crop' (for clean vertical sources).
-8. OUTPUT FORMAT: Strictly valid JSON matching the requested schema.`;
+SELECTION RULES:
+1. PRODUCT MATCH: If this video clearly shows a product from the same category as the requested Shopee product, set isProductMatch=true. Only set false if the video is completely unrelated (e.g., gaming, music, cooking when product is cosmetics).
+2. PREFER CLEAN SHOTS: Prioritize frames with product close-ups, hands holding product, or demonstrations WITHOUT subtitles/text. However:
+   - If most of the video has subtitles but some clean seconds exist, SELECT those clean seconds.
+   - If the video has a presenter/creator face but also product shots, SELECT the product-only moments.
+   - Even shots with minor watermarks are acceptable if the product is the main focus.
+3. ALWAYS RETURN CLIPS: Return 1 to 6 clips. NEVER return an empty clips array if the video shows the product at all.
+4. isUsableSourceVideo should be false ONLY if the video is 100% unrelated to the product (e.g., wrong category entirely).
+5. RETURN 1 TO 6 CLEAN 5-SECOND CLIPS: Each clip MUST be exactly 5 seconds long. Total 5-30 seconds.
+6. PRAGMATIC APPROACH: It is better to return imperfect clips than to reject the video entirely.`;
+
 
   const userPrompt = `Product Title: "${effectiveTitle}"
 ${effectiveDesc ? `Product Description / Key Features: "${effectiveDesc}"` : ''}
@@ -97,15 +94,11 @@ Product Link: ${shopeeLink || 'https://shope.ee/link'}
 Sampled Visual Frames (${frames.length} frames across timeline):
 ${frames.map((f, i) => `Frame #${i + 1} at timestamp ${f.timeFormatted} (${f.timestamp}s)`).join('\n')}
 
-INSPECTION INSTRUCTION:
-Check each frame carefully for:
-- Burned-in subtitles / text overlays / captions
-- Stickers / emoji icons / badge overlays
-- Creator faces / talking heads
-- Watermarks / usernames
-
-If the video contains clean product-only shots, return the 5-second clips.
-If the entire video is dirty/subtitled/faced, reject it with isUsableSourceVideo: false.
+TASK:
+1. Identify the best 1–6 moments in this video where the product is clearly visible.
+2. Mark each as a 5-second clip with startTime (MM:SS format).
+3. Set isCleanAffiliateShot=true for product-visible shots even if they have some text overlay.
+4. Set isUsableSourceVideo=false ONLY if this video has zero connection to the product category.
 
 Return strict JSON in this format:
 {
@@ -117,7 +110,8 @@ Return strict JSON in this format:
     {
       "startTime": "00:10",
       "endTime": "00:15",
-      "reason": "Produk bersih tanpa subtitle, tanpa stiker, tanpa wajah.",
+      "startSeconds": 10,
+      "reason": "Product clearly visible.",
       "isCleanAffiliateShot": true,
       "sourceOwnerIdentityVisible": false,
       "sourceIdentityRisk": "none",
@@ -129,7 +123,7 @@ Return strict JSON in this format:
         "avoidTextZones": [],
         "avoidFaceZones": ["top_left"],
         "faceSafety": true,
-        "notes": "Clean product-only demonstration."
+        "notes": "Product demonstration shot."
       }
     }
   ]
@@ -566,12 +560,26 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true } = {
   const normalized = [];
   let previousEnd = -1;
 
+  console.log(`[normalizeClipPlan] totalDuration=${totalDuration}s, rawClips=${sourceClips.length}`);
+
   for (const rawClip of sourceClips) {
     let startSeconds = Math.max(0, Math.round(parseTimeToSeconds(rawClip?.startSeconds ?? rawClip?.startTime)));
-    if (startSeconds < previousEnd) continue;
-    if (startSeconds + clipLength > totalDuration) continue;
-    if (rawClip?.isCleanAffiliateShot === false) continue;
-    if (hasSourceIdentityRisk(rawClip)) continue;
+    if (startSeconds < previousEnd) {
+      console.log(`[normalizeClipPlan] Skip clip at ${startSeconds}s: overlaps previous end ${previousEnd}s`);
+      continue;
+    }
+    if (startSeconds + clipLength > totalDuration) {
+      console.log(`[normalizeClipPlan] Skip clip at ${startSeconds}s: exceeds totalDuration ${totalDuration}s`);
+      continue;
+    }
+    if (rawClip?.isCleanAffiliateShot === false) {
+      console.log(`[normalizeClipPlan] Skip clip at ${startSeconds}s: isCleanAffiliateShot=false`);
+      continue;
+    }
+    if (hasSourceIdentityRisk(rawClip)) {
+      console.log(`[normalizeClipPlan] Skip clip at ${startSeconds}s: sourceIdentityRisk=${rawClip?.sourceIdentityRisk}`);
+      continue;
+    }
 
     const endSeconds = startSeconds + clipLength;
     normalized.push({
@@ -586,18 +594,21 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true } = {
     if (normalized.length === 12) break;
   }
 
+  console.log(`[normalizeClipPlan] Accepted ${normalized.length} clips from Gemini`);
+
   if (normalized.length) return normalized;
   if (!allowFallback) {
     throw new Error('Gemini tidak menemukan potongan faceless bersih yang cocok dengan produk.');
   }
 
-  // API fallback avoids intro/outro zones where source-owner logos and subscribe screens usually live.
+  // Fallback: evenly spaced clips skipping first 10% (intro) and last 10% (outro)
+  console.log(`[normalizeClipPlan] No clips accepted, building fallback plan for ${totalDuration}s video`);
   const maxStart = Math.max(0, Math.floor(totalDuration - clipLength));
   const fallbackStart = totalDuration > 25
-    ? Math.min(maxStart, Math.max(8, Math.floor(totalDuration * 0.12)))
+    ? Math.min(maxStart, Math.max(8, Math.floor(totalDuration * 0.10)))
     : 0;
   const fallbackLastStart = totalDuration > 35
-    ? Math.max(fallbackStart, Math.min(maxStart, Math.floor(totalDuration * 0.82) - clipLength))
+    ? Math.max(fallbackStart, Math.min(maxStart, Math.floor(totalDuration * 0.85) - clipLength))
     : maxStart;
 
   for (let startSeconds = fallbackStart; startSeconds <= fallbackLastStart && normalized.length < 6; startSeconds += clipLength) {
@@ -606,7 +617,7 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true } = {
       endSeconds: startSeconds + clipLength,
       startTime: formatSeconds(startSeconds),
       endTime: formatSeconds(startSeconds + clipLength),
-      reason: 'Fallback 5-second product shot away from source intro/outro identity zones.',
+      reason: 'Fallback 5-second product shot.',
       reframe: normalizeReframe(),
     });
   }
@@ -618,12 +629,14 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true } = {
 }
 
 function hasSourceIdentityRisk(rawClip = {}) {
+  // Only reject on explicit sourceOwnerIdentityVisible=true
   if (rawClip.sourceOwnerIdentityVisible === true) return true;
 
-  const risk = (rawClip.sourceIdentityRisk || '').toString().toLowerCase();
-  if (!risk || risk === 'none' || risk === 'low' || risk === 'false' || risk === 'no') return false;
+  // Only reject 'high' or 'critical' risk — allow 'medium', 'low', 'none', empty
+  const risk = (rawClip.sourceIdentityRisk || '').toString().toLowerCase().trim();
+  if (!risk || risk === 'none' || risk === 'low' || risk === 'false' || risk === 'no' || risk === 'medium') return false;
 
-  return true;
+  return risk === 'high' || risk === 'critical';
 }
 
 function clampNumber(value, min, max, fallback) {

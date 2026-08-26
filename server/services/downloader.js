@@ -485,19 +485,14 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
     }
   }
 
-  // Format 18 = YouTube's standard 360p MP4 with audio (universally available, no merge needed)
   const formatSelector = isPreview
-    ? '18/bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best[height<=480]/worst[ext=mp4]'
-    : '22/18/bestvideo[height<=720]+bestaudio/best[height<=720]/best';
-
-  // For preview: print title and duration before download so we capture real metadata in one pass
-  const printArgs = isPreview ? ['--print', '%(title)s|||%(duration)s'] : [];
+    ? 'bestvideo[height<=360]/best[height<=360]/bestvideo[height<=480]/best[height<=480]/worst[ext=mp4]/worst'
+    : '22/bestvideo[height<=720]+bestaudio/best[height<=720]/best';
 
   const dlArgs = [
     '--ffmpeg-location',
     ffmpegPath,
     ...dlBaseArgs,
-    ...printArgs,
     '-f',
     formatSelector,
     '--merge-output-format',
@@ -515,21 +510,8 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
   console.log(`[Downloader] Spawning yt-dlp (${qualityLabel}): ${ytDlpPath} ${dlArgs.join(' ')}`);
   onProgress({ step: 'download', message: `Downloading (${qualityLabel})...`, progress: 20 });
 
-  let previewTitle = '';
-  let previewDuration = 0;
-
   const downloadResult = await runYtDlp(ytDlpPath, dlArgs, {
     onStdout: (text) => {
-      // Capture --print output: "Title|||duration"
-      if (isPreview && text.includes('|||')) {
-        const parts = text.trim().split('|||');
-        if (parts.length >= 2) {
-          previewTitle = parts[0].trim();
-          previewDuration = parseFloat(parts[1].trim()) || 0;
-          console.log(`[Downloader] Preview metadata captured: title="${previewTitle}" duration=${previewDuration}s`);
-        }
-        return;
-      }
       const match = text.match(/(\d+(\.\d+)?)%/);
       if (match) {
         const percent = parseFloat(match[1]);
@@ -579,12 +561,6 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
     }
 
     onProgress({ step: 'download', message: `Video download (${qualityLabel}) completed successfully.`, progress: 35 });
-    // If preview captured real metadata via --print, update the metadata object
-    if (isPreview && previewDuration > 0) {
-      metadata.duration = previewDuration;
-      if (previewTitle) metadata.title = previewTitle;
-      console.log(`[Downloader] Preview real metadata: title="${metadata.title}" duration=${metadata.duration}s`);
-    }
     return { filePath: downloadedFile, metadata };
   }
 

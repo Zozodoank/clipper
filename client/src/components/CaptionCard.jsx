@@ -13,9 +13,53 @@ import {
   Tag,
   Target,
   Lightbulb,
-  Terminal
+  Terminal,
+  Volume2
 } from 'lucide-react';
 import { copyToClipboardSafe } from '../utils/clipboard';
+
+/**
+ * Parse Google AI Studio prompt into 3 separate sections:
+ * 1. Scene Setting
+ * 2. Sample Context (Style & Pacing)
+ * 3. Speaker / Dialogue (Voiceover with emotion tags)
+ */
+function parseAiStudioSections(promptText, sampleContext, voiceoverScript) {
+  let scene = 'Studio dapur modern yang bersih dengan presenter Indonesia bersuara ramah dan energik.';
+  let context = 'Iklan affiliate viral. Dimulai dengan hook yang menarik perhatian, membangun ke demonstrasi produk, diakhiri CTA yang meyakinkan. Nada suara hangat, antusias, dan persuasif.';
+  let speaker = voiceoverScript || '';
+
+  if (typeof promptText === 'string' && promptText.trim().length > 0) {
+    const text = promptText.trim();
+
+    // Match Scene section
+    const sceneMatch = text.match(/(?:Scene|SCENE)[\s\r\n:]+([\s\S]*?)(?=(?:Sample Context|SAMPLE CONTEXT|Context|Speaker|SPEAKER|$))/i);
+    if (sceneMatch && sceneMatch[1].trim()) {
+      scene = sceneMatch[1].trim();
+    }
+
+    // Match Sample Context section
+    const contextMatch = text.match(/(?:Sample Context|SAMPLE CONTEXT|Context)[\s\r\n:]+([\s\S]*?)(?=(?:Speaker|SPEAKER|$))/i);
+    if (contextMatch && contextMatch[1].trim()) {
+      context = contextMatch[1].trim();
+    }
+
+    // Match Speaker section (Speaker 1 - Orus, etc.)
+    const speakerMatch = text.match(/(?:Speaker\s*\d*(?:\s*-\s*[A-Za-z]+)?|SPEAKER\s*\d*)[\s\r\n:]+([\s\S]*)$/i);
+    if (speakerMatch && speakerMatch[1].trim()) {
+      speaker = speakerMatch[1].trim();
+    } else if (!sceneMatch && !contextMatch) {
+      speaker = text;
+    }
+  }
+
+  // Fallback speaker if empty
+  if (!speaker && voiceoverScript) {
+    speaker = voiceoverScript;
+  }
+
+  return { scene, context, speaker };
+}
 
 export default function CaptionCard({ result }) {
   // 'scenes' | 'script' | 'context' | 'aistudio' | 'caption'
@@ -44,6 +88,8 @@ export default function CaptionCard({ result }) {
   const contextText = result.sampleContext
     ? `Produk: ${result.sampleContext.productName || result.videoTitle}\nTarget Audiens: ${result.sampleContext.targetAudience || '-'}\nMasalah Utama: ${result.sampleContext.coreProblem || '-'}\nKeunggulan Utama:\n${(result.sampleContext.keyFeatures || []).map((f) => `- ${f}`).join('\n')}\nTrigger Pembelian: ${result.sampleContext.buyingTrigger || '-'}`
     : '';
+
+  const aiStudioSections = parseAiStudioSections(result.aiStudioPrompt, result.sampleContext, result.voiceoverScript);
 
   return (
     <div className="glass-panel rounded-2xl p-6 shadow-xl flex flex-col h-full">
@@ -100,11 +146,11 @@ export default function CaptionCard({ result }) {
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
             }`}
           >
-            <Terminal className="w-3.5 h-3.5" />
-            <span>AI Studio Prompt</span>
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>AI Studio Prompt (3 Kotak)</span>
           </button>
 
-          {/* Reels Caption Tab */}
+          {/* Caption Reels Tab */}
           <button
             onClick={() => setActiveTab('caption')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
@@ -114,9 +160,8 @@ export default function CaptionCard({ result }) {
             }`}
           >
             <MessageSquare className="w-3.5 h-3.5" />
-            <span>Caption & Shopee Link</span>
+            <span>Caption & Tag</span>
           </button>
-
         </div>
 
         {/* Global Copy Button for Active Tab */}
@@ -128,12 +173,13 @@ export default function CaptionCard({ result }) {
             if (activeTab === 'aistudio') copyToClipboard(result.aiStudioPrompt, 'aistudio');
             if (activeTab === 'caption') copyToClipboard(result.caption, 'caption');
           }}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition-colors ml-auto"
+          className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition-all active:scale-95 shadow-sm ml-auto"
+          title="Salin isi tab yang sedang aktif"
         >
           {copiedField === activeTab ? (
             <>
               <Check className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="text-emerald-400">Copied!</span>
+              <span className="text-emerald-400">Tersalin!</span>
             </>
           ) : (
             <>
@@ -144,58 +190,58 @@ export default function CaptionCard({ result }) {
         </button>
       </div>
 
-      {/* Visual Hook Banner */}
-      {result.productHook && (
-        <div className="mb-4 p-3 rounded-xl bg-gradient-to-r from-orange-500/10 to-amber-500/10 border border-orange-500/20 flex items-center justify-between text-xs text-orange-300">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-orange-400 flex-shrink-0" />
-            <span className="font-bold">Ad Advisor Hook:</span>
-            <span className="italic">{result.productHook}</span>
-          </div>
-          <span className="text-[10px] font-mono text-slate-400">
-            Model: {result.modelUsed || 'gpt-4o-mini'}
-          </span>
-        </div>
-      )}
-
-      {/* Tab Contents */}
-      <div className="flex-1 flex flex-col min-h-[300px]">
+      {/* Tab Contents Area */}
+      <div className="flex-1 overflow-y-auto pr-1">
         
-        {/* 1. KOTAK SCENE BREAKDOWN */}
+        {/* 1. KOTAK SCENE (TIMELINE BREAKDOWN) */}
         {activeTab === 'scenes' && (
-          <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+          <div className="space-y-3">
             {Array.isArray(result.scenes) && result.scenes.length > 0 ? (
-              result.scenes.map((scene, idx) => (
+              result.scenes.map((scene) => (
                 <div
-                  key={idx}
-                  className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-slate-700 transition-colors relative group"
+                  key={scene.sceneNumber || Math.random()}
+                  className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/80 hover:border-slate-700 transition-all flex flex-col gap-2 relative group"
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-black text-shopee-500 uppercase tracking-wider flex items-center gap-1.5">
-                      <Clapperboard className="w-3.5 h-3.5" />
-                      Scene {scene.sceneNumber || idx + 1}
-                    </span>
-                    <span className="px-2 py-0.5 rounded bg-slate-800 text-amber-400 font-mono text-[11px] font-semibold border border-slate-700">
-                      {scene.timeRange}
-                    </span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded bg-shopee-500/20 text-shopee-400 font-bold text-[11px] border border-shopee-500/30">
+                        SCENE {scene.sceneNumber}
+                      </span>
+                      <span className="text-[11px] font-mono text-slate-400">{scene.timeRange}</span>
+                    </div>
+
+                    <button
+                      onClick={() =>
+                        copyToClipboard(
+                          `[SCENE ${scene.sceneNumber} (${scene.timeRange})]\nVisual: ${scene.visualDescription}\nVoiceover: "${scene.voiceover}"\nNotes: ${scene.adAdvisorNotes || '-'}`,
+                          `scene_${scene.sceneNumber}`
+                        )
+                      }
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-slate-400 hover:text-white flex items-center gap-1 bg-slate-800 px-2 py-0.5 rounded border border-slate-700"
+                    >
+                      {copiedField === `scene_${scene.sceneNumber}` ? (
+                        <Check className="w-3 h-3 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                      <span>Copy</span>
+                    </button>
                   </div>
 
-                  <div className="space-y-2 text-xs">
+                  <div className="space-y-1.5 text-xs">
                     <div>
-                      <span className="text-slate-400 font-semibold">Visual Cue: </span>
+                      <span className="text-slate-400 font-semibold">Visual Shot: </span>
                       <span className="text-slate-200">{scene.visualDescription}</span>
                     </div>
 
-                    <div className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800/80 text-emerald-300 font-medium">
-                      <span className="text-slate-400 block text-[10px] uppercase tracking-wider mb-0.5">
-                        Voiceover Narration:
-                      </span>
-                      "{scene.voiceover}"
+                    <div className="p-2 rounded-lg bg-slate-900/90 border border-indigo-950/60">
+                      <span className="text-indigo-400 font-semibold block mb-0.5">Voiceover Narasi:</span>
+                      <p className="text-indigo-100 italic">"{scene.voiceover}"</p>
                     </div>
 
                     {scene.adAdvisorNotes && (
-                      <div className="text-[11px] text-indigo-300 flex items-start gap-1">
-                        <Lightbulb className="w-3.5 h-3.5 text-indigo-400 flex-shrink-0 mt-0.5" />
+                      <div className="text-[11px] text-amber-300/90 flex items-start gap-1">
+                        <span className="font-semibold text-amber-400">💡 Notes:</span>
                         <span>{scene.adAdvisorNotes}</span>
                       </div>
                     )}
@@ -277,27 +323,104 @@ export default function CaptionCard({ result }) {
           </div>
         )}
 
-        {/* 4. AI STUDIO / GEMINI PROMPT TEMPLATE */}
+        {/* 4. AI STUDIO / GEMINI PROMPT TEMPLATE (3 KOTAK TERPISAH) */}
         {activeTab === 'aistudio' && (
-          <div className="relative flex-1 flex flex-col">
-            <div className="mb-2 text-[11px] text-slate-400 flex items-center justify-between">
-              <span>Salin prompt ini ke Google AI Studio / Gemini untuk variasi script manual:</span>
-              <a
-                href="https://aistudio.google.com"
-                target="_blank"
-                rel="noreferrer"
-                className="text-emerald-400 hover:underline flex items-center gap-1 font-semibold"
-              >
-                <span>Buka AI Studio</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
+          <div className="flex-1 flex flex-col space-y-3.5">
+            {/* Header Toolbar */}
+            <div className="flex items-center justify-between text-[11px] text-slate-400 bg-slate-900/70 p-2.5 rounded-xl border border-slate-800 flex-wrap gap-2">
+              <span className="flex items-center gap-1.5 text-slate-300 font-medium">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span>Format 3 Blok Google AI Studio (Audio Generation):</span>
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => copyToClipboard(result.aiStudioPrompt, 'aistudio_all')}
+                  className="px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-semibold flex items-center gap-1 border border-slate-700 transition-colors"
+                >
+                  {copiedField === 'aistudio_all' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedField === 'aistudio_all' ? 'Tersalin Semua!' : 'Copy Semua'}</span>
+                </button>
+                <a
+                  href="https://aistudio.google.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-2.5 py-1 rounded-md bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-400 text-[10px] font-semibold flex items-center gap-1 border border-emerald-500/30 transition-colors"
+                >
+                  <span>Buka AI Studio</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
             </div>
-            <textarea
-              readOnly
-              value={result.aiStudioPrompt}
-              rows={13}
-              className="w-full flex-1 min-h-[280px] bg-slate-950/90 border border-slate-800 rounded-xl p-4 text-xs text-emerald-200 font-mono leading-relaxed focus:outline-none focus:ring-1 focus:ring-emerald-500/50 resize-none select-all"
-            />
+
+            {/* KOTAK 1: SCENE */}
+            <div className="rounded-xl bg-slate-950/90 border border-indigo-900/40 p-3.5 flex flex-col space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
+                  <span className="w-4 h-4 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] flex items-center justify-center font-bold">1</span>
+                  <span>Scene (Latar Belakang & Suasana)</span>
+                </span>
+                <button
+                  onClick={() => copyToClipboard(aiStudioSections.scene, 'aistudio_scene')}
+                  className="px-2.5 py-1 rounded-md bg-slate-900 hover:bg-indigo-600/30 text-indigo-300 hover:text-indigo-200 border border-indigo-500/30 text-[10px] font-semibold flex items-center gap-1 transition-all"
+                >
+                  {copiedField === 'aistudio_scene' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedField === 'aistudio_scene' ? 'Tersalin!' : 'Copy Scene'}</span>
+                </button>
+              </div>
+              <textarea
+                readOnly
+                value={aiStudioSections.scene}
+                rows={2}
+                className="w-full bg-slate-900/70 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 font-mono leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500/40 resize-none select-all"
+              />
+            </div>
+
+            {/* KOTAK 2: SAMPLE CONTEXT */}
+            <div className="rounded-xl bg-slate-950/90 border border-amber-900/40 p-3.5 flex flex-col space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                  <span className="w-4 h-4 rounded-full bg-amber-500/20 text-amber-300 text-[10px] flex items-center justify-center font-bold">2</span>
+                  <span>Sample Context (Gaya Bicara, Pacing & Nada Iklan)</span>
+                </span>
+                <button
+                  onClick={() => copyToClipboard(aiStudioSections.context, 'aistudio_context')}
+                  className="px-2.5 py-1 rounded-md bg-slate-900 hover:bg-amber-600/30 text-amber-300 hover:text-amber-200 border border-amber-500/30 text-[10px] font-semibold flex items-center gap-1 transition-all"
+                >
+                  {copiedField === 'aistudio_context' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedField === 'aistudio_context' ? 'Tersalin!' : 'Copy Context'}</span>
+                </button>
+              </div>
+              <textarea
+                readOnly
+                value={aiStudioSections.context}
+                rows={2}
+                className="w-full bg-slate-900/70 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 font-mono leading-relaxed focus:outline-none focus:ring-1 focus:ring-amber-500/40 resize-none select-all"
+              />
+            </div>
+
+            {/* KOTAK 3: SPEAKER 1 - ORUS */}
+            <div className="rounded-xl bg-slate-950/90 border border-emerald-900/40 p-3.5 flex flex-col space-y-2 flex-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                  <span className="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] flex items-center justify-center font-bold">3</span>
+                  <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Speaker 1 - Orus (Naskah Narasi dengan Emotion Tags)</span>
+                </span>
+                <button
+                  onClick={() => copyToClipboard(aiStudioSections.speaker, 'aistudio_speaker')}
+                  className="px-2.5 py-1 rounded-md bg-slate-900 hover:bg-emerald-600/30 text-emerald-300 hover:text-emerald-200 border border-emerald-500/30 text-[10px] font-semibold flex items-center gap-1 transition-all"
+                >
+                  {copiedField === 'aistudio_speaker' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedField === 'aistudio_speaker' ? 'Tersalin!' : 'Copy Speaker / Narasi'}</span>
+                </button>
+              </div>
+              <textarea
+                readOnly
+                value={aiStudioSections.speaker}
+                rows={6}
+                className="w-full flex-1 min-h-[140px] bg-slate-900/70 border border-slate-800 rounded-lg p-2.5 text-xs text-emerald-200 font-mono leading-relaxed focus:outline-none focus:ring-1 focus:ring-emerald-500/40 resize-none select-all"
+              />
+            </div>
           </div>
         )}
 

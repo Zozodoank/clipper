@@ -1,15 +1,28 @@
-import React, { useState, useRef } from 'react';
-import { Upload, Music, Sparkles, CheckCircle2, ArrowRight, ExternalLink, Loader2, FileAudio } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Upload, Music, Sparkles, CheckCircle2, ArrowRight, ExternalLink, Loader2, FileAudio, FileText, ChevronDown, ChevronUp } from 'lucide-react';
 
 export default function VoiceoverUploader({
   jobId,
+  voiceoverScript,
+  aiStudioPrompt,
   onUploadSuccess,
   isUploading,
   setIsUploading
 }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [dragActive, setDragActive] = useState(false);
+  const [editableScript, setEditableScript] = useState('');
+  const [showScriptEdit, setShowScriptEdit] = useState(false);
   const fileInputRef = useRef(null);
+
+  // Initialize editable script from job voiceoverScript or aiStudioPrompt
+  useEffect(() => {
+    if (voiceoverScript) {
+      setEditableScript(voiceoverScript);
+    } else if (aiStudioPrompt) {
+      setEditableScript(aiStudioPrompt);
+    }
+  }, [voiceoverScript, aiStudioPrompt]);
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -53,6 +66,9 @@ export default function VoiceoverUploader({
     const formData = new FormData();
     formData.append('jobId', jobId);
     formData.append('audio', selectedFile);
+    if (editableScript && editableScript.trim()) {
+      formData.append('customScript', editableScript.trim());
+    }
 
     try {
       const response = await fetch('/api/upload-voiceover', {
@@ -79,7 +95,7 @@ export default function VoiceoverUploader({
     <div className="glass-panel-glow rounded-2xl p-6 shadow-xl border-amber-500/30 relative overflow-hidden">
       
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
             <Music className="w-4 h-4" />
@@ -92,7 +108,7 @@ export default function VoiceoverUploader({
               </span>
             </h3>
             <p className="text-xs text-slate-400">
-              Gabungkan voiceover TTS dan bakar subtitle otomatis untuk menghasilkan video final.
+              Gabungkan audio voiceover dan bakar subtitle sinkron otomatis ke video 9:16.
             </p>
           </div>
         </div>
@@ -122,6 +138,39 @@ export default function VoiceoverUploader({
           <span className="w-4 h-4 rounded-full bg-amber-500/20 text-amber-400 font-bold flex items-center justify-center text-[10px]">3</span>
           <span>Upload .mp3 di bawah ini</span>
         </div>
+      </div>
+
+      {/* Optional: Subtitle Text Verification / Edit Section */}
+      <div className="mb-4 rounded-xl bg-slate-950/70 border border-slate-800 p-3">
+        <button
+          type="button"
+          onClick={() => setShowScriptEdit(!showScriptEdit)}
+          className="w-full flex items-center justify-between text-xs font-semibold text-slate-300 hover:text-white transition-colors"
+        >
+          <span className="flex items-center gap-2">
+            <FileText className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Naskah Subtitle (Pastikan Sama Persis dengan Suara):</span>
+          </span>
+          <span className="text-[11px] text-indigo-400 flex items-center gap-1 font-mono">
+            <span>{showScriptEdit ? 'Tutup Edit' : 'Lihat / Edit Naskah Subtitle'}</span>
+            {showScriptEdit ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </span>
+        </button>
+
+        {showScriptEdit && (
+          <div className="mt-2.5 pt-2.5 border-t border-slate-800/80 space-y-1.5">
+            <p className="text-[11px] text-slate-400">
+              Jika Anda mengubah kata-kata saat generate di AI Studio, sesuaikan teks di bawah ini agar subtitle yang dibakar sama persis 100% kata-per-kata:
+            </p>
+            <textarea
+              value={editableScript}
+              onChange={(e) => setEditableScript(e.target.value)}
+              rows={4}
+              placeholder="[00:00] Masih repot marut keju..."
+              className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 font-mono leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500/50 resize-y"
+            />
+          </div>
+        )}
       </div>
 
       {/* Drag and Drop Zone */}

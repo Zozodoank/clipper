@@ -5,6 +5,8 @@ import path from 'path';
  * Generates an Advanced SubStation Alpha (.ass) subtitle file.
  * Native ASS format gives pixel-perfect control over canvas resolution (PlayResX/PlayResY),
  * font size, stroke outline, shadow, and position without relying on inconsistent FFmpeg CLI parsing.
+ * 
+ * Ensures the generated subtitles match the exact spoken voiceover word-for-word in natural sentences.
  *
  * @param {string} scriptText - Spoken voiceover narration
  * @param {number} totalDurationSec - Segment duration in seconds
@@ -14,21 +16,26 @@ import path from 'path';
 export function generateAssSubtitles(scriptText, totalDurationSec, assOutputPath) {
   const safeTotalDuration = Math.max(5, Number(totalDurationSec) || 30);
 
-  // 1. Split script into raw lines and extract per-line timestamps & clean spoken text
-  const rawLines = (scriptText || '').split(/\r?\n/);
-  const lineItems = [];
+  // 1. Extract pure spoken dialogue and strip headers, prompt instructions, etc.
+  let cleaned = String(scriptText || '').trim();
 
-  for (const rawLine of rawLines) {
+  // If full AI Studio prompt was passed, extract Speaker section
+  const speakerMatch = cleaned.match(/(?:Speaker\s*\d*(?:\s*-\s*[A-Za-z0-9]+)?|SPEAKER\s*\d*)[\s\r\n:]+([\s\S]*)$/i);
+  if (speakerMatch && speakerMatch[1].trim()) {
+    cleaned = speakerMatch[1].trim();
+  }
+
+  // Remove metadata lines if any (Scene, Sample Context, Setting, etc.)
+  cleaned = cleaned.replace(/^(Scene|Sample Context|Setting|Context):?[^\n]*\n?/gim, '');
+
+  const lines = cleaned.split(/\r?\n/);
+  const rawPhrases = [];
+
+  for (const rawLine of lines) {
     let line = rawLine.trim();
     if (!line) continue;
 
-    // Skip metadata headers from AI Studio prompt (Scene, Sample Context, Speaker 1)
-    if (/^(Scene|Sample Context|Speaker\s*\d*(?:\s*-\s*[A-Za-z0-9]+)?|Setting|Context):?$/i.test(line)) continue;
-    if (/^(Studio |Iklan affiliate |Suara |Presenter )/i.test(line) && !line.includes('[') && line.length < 90) {
-      continue;
-    }
-
-    // Extract leading timestamp if present, e.g. [00:05] or [0:05] or 00:05
+    // Check for timestamp anchor e.g. [00:05]
     let timestampSec = null;
     const timeMatch = line.match(/^\[?(\d{1,2}):(\d{2})\]?/);
     if (timeMatch) {
@@ -47,80 +54,96 @@ export function generateAssSubtitles(scriptText, totalDurationSec, assOutputPath
 
     if (!line) continue;
 
-    lineItems.push({
-      text: line,
-      timestampSec: timestampSec !== null && timestampSec < safeTotalDuration ? timestampSec : null,
-    });
-  }
+    // Split this line into natural sentence/clause chunks by punctuation (. ! ? ;)
+    const sentenceMatches = line.match(/[^.!?]+[.!?]+/g) || [line];
 
-  // Fallback if structured parsing returned nothing
-  if (lineItems.length === 0) {
-    const rawClean = (scriptText || '')
-      .replace(/\[[^\]]+\]/g, '')
-      .replace(/[#*_~`]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (rawClean) {
-      lineItems.push({ text: rawClean, timestampSec: null });
-    }
-  }
+    for (let sIdx = 0; sIdx < sentenceMatches.length; sIdx++) {
+      const sentence = sentenceMatches[sIdx].trim();
+      if (!sentence) continue;
 
-  if (lineItems.length === 0) {
-    lineItems.push({ text: 'Cek produk pilihan sekarang!', timestampSec: 0 });
-  }
-
-  // 2. Break lines into concise subtitle display chunks (max 3 to 4 words each)
-  // so subtitles stay neatly on 1 line inside the bottom blurred banner.
-  const subtitleChunks = [];
-
-  for (let idx = 0; idx < lineItems.length; idx++) {
-    const item = lineItems[idx];
-    const words = item.text.split(/\s+/).filter(Boolean);
-
-    if (words.length <= 4) {
-      subtitleChunks.push({
-        text: words.join(' '),
-        wordCount: words.length,
-        anchorSec: item.timestampSec,
-      });
-    } else {
-      const chunkSize = words.length <= 8 ? Math.ceil(words.length / 2) : 4;
-      for (let w = 0; w < words.length; w += chunkSize) {
-        const subWords = words.slice(w, w + chunkSize);
-        if (subWords.length > 0) {
-          subtitleChunks.push({
-            text: subWords.join(' '),
-            wordCount: subWords.length,
-            anchorSec: w === 0 ? item.timestampSec : null,
+      const words = sentence.split(/\s+/).filter(Boolean);
+      if (words.length <= 6) {
+        rawPhrases.push({
+          text: sentence,
+          wordCount: words.length,
+          anchorSec: sIdx === 0 ? timestampSec : null,
+        });
+      } else {
+        // Split longer sentences by commas if available, or into 2 clean halves
+        const commaParts = sentence.split(/,\s*/);
+        if (commaParts.length > 1 && commaParts.every((p) => p.split(/\s+/).length <= 7)) {
+          for (let cpIdx = 0; cpIdx < commaParts.length; cpIdx++) {
+            const partText = commaParts[cpIdx].trim() + (cpIdx < commaParts.length - 1 ? ',' : '');
+            const partWords = partText.split(/\s+/).filter(Boolean);
+            if (partWords.length > 0) {
+              rawPhrases.push({
+                text: partText,
+                wordCount: partWords.length,
+                anchorSec: sIdx === 0 && cpIdx === 0 ? timestampSec : null,
+              });
+            }
+          }
+        } else {
+          // Split into 2 clean halves
+          const half = Math.ceil(words.length / 2);
+          const firstHalf = words.slice(0, half).join(' ');
+          const secondHalf = words.slice(half).join(' ');
+          rawPhrases.push({
+            text: firstHalf,
+            wordCount: half,
+            anchorSec: sIdx === 0 ? timestampSec : null,
           });
+          if (secondHalf) {
+            rawPhrases.push({
+              text: secondHalf,
+              wordCount: words.length - half,
+              anchorSec: null,
+            });
+          }
         }
       }
     }
   }
 
-  // 3. Assign timing to each subtitle chunk proportionally or based on line anchors
-  const totalWords = subtitleChunks.reduce((sum, c) => sum + c.wordCount, 0) || subtitleChunks.length;
+  // Fallback if structured parsing returned nothing
+  if (rawPhrases.length === 0) {
+    const rawClean = cleaned
+      .replace(/\[[^\]]+\]/g, '')
+      .replace(/[#*_~`]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (rawClean) {
+      rawPhrases.push({ text: rawClean, wordCount: rawClean.split(/\s+/).length, anchorSec: null });
+    }
+  }
+
+  if (rawPhrases.length === 0) {
+    rawPhrases.push({ text: 'Cek produk pilihan sekarang!', wordCount: 4, anchorSec: 0 });
+  }
+
+  // 2. Assign timing to each subtitle chunk proportionally or based on line anchors
+  const totalWords = rawPhrases.reduce((sum, c) => sum + c.wordCount, 0) || rawPhrases.length;
   let currentCursor = 0;
   const events = [];
 
-  for (let i = 0; i < subtitleChunks.length; i++) {
-    const chunk = subtitleChunks[i];
+  for (let i = 0; i < rawPhrases.length; i++) {
+    const chunk = rawPhrases[i];
     let startSec = currentCursor;
 
     if (chunk.anchorSec !== null && chunk.anchorSec >= currentCursor && chunk.anchorSec < safeTotalDuration) {
       startSec = chunk.anchorSec;
     }
 
-    const nextAnchor = subtitleChunks.slice(i + 1).find((c) => c.anchorSec !== null)?.anchorSec;
+    const nextAnchor = rawPhrases.slice(i + 1).find((c) => c.anchorSec !== null)?.anchorSec;
     const remainingTime = (nextAnchor ? nextAnchor : safeTotalDuration) - startSec;
-    const nextAnchorIndex = nextAnchor ? subtitleChunks.findIndex((c, ci) => ci > i && c.anchorSec === nextAnchor) : subtitleChunks.length;
-    const sliceWords = subtitleChunks.slice(i, nextAnchorIndex).reduce((sum, c) => sum + c.wordCount, 0) || chunk.wordCount;
+    const nextAnchorIndex = nextAnchor ? rawPhrases.findIndex((c, ci) => ci > i && c.anchorSec === nextAnchor) : rawPhrases.length;
+    const sliceWords = rawPhrases.slice(i, nextAnchorIndex).reduce((sum, c) => sum + c.wordCount, 0) || chunk.wordCount;
 
     const proportionalDuration = remainingTime > 0
       ? remainingTime * (chunk.wordCount / sliceWords)
       : safeTotalDuration * (chunk.wordCount / totalWords);
 
-    const endSec = i === subtitleChunks.length - 1
+    const endSec = i === rawPhrases.length - 1
       ? safeTotalDuration
       : Math.min(safeTotalDuration, startSec + Math.max(1.0, proportionalDuration));
 
@@ -155,7 +178,7 @@ ${events.map((e) => `Dialogue: 0,${e.start},${e.end},Default,,0,0,0,,${e.text}`)
 `;
 
   fs.writeFileSync(assOutputPath, assContent, 'utf8');
-  console.log(`[SubtitleService] Generated ${events.length} native ASS subtitle blocks at ${assOutputPath}`);
+  console.log(`[SubtitleService] Generated ${events.length} native ASS subtitle blocks from exact spoken script at ${assOutputPath}`);
   return assOutputPath;
 }
 

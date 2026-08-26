@@ -15,14 +15,22 @@ export default function VoiceoverUploader({
   const [showScriptEdit, setShowScriptEdit] = useState(false);
   const fileInputRef = useRef(null);
 
-  // Initialize editable script from job voiceoverScript or aiStudioPrompt
+  // Initialize editable script with the exact Speaker 1 dialogue matching Kotak 3
   useEffect(() => {
-    if (voiceoverScript) {
-      setEditableScript(voiceoverScript);
-    } else if (aiStudioPrompt) {
-      setEditableScript(aiStudioPrompt);
+    let initialText = '';
+    if (aiStudioPrompt && typeof aiStudioPrompt === 'string') {
+      const match = aiStudioPrompt.match(/(?:Speaker\s*\d*(?:\s*-\s*[A-Za-z0-9]+)?|SPEAKER\s*\d*)[\s\r\n:]+([\s\S]*)$/i);
+      if (match && match[1].trim()) {
+        initialText = match[1].trim();
+      }
     }
-  }, [voiceoverScript, aiStudioPrompt]);
+    if (!initialText && voiceoverScript) {
+      initialText = voiceoverScript;
+    }
+    if (initialText) {
+      setEditableScript(initialText);
+    }
+  }, [aiStudioPrompt, voiceoverScript]);
 
   const handleDrag = (e) => {
     e.preventDefault();

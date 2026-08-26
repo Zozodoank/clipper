@@ -44,8 +44,8 @@ function parseAiStudioSections(promptText, sampleContext, voiceoverScript) {
       context = contextMatch[1].trim();
     }
 
-    // Match Speaker section (Speaker 1 - Orus, etc.)
-    const speakerMatch = text.match(/(?:Speaker\s*\d*(?:\s*-\s*[A-Za-z]+)?|SPEAKER\s*\d*)[\s\r\n:]+([\s\S]*)$/i);
+    // Match Speaker section (Speaker 1, Speaker 1 - Orus, etc.)
+    const speakerMatch = text.match(/(?:Speaker\s*\d*(?:\s*-\s*[A-Za-z0-9]+)?|SPEAKER\s*\d*)[\s\r\n:]+([\s\S]*)$/i);
     if (speakerMatch && speakerMatch[1].trim()) {
       speaker = speakerMatch[1].trim();
     } else if (!sceneMatch && !contextMatch) {
@@ -57,6 +57,9 @@ function parseAiStudioSections(promptText, sampleContext, voiceoverScript) {
   if (!speaker && voiceoverScript) {
     speaker = voiceoverScript;
   }
+
+  // Clean any accidental leftover header lines from speaker text
+  speaker = speaker.replace(/^Speaker\s*\d*(?:\s*-\s*[A-Za-z0-9]+)?[\s\r\n:]+/i, '').trim();
 
   return { scene, context, speaker };
 }
@@ -398,20 +401,20 @@ export default function CaptionCard({ result }) {
               />
             </div>
 
-            {/* KOTAK 3: SPEAKER 1 - ORUS */}
+            {/* KOTAK 3: SPEAKER 1 */}
             <div className="rounded-xl bg-slate-950/90 border border-emerald-900/40 p-3.5 flex flex-col space-y-2 flex-1">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
                   <span className="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] flex items-center justify-center font-bold">3</span>
                   <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Speaker 1 - Orus (Naskah Narasi dengan Emotion Tags)</span>
+                  <span>Speaker 1 (Naskah Narasi dengan Timestamp & Emotion Tags)</span>
                 </span>
                 <button
                   onClick={() => copyToClipboard(aiStudioSections.speaker, 'aistudio_speaker')}
                   className="px-2.5 py-1 rounded-md bg-slate-900 hover:bg-emerald-600/30 text-emerald-300 hover:text-emerald-200 border border-emerald-500/30 text-[10px] font-semibold flex items-center gap-1 transition-all"
                 >
                   {copiedField === 'aistudio_speaker' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                  <span>{copiedField === 'aistudio_speaker' ? 'Tersalin!' : 'Copy Speaker / Narasi'}</span>
+                  <span>{copiedField === 'aistudio_speaker' ? 'Tersalin!' : 'Copy Speaker 1'}</span>
                 </button>
               </div>
               <textarea

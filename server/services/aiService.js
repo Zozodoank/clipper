@@ -313,12 +313,13 @@ CRITICAL DURATION & WORD-COUNT TIMING RULES (MANDATORY):
      * 'voiceover': The exact spoken narration line for this scene (around 12-14 words per 5-second scene).
      * 'adAdvisorNotes': Director notes for sound effects (SFX), visual text overlays, or emotional pacing.
 
-3. 'voiceoverScript' (Naskah Voiceover Lengkap):
-   - A complete Indonesian spoken narration (${minWords} - ${maxWords} words total) formatted cleanly with sections:
-     [HOOK 0-3s]: Bold, curiosity-inducing hook line mentioning the product.
-     [PROBLEM & DEMO 3-20s]: Story / problem and benefit demonstration based on product description and video visual.
-     [VALUE PROPOSITION 20-35s]: Key advantages, specifications, and quality assurance.
-     [CALL TO ACTION 35-${targetDuration}s]: Direct CTA directing viewer to check the product below (e.g., "Cek produk di bawah sekarang sebelum kehabisan!").
+3. 'voiceoverScript' (Naskah Voiceover Lengkap dengan Penanda Waktu):
+   - A complete Indonesian spoken narration (${minWords} - ${maxWords} words total).
+   - Each line MUST start with an exact timestamp corresponding to the video timeline (e.g. [00:00], [00:05], [00:10], [00:15], [00:20], [00:25]), followed by the spoken line, e.g.:
+     [00:00] Masih repot marut keju atau kelapa pakai alat lama?
+     [00:05] Kenalin, Parutan Serbaguna Stainless super praktis ini!
+     ...
+     [00:25] Cek produk di bawah sekarang sebelum kehabisan promo spesialnya!
 
 STRICT RULES FOR VOICE OVER & CALL TO ACTION:
 - NEVER use the word "Shopee" in the voiceover script or scene spoken lines.
@@ -330,13 +331,17 @@ STRICT RULES FOR VOICE OVER & CALL TO ACTION:
    - It MUST follow this exact structure (with these exact section headers on separate lines):
 
 Scene
-[One sentence describing the setting/environment, e.g. "Studio rekaman energik dengan presenter Indonesia yang antusias."]
+[One sentence describing the setting/environment, e.g. "Studio dapur modern yang bersih dengan presenter Indonesia bersuara ramah dan energik."]
 
 Sample Context
 [One or two sentences describing tone, pacing, and style of the ad. e.g. "Iklan affiliate viral. Dimulai dengan hook yang menarik perhatian, membangun ke demonstrasi produk, diakhiri CTA yang meyakinkan. Nada suara hangat, antusias, dan persuasif."]
 
-Speaker 1 - Orus
-[voiceover script with emotion tags inline. Use ONLY these emotion tags: [intrigue] [desire] [information] [excited] [inspiration] [confident]. Each sentence or phrase should start with the most fitting emotion tag. Write the full Indonesian voiceover narration (${minWords} - ${maxWords} words) here from hook to CTA, using the product's actual name and details.]
+Speaker 1
+[voiceover script with timestamps and emotion tags inline. Use ONLY these emotion tags: [intrigue] [desire] [information] [excited] [inspiration] [confident]. Every line starts with timestamp and emotion tag, e.g.
+[00:00] [intrigue] Masih repot marut keju atau kelapa pakai alat lama?
+[00:05] [excited] Kenalin, Parutan Serbaguna Stainless super praktis ini!
+...
+[00:25] [excited] Cek produk di bawah sekarang sebelum kehabisan!]
 
    - IMPORTANT: The output of 'aiStudioPrompt' must be a plain string (not JSON) ready to paste directly into AI Studio. Do NOT add any JSON object inside it.
 
@@ -358,11 +363,13 @@ ${trimmedFrames.map((f, i) => `Frame #${i + 1} at timestamp ${f.timeFormatted} (
 Gunakan informasi judul dan deskripsi produk di atas agar naskah sangat relevan dan akurat.
 Buat Kotak Scene, Sample Context, Naskah Voiceover Ad Advisor, dan AI Studio prompt.
 
-PENTING - ATURAN DURASI & TEMPO NASKAH:
+PENTING - ATURAN DURASI, TIMESTAMP & TEMPO NASKAH:
 1. Durasi video adalah ${targetDuration} detik. Naskah voiceover HARUS pas ${minWords} s/d ${maxWords} kata (sekitar 12-14 kata tiap scene 5 detik) agar pas dengan durasi video tanpa perlu diperlambat!
-2. JANGAN PERNAH gunakan kata "Shopee" dalam naskah voiceover maupun Kotak Scene.
-3. JANGAN PERNAH gunakan kata "link di bio".
-4. Selalu gunakan ajakan seperti "Cek produk di bawah sekarang", "Klik produk di bawah", atau "Checkout produk di bawah sebelum kehabisan".
+2. Setiap baris naskah voiceover dan prompt AI Studio WAJIB diawali penanda waktu video, misal: [00:00], [00:05], [00:10], [00:15], [00:20], [00:25], dst.
+3. JANGAN gunakan nama karakter suara khusus (cukup gunakan header "Speaker 1").
+4. JANGAN PERNAH gunakan kata "Shopee" dalam naskah voiceover maupun Kotak Scene.
+5. JANGAN PERNAH gunakan kata "link di bio".
+6. Selalu gunakan ajakan seperti "Cek produk di bawah sekarang", "Klik produk di bawah", atau "Checkout produk di bawah sebelum kehabisan".
 
 Return strict JSON in this format:
 {
@@ -382,8 +389,8 @@ Return strict JSON in this format:
       "adAdvisorNotes": "Tips sutradara (SFX / Text Overlay)"
     }
   ],
-  "voiceoverScript": "[HOOK]\\n...\\n\\n[PROBLEM & DEMO]\\n...\\n\\n[CALL TO ACTION]\\n...",
-  "aiStudioPrompt": "Prompt siap copy ke Google AI Studio...",
+  "voiceoverScript": "[00:00] Masih repot marut keju pakai alat lama?\\n[00:05] Kenalin parutan serbaguna ini...\\n[00:23] Cek produk di bawah sekarang!",
+  "aiStudioPrompt": "Scene\\nStudio dapur modern...\\n\\nSample Context\\nIklan affiliate viral...\\n\\nSpeaker 1\\n[00:00] [intrigue] Masih repot...\\n[00:05] [excited] Kenalin...\\n[00:23] [excited] Cek produk di bawah sekarang!",
   "caption": "Teks caption lengkap dengan link pembelian dan hashtag..."
 }`;
 

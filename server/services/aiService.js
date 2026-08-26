@@ -70,20 +70,23 @@ export async function selectHighlightWithGeminiFlash({
   const effectiveTitle = productTitle || videoMetadata?.title || 'Product Showcase Video';
   const effectiveDesc = productDescription || videoMetadata?.description || '';
 
-  const systemPrompt = `You are a smart, results-focused Short-Form Video Editor for Indonesian Shopee affiliate marketing.
-Your task: analyze the video timeline frames and select the BEST available 5-second product clips for a Shopee ad.
+  const systemPrompt = `You are a Strict, World-Class Short-Form Video Editor & Viral Affiliate Content Producer.
+Your task is to analyze the source-video timeline frames and select ONLY pristine, 100% clean 5-second product demo clips suitable for high-converting Indonesian Shopee affiliate ads.
 
-SELECTION RULES:
-1. PRODUCT MATCH: If this video clearly shows a product from the same category as the requested Shopee product, set isProductMatch=true. Only set false if the video is completely unrelated (e.g., gaming, music, cooking when product is cosmetics).
-2. PREFER CLEAN SHOTS: Prioritize frames with product close-ups, hands holding product, or demonstrations WITHOUT subtitles/text. However:
-   - If most of the video has subtitles but some clean seconds exist, SELECT those clean seconds.
-   - If the video has a presenter/creator face but also product shots, SELECT the product-only moments.
-   - Even shots with minor watermarks are acceptable if the product is the main focus.
-3. ALWAYS RETURN CLIPS: Return 1 to 6 clips. NEVER return an empty clips array if the video shows the product at all.
-4. isUsableSourceVideo should be false ONLY if the video is 100% unrelated to the product (e.g., wrong category entirely).
-5. RETURN 1 TO 6 CLEAN 5-SECOND CLIPS: Each clip MUST be exactly 5 seconds long. Total 5-30 seconds.
-6. PRAGMATIC APPROACH: It is better to return imperfect clips than to reject the video entirely.`;
-
+CRITICAL QUALITY & REJECTION RULES:
+1. PRODUCT RELEVANCE: Ensure the video visually features the specific product or its exact category. If completely unrelated, reject with isProductMatch=false, isUsableSourceVideo=false.
+2. ZERO-TOLERANCE ON SUBTITLES & TEXT OVERLAYS:
+   - REJECT any clip/frame containing burned-in subtitles, captions, lyrics, narrative text, discount banners, price tags, or promo graphics.
+3. ZERO-TOLERANCE ON WATERMARKS & BRAND LOGOS:
+   - REJECT any clip/frame containing creator watermarks, TikTok/IG handles (@username), channel logos, or intrusive brand overlays.
+4. FACELESS / PRODUCT-CENTRIC:
+   - Prioritize hands-only demonstration, unboxing, product features, and practical usage.
+   - Avoid frames where a creator's face or talking head dominates the screen.
+5. REJECTION THRESHOLD:
+   - If the entire video is covered in subtitles, watermarks, or talking heads with NO clean product demonstration moments, set "isUsableSourceVideo": false, "rejectionReason": "Video penuh teks / subtitle / watermark brand.", and return an empty clips array.
+6. RETURN 2 TO 8 CLEAN 5-SECOND CLIPS:
+   - Each selected clip MUST be exactly 5 seconds long (e.g. 00:05 to 00:10, 00:20 to 00:25) from the cleanest timestamps.
+   - Total duration: 10 to 40 seconds.`;
 
   const userPrompt = `Product Title: "${effectiveTitle}"
 ${effectiveDesc ? `Product Description / Key Features: "${effectiveDesc}"` : ''}
@@ -94,11 +97,13 @@ Product Link: ${shopeeLink || 'https://shope.ee/link'}
 Sampled Visual Frames (${frames.length} frames across timeline):
 ${frames.map((f, i) => `Frame #${i + 1} at timestamp ${f.timeFormatted} (${f.timestamp}s)`).join('\n')}
 
-TASK:
-1. Identify the best 1–6 moments in this video where the product is clearly visible.
-2. Mark each as a 5-second clip with startTime (MM:SS format).
-3. Set isCleanAffiliateShot=true for product-visible shots even if they have some text overlay.
-4. Set isUsableSourceVideo=false ONLY if this video has zero connection to the product category.
+INSPECTION INSTRUCTION:
+Examine each frame carefully:
+1. Check for burned-in subtitles, captions, Indonesian/foreign text overlays.
+2. Check for watermarks, channel logos, brand logos, or @usernames.
+3. Check for creator faces / talking heads.
+4. Select ONLY the clean 5-second product demo intervals where no intrusive text or watermarks are present.
+5. If the video does NOT contain at least 2 clean product-focused clips, REJECT it by setting "isUsableSourceVideo": false with the specific rejectionReason.
 
 Return strict JSON in this format:
 {
@@ -111,7 +116,7 @@ Return strict JSON in this format:
       "startTime": "00:10",
       "endTime": "00:15",
       "startSeconds": 10,
-      "reason": "Product clearly visible.",
+      "reason": "Clean hands-only product demonstration without text, watermarks, or face.",
       "isCleanAffiliateShot": true,
       "sourceOwnerIdentityVisible": false,
       "sourceIdentityRisk": "none",
@@ -123,7 +128,7 @@ Return strict JSON in this format:
         "avoidTextZones": [],
         "avoidFaceZones": ["top_left"],
         "faceSafety": true,
-        "notes": "Product demonstration shot."
+        "notes": "Clean product-only demonstration."
       }
     }
   ]
@@ -629,14 +634,12 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true } = {
 }
 
 function hasSourceIdentityRisk(rawClip = {}) {
-  // Only reject on explicit sourceOwnerIdentityVisible=true
   if (rawClip.sourceOwnerIdentityVisible === true) return true;
 
-  // Only reject 'high' or 'critical' risk — allow 'medium', 'low', 'none', empty
   const risk = (rawClip.sourceIdentityRisk || '').toString().toLowerCase().trim();
-  if (!risk || risk === 'none' || risk === 'low' || risk === 'false' || risk === 'no' || risk === 'medium') return false;
+  if (!risk || risk === 'none' || risk === 'low' || risk === 'false' || risk === 'no') return false;
 
-  return risk === 'high' || risk === 'critical';
+  return true;
 }
 
 function clampNumber(value, min, max, fallback) {

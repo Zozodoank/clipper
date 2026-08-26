@@ -15,6 +15,7 @@ import {
   Lightbulb,
   Terminal
 } from 'lucide-react';
+import { copyToClipboardSafe } from '../utils/clipboard';
 
 export default function CaptionCard({ result }) {
   // 'scenes' | 'script' | 'context' | 'aistudio' | 'caption'
@@ -23,12 +24,8 @@ export default function CaptionCard({ result }) {
 
   if (!result) return null;
 
-  const copyToClipboard = (text, fieldName) => {
-    if (typeof text === 'object') {
-      navigator.clipboard.writeText(JSON.stringify(text, null, 2));
-    } else {
-      navigator.clipboard.writeText(text);
-    }
+  const copyToClipboard = async (text, fieldName) => {
+    await copyToClipboardSafe(text);
     setCopiedField(fieldName);
     setTimeout(() => {
       setCopiedField(null);

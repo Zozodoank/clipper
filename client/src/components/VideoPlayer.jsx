@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Download, Play, Pause, Volume2, VolumeX, Maximize2, Sparkles, Clock, Check, Folder, FolderOpen, Loader2, CheckCircle2 } from 'lucide-react';
+import { copyToClipboardSafe } from '../utils/clipboard';
 
 export default function VideoPlayer({ result }) {
   const videoRef = useRef(null);
@@ -42,9 +43,9 @@ export default function VideoPlayer({ result }) {
     }
   };
 
-  const copyLocalPath = () => {
+  const copyLocalPath = async () => {
     if (currentLocalPath) {
-      navigator.clipboard.writeText(currentLocalPath);
+      await copyToClipboardSafe(currentLocalPath);
       setIsCopiedPath(true);
       setTimeout(() => setIsCopiedPath(false), 2000);
     }

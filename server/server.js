@@ -778,7 +778,7 @@ app.post('/api/upload-voiceover', upload.single('audio'), async (req, res) => {
 
   const finalFileName = `final_clip_${jobId}.mp4`;
   const finalOutputPath = path.join(outputDir, finalFileName);
-  const srtPath = path.join(uploadsDir, `subtitles_${jobId}.srt`);
+  const srtPath = path.join(uploadsDir, `subtitles_${jobId}.ass`);
 
   const updateProgress = (data) => {
     const payload = typeof data === 'string'
@@ -813,12 +813,13 @@ app.post('/api/upload-voiceover', upload.single('audio'), async (req, res) => {
     deleteJobTempDirectory(jobId, tempDir);
     console.log(`[Cleaner] Raw YouTube video and temp files for job ${jobId} permanently removed.`);
 
+    const cacheBuster = Date.now();
     const finalResult = {
       ...job,
       stage: 'completed',
       finalFileName,
-      videoUrl: `/api/video/${finalFileName}`,
-      downloadUrl: `/api/download/${finalFileName}`,
+      videoUrl: `/api/video/${finalFileName}?t=${cacheBuster}`,
+      downloadUrl: `/api/download/${finalFileName}?t=${cacheBuster}`,
       finalLocalPath: finalOutputPath,
       downloadedVideoPath: null,
       hasDownloadedVideo: false,

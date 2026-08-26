@@ -2,24 +2,20 @@ import fs from 'fs';
 import path from 'path';
 
 /**
- * Generates a clean, synchronized SRT subtitle file from voiceover text and target duration.
- * Ensures the subtitle text matches the spoken voiceover word-for-word with accurate timeline syncing.
- * 
- * @param {string} scriptText - Spoken voiceover narration (may contain [00:05] timestamps or emotion tags)
+ * Generates an Advanced SubStation Alpha (.ass) subtitle file.
+ * Native ASS format gives pixel-perfect control over canvas resolution (PlayResX/PlayResY),
+ * font size, stroke outline, shadow, and position without relying on inconsistent FFmpeg CLI parsing.
+ *
+ * @param {string} scriptText - Spoken voiceover narration
  * @param {number} totalDurationSec - Segment duration in seconds
- * @param {string} srtOutputPath - Absolute path to write the .srt file
- * @returns {string} The path to the generated SRT file
+ * @param {string} assOutputPath - Absolute path to write the .ass file
+ * @returns {string} The path to the generated ASS file
  */
-export function generateSrtSubtitles(scriptText, totalDurationSec, srtOutputPath) {
+export function generateAssSubtitles(scriptText, totalDurationSec, assOutputPath) {
   const safeTotalDuration = Math.max(5, Number(totalDurationSec) || 30);
 
-  if (!scriptText || !scriptText.trim()) {
-    fs.writeFileSync(srtOutputPath, `1\n00:00:00,000 --> ${formatSrtTime(safeTotalDuration)}\nCek produk pilihan sekarang!\n`, 'utf8');
-    return srtOutputPath;
-  }
-
   // 1. Split script into raw lines and extract per-line timestamps & clean spoken text
-  const rawLines = scriptText.split(/\r?\n/);
+  const rawLines = (scriptText || '').split(/\r?\n/);
   const lineItems = [];
 
   for (const rawLine of rawLines) {
@@ -42,18 +38,10 @@ export function generateSrtSubtitles(scriptText, totalDurationSec, srtOutputPath
 
     // Strip emotion tags: [intrigue], [excited], [information], [desire], [confident], [inspiration], [happy], etc.
     line = line.replace(/\[(intrigue|excited|information|desire|confident|inspiration|happy|urgent|curious|hook|demo|problem|value|cta|scene\s*\d*)\]/gi, '');
-
-    // Strip section markers like [HOOK 0-3s], [PROBLEM & DEMO], [CALL TO ACTION], etc.
     line = line.replace(/\[[^\]]+\]/g, '');
-
-    // Strip leading speaker prefixes (e.g. "Speaker 1:", "Narasi:")
     line = line.replace(/^(Speaker\s*\d*|Narasi|Voiceover|VO)\s*[:\-]\s*/i, '');
-
-    // Clean formatting characters, markdown, quotes, colons, bullets
     line = line.replace(/[#*_~`]/g, '');
     line = line.replace(/^[:\-•*"\s]+/, '').replace(/["\s]+$/, '').trim();
-
-    // Strip emojis
     line = line.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
     line = line.replace(/\s+/g, ' ').trim();
 
@@ -67,7 +55,7 @@ export function generateSrtSubtitles(scriptText, totalDurationSec, srtOutputPath
 
   // Fallback if structured parsing returned nothing
   if (lineItems.length === 0) {
-    const rawClean = scriptText
+    const rawClean = (scriptText || '')
       .replace(/\[[^\]]+\]/g, '')
       .replace(/[#*_~`]/g, '')
       .replace(/\s+/g, ' ')
@@ -78,8 +66,7 @@ export function generateSrtSubtitles(scriptText, totalDurationSec, srtOutputPath
   }
 
   if (lineItems.length === 0) {
-    fs.writeFileSync(srtOutputPath, `1\n00:00:00,000 --> ${formatSrtTime(safeTotalDuration)}\nCek produk pilihan sekarang!\n`, 'utf8');
-    return srtOutputPath;
+    lineItems.push({ text: 'Cek produk pilihan sekarang!', timestampSec: 0 });
   }
 
   // 2. Break lines into concise subtitle display chunks (max 3 to 4 words each)
@@ -97,7 +84,6 @@ export function generateSrtSubtitles(scriptText, totalDurationSec, srtOutputPath
         anchorSec: item.timestampSec,
       });
     } else {
-      // Split into concise 3 to 4 word phrases
       const chunkSize = words.length <= 8 ? Math.ceil(words.length / 2) : 4;
       for (let w = 0; w < words.length; w += chunkSize) {
         const subWords = words.slice(w, w + chunkSize);
@@ -114,8 +100,8 @@ export function generateSrtSubtitles(scriptText, totalDurationSec, srtOutputPath
 
   // 3. Assign timing to each subtitle chunk proportionally or based on line anchors
   const totalWords = subtitleChunks.reduce((sum, c) => sum + c.wordCount, 0) || subtitleChunks.length;
-  let srtContent = '';
   let currentCursor = 0;
+  const events = [];
 
   for (let i = 0; i < subtitleChunks.length; i++) {
     const chunk = subtitleChunks[i];
@@ -125,11 +111,8 @@ export function generateSrtSubtitles(scriptText, totalDurationSec, srtOutputPath
       startSec = chunk.anchorSec;
     }
 
-    // Find next explicit anchor if available
     const nextAnchor = subtitleChunks.slice(i + 1).find((c) => c.anchorSec !== null)?.anchorSec;
     const remainingTime = (nextAnchor ? nextAnchor : safeTotalDuration) - startSec;
-    
-    // Count words in current slice
     const nextAnchorIndex = nextAnchor ? subtitleChunks.findIndex((c, ci) => ci > i && c.anchorSec === nextAnchor) : subtitleChunks.length;
     const sliceWords = subtitleChunks.slice(i, nextAnchorIndex).reduce((sum, c) => sum + c.wordCount, 0) || chunk.wordCount;
 
@@ -143,17 +126,49 @@ export function generateSrtSubtitles(scriptText, totalDurationSec, srtOutputPath
 
     currentCursor = endSec;
 
-    const startTimeFormatted = formatSrtTime(startSec);
-    const endTimeFormatted = formatSrtTime(endSec);
-
-    srtContent += `${i + 1}\n`;
-    srtContent += `${startTimeFormatted} --> ${endTimeFormatted}\n`;
-    srtContent += `${chunk.text}\n\n`;
+    events.push({
+      start: formatAssTime(startSec),
+      end: formatAssTime(endSec),
+      text: chunk.text,
+    });
   }
 
-  fs.writeFileSync(srtOutputPath, srtContent.trim() + '\n', 'utf8');
-  console.log(`[SubtitleService] Generated ${subtitleChunks.length} accurate subtitle blocks at ${srtOutputPath}`);
-  return srtOutputPath;
+  // Native ASS (Advanced SubStation Alpha) Header with exact 720x1280 coordinate system
+  // Fontsize: 34, Outline: 2.8, Shadow: 1.5, Alignment: 2 (Bottom-Center), MarginV: 115
+  // This places bold, highly legible text centered inside the bottom blur area (y: 1115-1165).
+  const assContent = `[Script Info]
+Title: TikTok/Reels Affiliate Subtitles
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.709
+PlayResX: 720
+PlayResY: 1280
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,34,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,2.8,1.5,2,40,40,115,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+${events.map((e) => `Dialogue: 0,${e.start},${e.end},Default,,0,0,0,,${e.text}`).join('\n')}
+`;
+
+  fs.writeFileSync(assOutputPath, assContent, 'utf8');
+  console.log(`[SubtitleService] Generated ${events.length} native ASS subtitle blocks at ${assOutputPath}`);
+  return assOutputPath;
+}
+
+// Backward compatibility alias
+export const generateSrtSubtitles = generateAssSubtitles;
+
+function formatAssTime(totalSec) {
+  const safeSec = Math.max(0, Number(totalSec) || 0);
+  const hours = Math.floor(safeSec / 3600);
+  const minutes = Math.floor((safeSec % 3600) / 60).toString().padStart(2, '0');
+  const seconds = Math.floor(safeSec % 60).toString().padStart(2, '0');
+  const centis = Math.floor(((safeSec % 1) * 100)).toString().padStart(2, '0');
+  return `${hours}:${minutes}:${seconds}.${centis}`;
 }
 
 function formatSrtTime(totalSec) {

@@ -174,10 +174,13 @@ export async function mergeVoiceoverAndBurnSubtitles({
         .replace(/\\/g, '/')
         .replace(/:/g, '\\:');
 
-      // Position bold, highly readable subtitles in the bottom blurred banner (FontSize=34, Outline=2.8)
-      // Alignment=2 (Bottom-Center), MarginV=120 places text centered at y ≈ 1140 inside the 720x1280 canvas.
-      const subtitleStyle = 'PlayResX=720,PlayResY=1280,FontName=Arial,FontSize=34,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2.8,Shadow=1.5,Bold=1,Alignment=2,MarginV=120,MarginL=25,MarginR=25';
-      filterChains.push(`[0:v]subtitles='${sanitizedSrt}':force_style='${subtitleStyle}'[v]`);
+      if (srtPath.endsWith('.ass')) {
+        // Native ASS file: exact resolution (720x1280), FontSize (34), and MarginV (115) defined in file header
+        filterChains.push(`[0:v]subtitles='${sanitizedSrt}'[v]`);
+      } else {
+        const subtitleStyle = 'FontName=Arial,FontSize=28,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2.8,Shadow=1.5,Bold=1,Alignment=2,MarginV=115,MarginL=25,MarginR=25';
+        filterChains.push(`[0:v]subtitles='${sanitizedSrt}':force_style='${subtitleStyle}'[v]`);
+      }
       mapArgs.push('-map', '[v]');
     } else {
       mapArgs.push('-map', '0:v:0');

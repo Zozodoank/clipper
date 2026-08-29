@@ -262,7 +262,7 @@ async function downloadWithCobaltApi(url, outputPath, onProgress) {
       headers,
       body: JSON.stringify({
         url,
-        videoQuality: '720',
+        videoQuality: '1080',
         downloadMode: 'auto'
       }),
       signal: AbortSignal.timeout(15000)
@@ -336,8 +336,9 @@ async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress) {
       tags: []
     };
 
-    // Pick best combined audio+video format at <=720p (itag 22 or 18)
-    let best = data.formats.find(f => f.qualityLabel === '720p' && f.audioQuality) ||
+    // Pick best combined audio+video format at <=1080p
+    let best = data.formats.find(f => f.qualityLabel === '1080p' && f.audioQuality) ||
+               data.formats.find(f => f.qualityLabel === '720p' && f.audioQuality) ||
                data.formats.find(f => f.qualityLabel === '360p' && f.audioQuality) ||
                data.formats.find(f => f.audioQuality) || 
                data.formats[0];
@@ -429,9 +430,9 @@ export async function searchYouTubeVideos(query, { limit = 10, onProgress = () =
 }
 
 /**
- * Downloads a YouTube video with configurable quality (preview 240p vs full 720p HD).
+ * Downloads a YouTube video with configurable quality (preview 360p vs full 1080p Full HD).
  */
-export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress = () => {}, { quality = '720p', prefix = 'raw' } = {}) {
+export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress = () => {}, { quality = '1080p', prefix = 'raw' } = {}) {
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
@@ -453,13 +454,13 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
   const ffmpegPath = getFFmpegPath();
   const outputTemplate = path.join(outputDir, `${prefix}_${videoId}.%(ext)s`);
 
-  const qualityLabel = isPreview ? '360p (Hemat Kuota)' : '720p HD';
+  const qualityLabel = isPreview ? '360p (Hemat Kuota)' : '1080p Full HD';
   onProgress({ step: 'download', message: `Downloading preview (${qualityLabel}) for AI analysis...`, progress: 10 });
 
   const dlBaseArgs = getDownloadArgs();
 
   // For preview mode: use a single combined download call (skip metadata step to save time)
-  // For full 720p: also fetch metadata first for scripting
+  // For full 1080p: also fetch metadata first for scripting
   let metadata = { title: 'YouTube Video', duration: 60 };
   if (!isPreview) {
     const infoArgs = [
@@ -487,7 +488,7 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
 
   const formatSelector = isPreview
     ? 'bestvideo[height<=360]/best[height<=360]/bestvideo[height<=480]/best[height<=480]/worst[ext=mp4]/worst'
-    : '22/bestvideo[height<=720]+bestaudio/best[height<=720]/best';
+    : 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
 
   const dlArgs = [
     '--ffmpeg-location',

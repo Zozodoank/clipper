@@ -11,7 +11,7 @@ Powered by **Aivene gpt-4o-mini** (30-60s faceless visual highlight clipping, pr
 ```mermaid
 flowchart TD
     subgraph TAHAP 1: Clipping & Scripting AI
-        A[Judul & Deskripsi Produk + URL YouTube + Link Shopee] --> B[yt-dlp: Unduh 720p]
+        A[Judul & Deskripsi Produk + URL YouTube + Link Shopee] --> B[yt-dlp: Unduh 1080p]
         B --> C[FFmpeg: Ekstraksi Frame Sumber]
         C --> D[GPT-4o Mini: Pilih Highlight Faceless + Fokus Crop Produk]
         D --> E[FFmpeg: Render Crop Produk/Tangan 9:16 Tanpa Suara -an]
@@ -143,10 +143,8 @@ Backend secara otomatis menggunakan 3 lapisan pengunduhan video:
 ### 4. Mode Hemat Kuota (Smart Two-Stage Download untuk Android / Termux)
 
 Aplikasi secara default mengaktifkan fitur **Smart Two-Stage Download** untuk menghemat kuota internet hingga **90%**:
-1. **Tahap 1 (Analisa Ringan 240p/360p):** Video diunduh dalam format ultra-ringan (hanya berukuran **~1 - 3 MB**) untuk diekstrak framenya dan dianalisis oleh GPT-4o Mini Vision.
+1. **Tahap 1 (Analisa Ringan 360p):** Video diunduh dalam format ultra-ringan (hanya berukuran **~1 - 3 MB**) untuk diekstrak framenya dan dianalisis oleh AI Vision.
 2. **Eliminasi Cepat:** Jika kandidat video tidak cocok (ditolak karena ada wajah manusia/bukan review produk), kandidat langsung dibuang. Kuota yang terpakai **hanya ~1.5 MB** (bukan 50 MB!).
-3. **Tahap 2 (Unduh 720p HD HANYA untuk Video yang Lolos):** Begitu AI memvalidasi video layak dipotong, barulah sistem mendownload video 720p HD asli untuk proses pemotongan 9:16 vertikal dan dubbing voiceover.
+3. **Tahap 2 (Unduh 1080p Full HD HANYA untuk Video yang Lolos):** Begitu AI memvalidasi video layak dipotong, barulah sistem mendownload video 1080p Full HD asli untuk proses pemotongan 9:16 vertikal dan dubbing voiceover.
 
 *(Opsional)* Anda dapat mengatur `LOW_DATA_MODE=true` atau `LOW_DATA_MODE=false` di file `server/.env`.
-
-

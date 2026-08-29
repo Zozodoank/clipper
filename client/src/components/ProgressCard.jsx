@@ -5,7 +5,7 @@ export default function ProgressCard({ progressState, onRetry, isLoading }) {
   const { step, message, progress = 0, status, error, isQuotaError } = progressState;
 
   const steps = [
-    { id: 'download', label: '1. Download 720p Video', icon: Download, desc: 'yt-dlp engine fetching max 720p' },
+    { id: 'download', label: '1. Download 1080p Video', icon: Download, desc: 'yt-dlp engine fetching max 1080p' },
     { id: 'gemini_vision', label: '2. Faceless AI Highlight', icon: Sparkles, desc: 'Avoids creator face, finds product focus' },
     { id: 'render_silent', label: '3. Faceless 9:16 Render', icon: Layers, desc: 'Product/hands crop without black bars' },
     { id: 'gpt_scripting', label: '4. AI Scripting & Kotak Scene', icon: Clapperboard, desc: 'Kotak Scene, Context & Naskah' },

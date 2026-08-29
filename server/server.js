@@ -359,8 +359,8 @@ export async function runStage1Pipeline({
       }
       console.log(`[Job ${jobId}] Preview ready: "${videoMeta.title}" duration=${videoMeta.duration}s file=${rawVideoPath}`);
     } else {
-      updateProgress({ step: 'download', message: 'Downloading source video (720p) via yt-dlp...', progress: 12, status: 'running' });
-      const dlResult = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: '720p', prefix: 'raw' });
+      updateProgress({ step: 'download', message: 'Downloading source video (1080p) via yt-dlp...', progress: 12, status: 'running' });
+      const dlResult = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: '1080p', prefix: 'raw' });
       rawVideoPath = dlResult.filePath;
       videoMeta = dlResult.metadata;
 
@@ -384,10 +384,10 @@ export async function runStage1Pipeline({
       onProgress: updateProgress,
     });
 
-    // TAHAP 2 (Lolos Seleksi): Video lolos seleksi AI! Baru unduh video 720p HD asli untuk proses render
+    // TAHAP 2 (Lolos Seleksi): Video lolos seleksi AI! Baru unduh video 1080p Full HD asli untuk proses render
     if (isLowDataMode && !cachedVideoPath) {
-      updateProgress({ step: 'download_hd', message: '✅ Video lolos seleksi AI! Mengunduh kualitas 720p HD...', progress: 55, status: 'running' });
-      const hdDl = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: '720p', prefix: 'raw' });
+      updateProgress({ step: 'download_hd', message: '✅ Video lolos seleksi AI! Mengunduh kualitas 1080p Full HD...', progress: 55, status: 'running' });
+      const hdDl = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: '1080p', prefix: 'raw' });
       // Hapus file preview 240p untuk menghemat ruang memori HP
       try {
         if (fs.existsSync(rawVideoPath) && rawVideoPath !== hdDl.filePath) {

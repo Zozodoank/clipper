@@ -6,9 +6,9 @@ export default function ProgressCard({ progressState, onRetry, isLoading }) {
 
   const steps = [
     { id: 'download', label: '1. Download 720p Video', icon: Download, desc: 'yt-dlp engine fetching max 720p' },
-    { id: 'gemini_vision', label: '2. Faceless Gemini Highlight', icon: Sparkles, desc: 'Avoids creator face, finds product focus' },
+    { id: 'gemini_vision', label: '2. Faceless AI Highlight', icon: Sparkles, desc: 'Avoids creator face, finds product focus' },
     { id: 'render_silent', label: '3. Faceless 9:16 Render', icon: Layers, desc: 'Product/hands crop without black bars' },
-    { id: 'gpt_scripting', label: '4. Gemini Scripting', icon: Clapperboard, desc: 'Kotak Scene, Context & Naskah' },
+    { id: 'gpt_scripting', label: '4. AI Scripting & Kotak Scene', icon: Clapperboard, desc: 'Kotak Scene, Context & Naskah' },
     { id: 'awaiting_voiceover', label: '5. Ready for Voiceover', icon: Music, desc: 'Paste naskah to AI Studio & upload' },
   ];
 

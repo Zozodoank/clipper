@@ -31,7 +31,7 @@ export default function InputCard({
               Source Video & Informasi Produk
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Masukkan detail produk agar Gemini menghasilkan naskah yang akurat dan persuasif.
+              Masukkan detail produk agar AI menghasilkan naskah yang akurat dan persuasif.
             </p>
           </div>
 
@@ -52,7 +52,7 @@ export default function InputCard({
               <Tag className="w-4 h-4 text-amber-400" />
               Judul / Nama Produk <span className="text-shopee-500">*</span>
             </span>
-            <span className="text-[11px] font-normal text-amber-300">Konteks Utama Gemini</span>
+            <span className="text-[11px] font-normal text-amber-300">Konteks Utama AI</span>
           </label>
           <input
             type="text"
@@ -89,7 +89,7 @@ export default function InputCard({
               <Youtube className="w-4 h-4 text-red-500" />
               YouTube Video URL <span className="text-shopee-500">*</span>
             </span>
-            <span className="text-[11px] font-normal text-slate-400">Faceless Gemini Highlight</span>
+            <span className="text-[11px] font-normal text-slate-400">Faceless AI Highlight</span>
           </label>
           <input
             type="url"

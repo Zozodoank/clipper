@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';
 
-const AIVENE_GEMINI_MODEL = process.env.AIVENE_GEMINI_MODEL || 'gemini-3.7-flash';
+const AIVENE_MODEL = process.env.AIVENE_MODEL || process.env.AIVENE_GEMINI_MODEL || 'gpt-4o-mini';
 const DEFAULT_REFRAME = {
   focusX: 0.5,
   focusY: 0.62,
@@ -36,7 +36,7 @@ function formatApiError(err, modelName = 'AI') {
 }
 
 /**
- * Stage 1, Step A: Calls Aivene API with Gemini vision
+ * Stage 1, Step A: Calls Aivene API with vision
  * to analyze the full video timeline and select a cut plan made of 5-second product shots.
  */
 export async function selectHighlightWithGeminiFlash({
@@ -51,7 +51,7 @@ export async function selectHighlightWithGeminiFlash({
 }) {
   onProgress({
     step: 'gemini_vision',
-    message: `Analyzing full video frames with ${AIVENE_GEMINI_MODEL} to plan 5-second product shots...`,
+    message: `Analyzing full video frames with ${AIVENE_MODEL} to plan 5-second product shots...`,
     progress: 45
   });
 
@@ -147,7 +147,7 @@ Return strict JSON in this format:
     const elapsedSec = Math.round((Date.now() - startTimeMs) / 1000);
     onProgress({
       step: 'gemini_vision',
-      message: `Gemini (${AIVENE_GEMINI_MODEL}) menganalisa ${frames.length} frame visual... (${elapsedSec} detik)`,
+      message: `AI (${AIVENE_MODEL}) menganalisa ${frames.length} frame visual... (${elapsedSec} detik)`,
       progress: Math.min(58, 48 + Math.floor(elapsedSec / 4)),
     });
   }, 2000);
@@ -163,7 +163,7 @@ Return strict JSON in this format:
         for (let t = waitSec; t > 0; t--) {
           onProgress({
             step: 'gemini_vision',
-            message: `API Gemini overloaded. Retry ke-${attempt}/${MAX_RETRIES} dalam ${t} detik...`,
+            message: `API AI overloaded. Retry ke-${attempt}/${MAX_RETRIES} dalam ${t} detik...`,
             progress: 48,
           });
           await new Promise(r => setTimeout(r, 1000));
@@ -171,7 +171,7 @@ Return strict JSON in this format:
       }
 
       const response = await client.chat.completions.create({
-        model: AIVENE_GEMINI_MODEL,
+        model: AIVENE_MODEL,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: messageContent },
@@ -183,7 +183,7 @@ Return strict JSON in this format:
       clearInterval(heartbeat);
 
       const rawContent = response.choices?.[0]?.message?.content || '{}';
-      console.log(`[AIService ${AIVENE_GEMINI_MODEL}] Raw response:`, rawContent);
+      console.log(`[AIService ${AIVENE_MODEL}] Raw response:`, rawContent);
       let parsed;
       try {
         parsed = JSON.parse(rawContent);
@@ -197,7 +197,7 @@ Return strict JSON in this format:
           throw new Error(parsed.rejectionReason || 'Video YouTube tidak cocok atau tidak bersih untuk produk ini.');
         }
         // When fallback is allowed, log the AI's rejection reason but still try fallback clips
-        console.warn(`[AIService] Gemini flagged video as unclean: "${parsed.rejectionReason}". Applying fallback clip plan...`);
+        console.warn(`[AIService] AI flagged video as unclean: "${parsed.rejectionReason}". Applying fallback clip plan...`);
         parsed.clips = [];
       }
 
@@ -208,7 +208,7 @@ Return strict JSON in this format:
 
       onProgress({
         step: 'gemini_vision',
-        message: `${AIVENE_GEMINI_MODEL} selected ${clips.length} clean 5-second product shots (${duration}s total).`,
+        message: `${AIVENE_MODEL} selected ${clips.length} clean 5-second product shots (${duration}s total).`,
         progress: 55
       });
 
@@ -229,22 +229,22 @@ Return strict JSON in this format:
       const isOverloaded = status === 503 || status === 529 || msg.includes('overload') || msg.includes('overloaded');
 
       if (isOverloaded && attempt < MAX_RETRIES) {
-        console.warn(`[AIService] Gemini overloaded (attempt ${attempt + 1}). Will retry...`);
+        console.warn(`[AIService] AI overloaded (attempt ${attempt + 1}). Will retry...`);
         continue;
       }
 
       clearInterval(heartbeat);
-      console.error(`[AIService ${AIVENE_GEMINI_MODEL}] Error:`, err);
-      throw new Error(formatApiError(err, AIVENE_GEMINI_MODEL));
+      console.error(`[AIService ${AIVENE_MODEL}] Error:`, err);
+      throw new Error(formatApiError(err, AIVENE_MODEL));
     }
   }
 
   clearInterval(heartbeat);
-  throw new Error(formatApiError(lastError, AIVENE_GEMINI_MODEL));
+  throw new Error(formatApiError(lastError, AIVENE_MODEL));
 }
 
 /**
- * Stage 1, Step B: Calls Aivene API with Gemini
+ * Stage 1, Step B: Calls Aivene API
  * using explicit user provided Product Title and Product Description to generate:
  * - Kotak Scene (Scene Breakdown)
  * - Sample Context (USPs, Target Audience, Core Problem)
@@ -265,7 +265,7 @@ export async function generateAdAdvisorScriptWithGemini({
 }) {
   onProgress({
     step: 'gpt_scripting',
-    message: `Analyzing trimmed video frames with ${AIVENE_GEMINI_MODEL} for Kotak Scene & Ad Advisor Naskah...`,
+    message: `Analyzing trimmed video frames with ${AIVENE_MODEL} for Kotak Scene & Ad Advisor Naskah...`,
     progress: 75
   });
 
@@ -360,7 +360,7 @@ Shopee Affiliate Link: ${shopeeLink || 'https://shope.ee/link'}
 Visual Hook: "${productHook || 'Racun Viral Wajib Punya!'}"
 Durasi Video Potongan: ${targetDuration} detik (Wajib naskah dengan panjang ${minWords} - ${maxWords} kata, target ideal: ~${targetWords} kata)
 
-Visual Frames of the concatenated 5-second Gemini-selected product clips (${trimmedFrames.length} frames):
+Visual Frames of the concatenated 5-second AI-selected product clips (${trimmedFrames.length} frames):
 ${trimmedFrames.map((f, i) => `Frame #${i + 1} at timestamp ${f.timeFormatted} (${f.timestamp}s)`).join('\n')}
 
 Gunakan informasi judul dan deskripsi produk di atas agar naskah sangat relevan dan akurat.
@@ -410,7 +410,7 @@ Return strict JSON in this format:
     const elapsedSec = Math.round((Date.now() - startTimeMs) / 1000);
     onProgress({
       step: 'gpt_scripting',
-      message: `Gemini (${AIVENE_GEMINI_MODEL}) menyusun Kotak Scene & Naskah Ad Advisor... (${elapsedSec} detik)`,
+      message: `AI (${AIVENE_MODEL}) menyusun Kotak Scene & Naskah Ad Advisor... (${elapsedSec} detik)`,
       progress: Math.min(88, 78 + Math.floor(elapsedSec / 4)),
     });
   }, 2000);
@@ -428,7 +428,7 @@ Return strict JSON in this format:
         for (let t = waitSec; t > 0; t--) {
           onProgress({
             step: 'gpt_scripting',
-            message: `API Gemini overloaded. Retry naskah ke-${attempt}/${MAX_RETRIES} dalam ${t} detik...`,
+            message: `API AI overloaded. Retry naskah ke-${attempt}/${MAX_RETRIES} dalam ${t} detik...`,
             progress: 78,
           });
           await new Promise(r => setTimeout(r, 1000));
@@ -436,7 +436,7 @@ Return strict JSON in this format:
       }
 
       const response = await client.chat.completions.create({
-        model: AIVENE_GEMINI_MODEL,
+        model: AIVENE_MODEL,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: messageContent },
@@ -448,7 +448,7 @@ Return strict JSON in this format:
       clearInterval(heartbeat);
 
       const rawContent = response.choices?.[0]?.message?.content || '{}';
-      console.log(`[AIService ${AIVENE_GEMINI_MODEL} Scripting] Raw response:`, rawContent);
+      console.log(`[AIService ${AIVENE_MODEL} Scripting] Raw response:`, rawContent);
       try {
         parsed = JSON.parse(rawContent);
       } catch (e) {
@@ -464,19 +464,19 @@ Return strict JSON in this format:
       const isOverloaded = status === 503 || status === 529 || msg.includes('overload') || msg.includes('overloaded');
 
       if (isOverloaded && attempt < MAX_RETRIES) {
-        console.warn(`[AIService Scripting] Gemini overloaded (attempt ${attempt + 1}). Will retry...`);
+        console.warn(`[AIService Scripting] AI overloaded (attempt ${attempt + 1}). Will retry...`);
         continue;
       }
 
       clearInterval(heartbeat);
-      console.error(`[AIService ${AIVENE_GEMINI_MODEL} Scripting] Error:`, err);
-      throw new Error(formatApiError(err, AIVENE_GEMINI_MODEL));
+      console.error(`[AIService ${AIVENE_MODEL} Scripting] Error:`, err);
+      throw new Error(formatApiError(err, AIVENE_MODEL));
     }
   }
 
   if (lastError && !parsed.sampleContext) {
     clearInterval(heartbeat);
-    throw new Error(formatApiError(lastError, AIVENE_GEMINI_MODEL));
+    throw new Error(formatApiError(lastError, AIVENE_MODEL));
   }
 
   let voiceoverScript = (parsed.voiceoverScript || '').trim();
@@ -498,7 +498,7 @@ Return strict JSON in this format:
 
   onProgress({
     step: 'gpt_scripting',
-    message: `${AIVENE_GEMINI_MODEL} generated Kotak Scene, Sample Context, and Naskah successfully!`,
+    message: `${AIVENE_MODEL} generated Kotak Scene, Sample Context, and Naskah successfully!`,
     progress: 88
   });
 

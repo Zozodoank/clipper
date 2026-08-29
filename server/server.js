@@ -346,7 +346,7 @@ export async function runStage1Pipeline({
         status: 'running'
       });
     } else if (isLowDataMode) {
-      // TAHAP 1 (Hemat Kuota): Unduh preview 360p ringan untuk analisa visual Gemini
+      // TAHAP 1 (Hemat Kuota): Unduh preview 360p ringan untuk analisa visual AI
       updateProgress({ step: 'download', message: 'Downloading lightweight preview (360p - Low Data Mode)...', progress: 12, status: 'running' });
       const previewDl = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: 'preview', prefix: 'preview' });
       rawVideoPath = previewDl.filePath;
@@ -369,14 +369,14 @@ export async function runStage1Pipeline({
       persistJob(jobId, updatedMeta);
     }
 
-    updateProgress({ step: 'frames_raw', message: 'Extracting source frames for Gemini analysis...', progress: 38, status: 'running' });
+    updateProgress({ step: 'frames_raw', message: 'Extracting source frames for AI analysis...', progress: 38, status: 'running' });
     const { frames: rawFrames } = await extractFrames(rawVideoPath, rawFramesDir, updateProgress, {
       sampleIntervalSec: 2,
       maxSampleFrames: 18,
     });
 
-    console.log(`[Job ${jobId}] Sending to Gemini: videoMeta.duration=${videoMeta.duration}s, ${rawFrames.length} frames`);
-    updateProgress({ step: 'gemini_vision', message: 'Gemini analyzing faceless product frames and crop focus...', progress: 48, status: 'running' });
+    console.log(`[Job ${jobId}] Sending to AI: videoMeta.duration=${videoMeta.duration}s, ${rawFrames.length} frames`);
+    updateProgress({ step: 'gemini_vision', message: 'AI analyzing faceless product frames and crop focus...', progress: 48, status: 'running' });
     const highlight = await selectHighlightWithGeminiFlash({
       apiKey, frames: rawFrames, videoMetadata: videoMeta,
       productTitle, productDescription, shopeeLink,
@@ -384,9 +384,9 @@ export async function runStage1Pipeline({
       onProgress: updateProgress,
     });
 
-    // TAHAP 2 (Lolos Seleksi): Video lolos seleksi Gemini! Baru unduh video 720p HD asli untuk proses render
+    // TAHAP 2 (Lolos Seleksi): Video lolos seleksi AI! Baru unduh video 720p HD asli untuk proses render
     if (isLowDataMode && !cachedVideoPath) {
-      updateProgress({ step: 'download_hd', message: '✅ Video lolos seleksi Gemini! Mengunduh kualitas 720p HD...', progress: 55, status: 'running' });
+      updateProgress({ step: 'download_hd', message: '✅ Video lolos seleksi AI! Mengunduh kualitas 720p HD...', progress: 55, status: 'running' });
       const hdDl = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: '720p', prefix: 'raw' });
       // Hapus file preview 240p untuk menghemat ruang memori HP
       try {
@@ -401,7 +401,7 @@ export async function runStage1Pipeline({
       persistJob(jobId, updatedMeta);
     }
 
-    updateProgress({ step: 'render_silent', message: `Rendering ${highlight.clips.length} Gemini-selected 5-second full-product shots...`, progress: 62, status: 'running' });
+    updateProgress({ step: 'render_silent', message: `Rendering ${highlight.clips.length} AI-selected 5-second full-product shots...`, progress: 62, status: 'running' });
     await renderSilentAntiDetectionVideo({
       inputVideo: rawVideoPath, startTime: highlight.startTime,
       endTime: highlight.endTime, outputVideo: silentOutputPath,
@@ -412,13 +412,13 @@ export async function runStage1Pipeline({
       onProgress: updateProgress,
     });
 
-    updateProgress({ step: 'frames_trimmed', message: 'Sampling frames from trimmed video for Gemini scripting...', progress: 72, status: 'running' });
+    updateProgress({ step: 'frames_trimmed', message: 'Sampling frames from trimmed video for AI scripting...', progress: 72, status: 'running' });
     const { frames: trimmedFrames } = await extractFrames(silentOutputPath, trimmedFramesDir, updateProgress, {
       sampleIntervalSec: 2,
       maxSampleFrames: 10,
     });
 
-    updateProgress({ step: 'gpt_scripting', message: 'Gemini generating Kotak Scene, Context, Naskah...', progress: 80, status: 'running' });
+    updateProgress({ step: 'gpt_scripting', message: 'AI generating Kotak Scene, Context, Naskah...', progress: 80, status: 'running' });
     const scriptData = await generateAdAdvisorScriptWithGemini({
       apiKey, trimmedFrames, videoMetadata: videoMeta, productTitle, productDescription,
       shopeeLink, productHook: highlight.productHook, segmentDuration: highlight.duration,

@@ -73,22 +73,21 @@ export async function selectHighlightWithGeminiFlash({
   const systemPrompt = `You are a Strict, World-Class Short-Form Video Editor & Viral Affiliate Content Producer.
 Your task is to analyze the source-video timeline frames and select ONLY pristine, 100% clean 5-second product demo clips suitable for high-converting Indonesian Shopee affiliate ads.
 
-CRITICAL ZERO-TOLERANCE RULES (MANDATORY & NON-NEGOTIABLE):
-1. ZERO-TOLERANCE ON WATERMARKS, CHANNEL IDENTITIES & BRAND NAMES:
-   - REJECT any clip/frame containing channel logos, channel name text, YouTube subscribe badges, channel watermark icons in any corner.
-   - REJECT any TikTok/IG/Douyin handles (@username), moving/bouncing watermarks, or store/creator identifiers.
-   - REJECT intrusive brand logos, text banners, or shop name overlays.
-2. ZERO-TOLERANCE ON SUBTITLES & TEXT OVERLAYS:
-   - REJECT any clip/frame containing burned-in subtitles, dialogue captions, lyrics, narrative text, translated subtitles, discount tags, or promo graphics.
-3. ZERO-TOLERANCE ON CREATOR FACES / TALKING HEADS:
-   - REJECT any frame where a creator's face or talking head is visible.
-   - ONLY allow faceless product-centric footage (hands-only demo, unboxing, product features, and physical usage).
-4. PRODUCT RELEVANCE:
+CRITICAL SELECTION & CLEANLINESS RULES:
+1. SOURCE VIDEO TOLERANCE VS. CLIP PURITY:
+   - The source video MAY contain watermarks, channel logos, creator faces, or subtitles in OTHER parts of its timeline (e.g. host intro, outro, corner watermark during commentary). That is completely fine and normal!
+   - HOWEVER, for the specific 5-second intervals you select for the final short video, those chosen intervals MUST BE 100% PRISTINE and completely free from:
+     * Watermarks, channel logos, YouTube subscribe buttons, or TikTok/IG handles (@username).
+     * Burned-in subtitles, captions, lyrics, or narrative text overlays.
+     * Creator faces / talking heads (must be faceless hands-only demo or close-up product footage).
+     * Intrusive brand text overlays.
+2. PRODUCT RELEVANCE:
    - Ensure the video visually features the specific product or its exact category. If completely unrelated, set isProductMatch=false, isUsableSourceVideo=false.
-5. REJECTION MANDATE:
-   - If the video contains watermarks, burned-in subtitles, channel identity, brand names, or talking heads with NO clean product demonstration clips available across the timeline, you MUST set "isUsableSourceVideo": false, "rejectionReason": "Video mengandung watermark, subtitle, nama brand, atau identitas channel yang tidak bersih.", and return an empty clips array.
-6. SELECT 6 TO 8 PRISTINE 5-SECOND CLIPS (TARGET TOTAL DURATION: 30 TO 40 SECONDS):
-   - Select 6 to 8 non-overlapping 5-second intervals from ONLY the clean parts of the video timeline.
+3. REJECTION MANDATE:
+   - ONLY set "isUsableSourceVideo": false if the ENTIRE video timeline is contaminated and you cannot find enough clean product demo moments anywhere in the video.
+   - If clean product demonstration moments exist in the video, select them!
+4. SELECT 6 TO 8 PRISTINE 5-SECOND CLIPS (TARGET TOTAL DURATION: 30 TO 40 SECONDS):
+   - Select 6 to 8 non-overlapping 5-second intervals from the clean product demonstration parts of the timeline.
    - Total duration MUST be between 30 and 40 seconds.`;
 
   const userPrompt = `Product Title: "${effectiveTitle}"
@@ -101,12 +100,10 @@ Sampled Visual Frames (${frames.length} frames across timeline):
 ${frames.map((f, i) => `Frame #${i + 1} at timestamp ${f.timeFormatted} (${f.timestamp}s)`).join('\n')}
 
 INSPECTION INSTRUCTION:
-Examine each visual frame with absolute strictness:
-1. Watermark & Channel Identity Check: Is there ANY channel logo, channel name, watermark (@handle), subscribe button, or brand text overlay in any corner or area? If YES, REJECT that timestamp.
-2. Subtitle & Text Check: Are there burned-in subtitles, captions, or foreign/Indonesian text overlays? If YES, REJECT that timestamp.
-3. Face / Identity Check: Is there a creator's face or talking head? If YES, REJECT that timestamp.
-4. Select 6 to 8 PRISTINE, 100% clean 5-second product demo intervals (Total duration: 30 to 40 seconds) containing ONLY product and hands.
-5. If the video does NOT have enough clean intervals without watermarks/subtitles/brand identities, set "isUsableSourceVideo": false with rejectionReason.
+1. Scan across the timeline to identify timestamps showing clean, faceless product demonstration (hands testing product, close-up details, unboxing, features).
+2. Skip/avoid any timestamp intervals that contain watermarks, channel logos, burned-in subtitles, or creator faces.
+3. Select 6 to 8 CLEAN 5-second intervals (Total 30-40 seconds) where the footage is 100% pristine.
+4. Only set "isUsableSourceVideo": false if the whole video has NO clean product footage at all.
 
 Return strict JSON in this format:
 {

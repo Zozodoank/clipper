@@ -372,7 +372,7 @@ export async function runStage1Pipeline({
     updateProgress({ step: 'frames_raw', message: 'Extracting source frames for AI analysis...', progress: 38, status: 'running' });
     const { frames: rawFrames } = await extractFrames(rawVideoPath, rawFramesDir, updateProgress, {
       sampleIntervalSec: 2,
-      maxSampleFrames: 18,
+      maxSampleFrames: 12,
     });
 
     console.log(`[Job ${jobId}] Sending to AI: videoMeta.duration=${videoMeta.duration}s, ${rawFrames.length} frames`);
@@ -401,7 +401,7 @@ export async function runStage1Pipeline({
       persistJob(jobId, updatedMeta);
     }
 
-    updateProgress({ step: 'render_silent', message: `Rendering ${highlight.clips.length} AI-selected 5-second full-product shots...`, progress: 62, status: 'running' });
+    updateProgress({ step: 'render_silent', message: `Rendering ${highlight.clips.length} AI-selected 5-second full-product shots (${highlight.duration}s)...`, progress: 62, status: 'running' });
     await renderSilentAntiDetectionVideo({
       inputVideo: rawVideoPath, startTime: highlight.startTime,
       endTime: highlight.endTime, outputVideo: silentOutputPath,
@@ -414,8 +414,8 @@ export async function runStage1Pipeline({
 
     updateProgress({ step: 'frames_trimmed', message: 'Sampling frames from trimmed video for AI scripting...', progress: 72, status: 'running' });
     const { frames: trimmedFrames } = await extractFrames(silentOutputPath, trimmedFramesDir, updateProgress, {
-      sampleIntervalSec: 2,
-      maxSampleFrames: 10,
+      sampleIntervalSec: 3,
+      maxSampleFrames: 6,
     });
 
     updateProgress({ step: 'gpt_scripting', message: 'AI generating Kotak Scene, Context, Naskah...', progress: 80, status: 'running' });

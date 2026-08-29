@@ -40,17 +40,17 @@ export async function extractFrames(videoPath, framesDir, onProgress = () => {},
   }
 
   const safeInterval = Math.max(0.5, Number(sampleIntervalSec) || 1);
-  const safeMaxFrames = Math.max(1, Math.floor(Number(maxSampleFrames) || 18));
+  const safeMaxFrames = Math.max(1, Math.floor(Number(maxSampleFrames) || 12));
   onProgress({ step: 'frames', message: `Extracting source timeline frames (1 frame every ${safeInterval}s)...`, progress: 40 });
 
   return new Promise((resolve, reject) => {
-    // 360px wide, q:v 5 JPEG (~25-35 KB/frame) gives crystal clear vision recognition for Gemini Flash
-    // while keeping total API request payload under 500 KB.
+    // 320px wide, q:v 8 JPEG (~8-15 KB/frame) gives sharp vision recognition for AI Vision
+    // while keeping API request payload minimal and token consumption strictly low.
     const args = [
       '-y',
       '-i', targetVideoPath,
-      '-vf', `fps=1/${safeInterval},scale=360:-1`,
-      '-q:v', '5',
+      '-vf', `fps=1/${safeInterval},scale=320:-1`,
+      '-q:v', '8',
       outputPattern
     ];
 

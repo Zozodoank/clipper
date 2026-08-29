@@ -84,9 +84,10 @@ CRITICAL QUALITY & REJECTION RULES:
    - Avoid frames where a creator's face or talking head dominates the screen.
 5. REJECTION THRESHOLD:
    - If the entire video is covered in subtitles, watermarks, or talking heads with NO clean product demonstration moments, set "isUsableSourceVideo": false, "rejectionReason": "Video penuh teks / subtitle / watermark brand.", and return an empty clips array.
-6. RETURN 2 TO 8 CLEAN 5-SECOND CLIPS:
-   - Each selected clip MUST be exactly 5 seconds long (e.g. 00:05 to 00:10, 00:20 to 00:25) from the cleanest timestamps.
-   - Total duration: 10 to 40 seconds.`;
+6. RETURN 6 TO 8 CLEAN 5-SECOND CLIPS (TARGET TOTAL DURATION: 30 TO 40 SECONDS):
+   - Each selected clip MUST be exactly 5 seconds long (e.g. 00:05 to 00:10, 00:15 to 00:20, 00:25 to 00:30, 00:35 to 00:40, 00:45 to 00:50, 00:55 to 01:00) from clean timestamps across the video timeline.
+   - Total duration MUST be between 30 and 40 seconds (strictly 6 to 8 clips).
+   - DO NOT return only 2 or 3 clips (10-15 seconds). High-converting affiliate ads require 30 to 40 seconds of content.`;
 
   const userPrompt = `Product Title: "${effectiveTitle}"
 ${effectiveDesc ? `Product Description / Key Features: "${effectiveDesc}"` : ''}
@@ -102,8 +103,8 @@ Examine each frame carefully:
 1. Check for burned-in subtitles, captions, Indonesian/foreign text overlays.
 2. Check for watermarks, channel logos, brand logos, or @usernames.
 3. Check for creator faces / talking heads.
-4. Select ONLY the clean 5-second product demo intervals where no intrusive text or watermarks are present.
-5. If the video does NOT contain at least 2 clean product-focused clips, REJECT it by setting "isUsableSourceVideo": false with the specific rejectionReason.
+4. Select 6 to 8 CLEAN 5-second product demo intervals (Total duration: 30 to 40 seconds) where no intrusive text or watermarks are present.
+5. If the video does NOT contain clean product-focused clips, set "isUsableSourceVideo": false with the specific rejectionReason.
 
 Return strict JSON in this format:
 {
@@ -113,10 +114,105 @@ Return strict JSON in this format:
   "productHook": "Racun Shopee Viral Wajib Punya!",
   "clips": [
     {
-      "startTime": "00:10",
-      "endTime": "00:15",
-      "startSeconds": 10,
+      "startTime": "00:05",
+      "endTime": "00:10",
+      "startSeconds": 5,
       "reason": "Clean hands-only product demonstration without text, watermarks, or face.",
+      "isCleanAffiliateShot": true,
+      "sourceOwnerIdentityVisible": false,
+      "sourceIdentityRisk": "none",
+      "reframe": {
+        "focusX": 0.5,
+        "focusY": 0.55,
+        "renderMode": "preserve_full_product",
+        "cropStrategy": "keep_full_product_no_text_no_stickers_no_face",
+        "avoidTextZones": [],
+        "avoidFaceZones": ["top_left"],
+        "faceSafety": true,
+        "notes": "Clean product-only demonstration."
+      }
+    },
+    {
+      "startTime": "00:15",
+      "endTime": "00:20",
+      "startSeconds": 15,
+      "reason": "Close-up practical usage shot.",
+      "isCleanAffiliateShot": true,
+      "sourceOwnerIdentityVisible": false,
+      "sourceIdentityRisk": "none",
+      "reframe": {
+        "focusX": 0.5,
+        "focusY": 0.55,
+        "renderMode": "preserve_full_product",
+        "cropStrategy": "keep_full_product_no_text_no_stickers_no_face",
+        "avoidTextZones": [],
+        "avoidFaceZones": ["top_left"],
+        "faceSafety": true,
+        "notes": "Clean product-only demonstration."
+      }
+    },
+    {
+      "startTime": "00:25",
+      "endTime": "00:30",
+      "startSeconds": 25,
+      "reason": "Product features and material detail shot.",
+      "isCleanAffiliateShot": true,
+      "sourceOwnerIdentityVisible": false,
+      "sourceIdentityRisk": "none",
+      "reframe": {
+        "focusX": 0.5,
+        "focusY": 0.55,
+        "renderMode": "preserve_full_product",
+        "cropStrategy": "keep_full_product_no_text_no_stickers_no_face",
+        "avoidTextZones": [],
+        "avoidFaceZones": ["top_left"],
+        "faceSafety": true,
+        "notes": "Clean product-only demonstration."
+      }
+    },
+    {
+      "startTime": "00:35",
+      "endTime": "00:40",
+      "startSeconds": 35,
+      "reason": "Hands demonstrating operation mechanism.",
+      "isCleanAffiliateShot": true,
+      "sourceOwnerIdentityVisible": false,
+      "sourceIdentityRisk": "none",
+      "reframe": {
+        "focusX": 0.5,
+        "focusY": 0.55,
+        "renderMode": "preserve_full_product",
+        "cropStrategy": "keep_full_product_no_text_no_stickers_no_face",
+        "avoidTextZones": [],
+        "avoidFaceZones": ["top_left"],
+        "faceSafety": true,
+        "notes": "Clean product-only demonstration."
+      }
+    },
+    {
+      "startTime": "00:45",
+      "endTime": "00:50",
+      "startSeconds": 45,
+      "reason": "Product result and output showcased.",
+      "isCleanAffiliateShot": true,
+      "sourceOwnerIdentityVisible": false,
+      "sourceIdentityRisk": "none",
+      "reframe": {
+        "focusX": 0.5,
+        "focusY": 0.55,
+        "renderMode": "preserve_full_product",
+        "cropStrategy": "keep_full_product_no_text_no_stickers_no_face",
+        "avoidTextZones": [],
+        "avoidFaceZones": ["top_left"],
+        "faceSafety": true,
+        "notes": "Clean product-only demonstration."
+      }
+    },
+    {
+      "startTime": "00:55",
+      "endTime": "01:00",
+      "startSeconds": 55,
+      "reason": "Final hero shot of the product.",
       "isCleanAffiliateShot": true,
       "sourceOwnerIdentityVisible": false,
       "sourceIdentityRisk": "none",
@@ -138,7 +234,10 @@ Return strict JSON in this format:
     { type: 'text', text: userPrompt },
     ...frames.map((f) => ({
       type: 'image_url',
-      image_url: { url: f.base64 },
+      image_url: {
+        url: f.base64,
+        detail: 'low',
+      },
     })),
   ];
 
@@ -282,9 +381,9 @@ export async function generateAdAdvisorScriptWithGemini({
 
   const effectiveTitle = (productTitle || '').trim() || videoMetadata?.title || 'Produk Viral Shopee';
   const effectiveDesc = (productDescription || '').trim();
-  const targetDuration = Math.max(15, Math.round(Number(segmentDuration) || 45));
+  const targetDuration = Math.max(30, Math.min(40, Math.round(Number(segmentDuration) || 35)));
   const targetWords = Math.round(targetDuration * 2.6);
-  const minWords = Math.round(targetDuration * 2.4);
+  const minWords = Math.round(targetDuration * 2.3);
   const maxWords = Math.round(targetDuration * 2.8);
 
   const systemPrompt = `You are a Senior Creative Director and Ad Advisor specializing in Indonesian Short-Form Affiliate Video Marketing (TikTok Shop, Shopee Video, Instagram Reels).
@@ -318,11 +417,11 @@ CRITICAL DURATION & WORD-COUNT TIMING RULES (MANDATORY):
 
 3. 'voiceoverScript' (Naskah Voiceover Lengkap dengan Penanda Waktu):
    - A complete Indonesian spoken narration (${minWords} - ${maxWords} words total).
-   - Each line MUST start with an exact timestamp corresponding to the video timeline (e.g. [00:00], [00:05], [00:10], [00:15], [00:20], [00:25]), followed by the spoken line, e.g.:
+   - Each line MUST start with an exact timestamp corresponding to the video timeline (e.g. [00:00], [00:05], [00:10], [00:15], [00:20], [00:25], [00:30], [00:35]), followed by the spoken line, e.g.:
      [00:00] Masih repot marut keju atau kelapa pakai alat lama?
      [00:05] Kenalin, Parutan Serbaguna Stainless super praktis ini!
      ...
-     [00:25] Cek produk di bawah sekarang sebelum kehabisan promo spesialnya!
+     [00:30] Cek produk di bawah sekarang sebelum kehabisan promo spesialnya!
 
 STRICT RULES FOR VOICE OVER & CALL TO ACTION:
 - NEVER use the word "Shopee" in the voiceover script or scene spoken lines.
@@ -344,7 +443,7 @@ Speaker 1
 [00:00] [intrigue] Masih repot marut keju atau kelapa pakai alat lama?
 [00:05] [excited] Kenalin, Parutan Serbaguna Stainless super praktis ini!
 ...
-[00:25] [excited] Cek produk di bawah sekarang sebelum kehabisan!]
+[00:30] [excited] Cek produk di bawah sekarang sebelum kehabisan!]
 
    - IMPORTANT: The output of 'aiStudioPrompt' must be a plain string (not JSON) ready to paste directly into AI Studio. Do NOT add any JSON object inside it.
 
@@ -368,7 +467,7 @@ Buat Kotak Scene, Sample Context, Naskah Voiceover Ad Advisor, dan AI Studio pro
 
 PENTING - ATURAN DURASI, TIMESTAMP & TEMPO NASKAH:
 1. Durasi video adalah ${targetDuration} detik. Naskah voiceover HARUS pas ${minWords} s/d ${maxWords} kata (sekitar 12-14 kata tiap scene 5 detik) agar pas dengan durasi video tanpa perlu diperlambat!
-2. Setiap baris naskah voiceover dan prompt AI Studio WAJIB diawali penanda waktu video, misal: [00:00], [00:05], [00:10], [00:15], [00:20], [00:25], dst.
+2. Setiap baris naskah voiceover dan prompt AI Studio WAJIB diawali penanda waktu video, misal: [00:00], [00:05], [00:10], [00:15], [00:20], [00:25], [00:30], [00:35], dst.
 3. JANGAN gunakan nama karakter suara khusus (cukup gunakan header "Speaker 1").
 4. JANGAN PERNAH gunakan kata "Shopee" dalam naskah voiceover maupun Kotak Scene.
 5. JANGAN PERNAH gunakan kata "link di bio".
@@ -392,8 +491,8 @@ Return strict JSON in this format:
       "adAdvisorNotes": "Tips sutradara (SFX / Text Overlay)"
     }
   ],
-  "voiceoverScript": "[00:00] Masih repot marut keju pakai alat lama?\\n[00:05] Kenalin parutan serbaguna ini...\\n[00:23] Cek produk di bawah sekarang!",
-  "aiStudioPrompt": "Scene\\nStudio dapur modern...\\n\\nSample Context\\nIklan affiliate viral...\\n\\nSpeaker 1\\n[00:00] [intrigue] Masih repot...\\n[00:05] [excited] Kenalin...\\n[00:23] [excited] Cek produk di bawah sekarang!",
+  "voiceoverScript": "[00:00] Masih repot marut keju pakai alat lama?\\n[00:05] Kenalin parutan serbaguna ini...\\n[00:30] Cek produk di bawah sekarang!",
+  "aiStudioPrompt": "Scene\\nStudio dapur modern...\\n\\nSample Context\\nIklan affiliate viral...\\n\\nSpeaker 1\\n[00:00] [intrigue] Masih repot...\\n[00:05] [excited] Kenalin...\\n[00:30] [excited] Cek produk di bawah sekarang!",
   "caption": "Teks caption lengkap dengan link pembelian dan hashtag..."
 }`;
 
@@ -401,7 +500,10 @@ Return strict JSON in this format:
     { type: 'text', text: userPrompt },
     ...trimmedFrames.map((f) => ({
       type: 'image_url',
-      image_url: { url: f.base64 },
+      image_url: {
+        url: f.base64,
+        detail: 'low',
+      },
     })),
   ];
 
@@ -596,28 +698,83 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true } = {
       reframe: normalizeReframe(rawClip?.reframe),
     });
     previousEnd = endSeconds;
-    if (normalized.length === 12) break;
+    if (normalized.length === 8) break; // Target max 8 clips (40s)
   }
 
-  console.log(`[normalizeClipPlan] Accepted ${normalized.length} clips from Gemini`);
+  console.log(`[normalizeClipPlan] Accepted ${normalized.length} valid clips from AI vision`);
 
-  if (normalized.length) return normalized;
+  // Target duration: 30 to 40 seconds (6 to 8 clips)
+  const maxPossibleClips = Math.max(1, Math.floor(totalDuration / clipLength));
+  const targetMinClips = Math.min(6, maxPossibleClips);
+
+  // If AI returned fewer than targetMinClips (e.g. 2 clips = 10s) and source video has more duration:
+  if (normalized.length > 0 && normalized.length < targetMinClips && totalDuration >= 25) {
+    console.log(`[normalizeClipPlan] AI returned ${normalized.length} clips (${normalized.length * 5}s), supplementing clips to reach ${targetMinClips * 5}s target...`);
+    
+    // Find candidate 5s slots across timeline not overlapping with existing normalized clips
+    const existingIntervals = normalized.map(c => ({ start: c.startSeconds, end: c.endSeconds }));
+    const candidateSlots = [];
+    const maxStart = Math.floor(totalDuration - clipLength);
+    const startBound = totalDuration > 30 ? Math.min(maxStart, Math.max(5, Math.floor(totalDuration * 0.05))) : 0;
+    const endBound = totalDuration > 35 ? Math.max(startBound, Math.floor(totalDuration * 0.92) - clipLength) : maxStart;
+
+    for (let s = startBound; s <= endBound; s += clipLength) {
+      const overlaps = existingIntervals.some(iv => Math.abs(iv.start - s) < clipLength);
+      if (!overlaps) {
+        candidateSlots.push(s);
+      }
+    }
+
+    // Add candidate slots until reaching targetMinClips
+    for (const slotStart of candidateSlots) {
+      if (normalized.length >= targetMinClips) break;
+      const endSeconds = slotStart + clipLength;
+      normalized.push({
+        startSeconds: slotStart,
+        endSeconds,
+        startTime: formatSeconds(slotStart),
+        endTime: formatSeconds(endSeconds),
+        reason: 'Supplemental clean 5-second product interval to achieve 30s+ target duration.',
+        reframe: normalizeReframe(normalized[0]?.reframe),
+      });
+      existingIntervals.push({ start: slotStart, end: endSeconds });
+    }
+
+    // Re-sort normalized clips chronologically
+    normalized.sort((a, b) => a.startSeconds - b.startSeconds);
+  }
+
+  if (normalized.length >= 2) {
+    return normalized;
+  }
+
   if (!allowFallback) {
-    throw new Error('Gemini tidak menemukan potongan faceless bersih yang cocok dengan produk.');
+    throw new Error('AI tidak menemukan potongan faceless bersih yang cocok dengan produk.');
   }
 
-  // Fallback: evenly spaced clips skipping first 10% (intro) and last 10% (outro)
-  console.log(`[normalizeClipPlan] No clips accepted, building fallback plan for ${totalDuration}s video`);
+  // Fallback: build 6 to 8 evenly spaced clips (30 to 40 seconds total)
+  console.log(`[normalizeClipPlan] Building 30-40s fallback clip plan for ${totalDuration}s video`);
+  const fallbackClips = [];
+  const fallbackTargetClips = Math.min(8, Math.max(6, Math.floor(totalDuration / clipLength)));
   const maxStart = Math.max(0, Math.floor(totalDuration - clipLength));
-  const fallbackStart = totalDuration > 25
-    ? Math.min(maxStart, Math.max(8, Math.floor(totalDuration * 0.10)))
+  const fallbackStart = totalDuration > 30
+    ? Math.min(maxStart, Math.max(5, Math.floor(totalDuration * 0.06)))
     : 0;
   const fallbackLastStart = totalDuration > 35
-    ? Math.max(fallbackStart, Math.min(maxStart, Math.floor(totalDuration * 0.85) - clipLength))
+    ? Math.max(fallbackStart, Math.min(maxStart, Math.floor(totalDuration * 0.92) - clipLength))
     : maxStart;
 
-  for (let startSeconds = fallbackStart; startSeconds <= fallbackLastStart && normalized.length < 6; startSeconds += clipLength) {
-    normalized.push({
+  const span = fallbackLastStart - fallbackStart;
+  const numSteps = Math.max(1, fallbackTargetClips - 1);
+  const stepSize = fallbackTargetClips > 1 ? span / numSteps : clipLength;
+
+  let lastStart = -1;
+  for (let i = 0; i < fallbackTargetClips; i++) {
+    const rawStart = Math.round(fallbackStart + (i * stepSize));
+    const startSeconds = Math.min(maxStart, Math.max(lastStart + clipLength, rawStart));
+    if (startSeconds + clipLength > totalDuration) break;
+    
+    fallbackClips.push({
       startSeconds,
       endSeconds: startSeconds + clipLength,
       startTime: formatSeconds(startSeconds),
@@ -625,12 +782,13 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true } = {
       reason: 'Fallback 5-second product shot.',
       reframe: normalizeReframe(),
     });
+    lastStart = startSeconds;
   }
 
-  if (!normalized.length) {
+  if (!fallbackClips.length) {
     throw new Error('Video terlalu pendek untuk membuat potongan produk utama 5 detik.');
   }
-  return normalized;
+  return fallbackClips;
 }
 
 function hasSourceIdentityRisk(rawClip = {}) {

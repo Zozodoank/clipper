@@ -970,6 +970,51 @@ app.get('/api/open-folder', (req, res) => {
   });
 });
 
+// 10. Restart Server & Execute ./update.sh (Designed for Termux, Codespace & Local Dev)
+app.post('/api/restart', async (req, res) => {
+  const { runUpdate = true } = req.body || {};
+  const rootDir = path.resolve(__dirname, '..');
+  const updateScriptPath = path.join(rootDir, 'update.sh');
+
+  console.log(`[System] Received restart request (runUpdate=${runUpdate})...`);
+  let updateLog = '';
+
+  if (runUpdate) {
+    console.log('[System] Menjalankan ./update.sh sebelum me-restart server...');
+    try {
+      await new Promise((resolve) => {
+        const cmd = process.platform === 'win32'
+          ? (fs.existsSync(updateScriptPath) ? `bash "${updateScriptPath}"` : 'git pull')
+          : `chmod +x "${updateScriptPath}" 2>/dev/null; bash "${updateScriptPath}"`;
+
+        exec(cmd, { cwd: rootDir, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+          updateLog = (stdout || '') + (stderr || '');
+          if (err) {
+            console.warn('[System] Warning saat update.sh:', err.message);
+          }
+          console.log('[System] Log update.sh:\n' + updateLog);
+          resolve();
+        });
+      });
+    } catch (e) {
+      console.warn('[System] Gagal menjalankan update script:', e.message);
+      updateLog += `\nError: ${e.message}`;
+    }
+  }
+
+  res.json({
+    success: true,
+    message: 'Perintah update.sh selesai dijalankan. Server sedang me-restart...',
+    updateLog,
+  });
+
+  // Gracefully exit so dev-runner / node --watch / process manager restarts the process
+  setTimeout(() => {
+    console.log('[System] Restarting backend server now (process.exit)...');
+    process.exit(0);
+  }, 1200);
+});
+
 // ── Cookie Management Routes (for Codespace / Linux servers with no browser) ──
 
 // GET /api/cookies-status – check if cookies.txt is present on the server

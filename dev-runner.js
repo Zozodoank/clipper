@@ -60,15 +60,29 @@ if (networkIps.length > 0) {
 }
 console.log(`🌐 Backend: http://0.0.0.0:${serverPort}\n`);
 
-const serverProcess = spawn(npmCmd, ['run', 'dev'], {
-  cwd: path.join(__dirname, 'server'),
-  env: {
-    ...process.env,
-    PORT: String(serverPort),
-  },
-  stdio: 'inherit',
-  shell: true,
-});
+let isShuttingDown = false;
+let serverProcess = null;
+
+function startServerProcess() {
+  serverProcess = spawn(npmCmd, ['run', 'dev'], {
+    cwd: path.join(__dirname, 'server'),
+    env: {
+      ...process.env,
+      PORT: String(serverPort),
+    },
+    stdio: 'inherit',
+    shell: true,
+  });
+
+  serverProcess.on('exit', (code) => {
+    if (!isShuttingDown) {
+      console.log(`\n🔄 [dev-runner] Server process exited with code ${code}. Restarting backend in 1 second...`);
+      setTimeout(startServerProcess, 1000);
+    }
+  });
+}
+
+startServerProcess();
 
 const clientProcess = spawn(npmCmd, ['run', 'dev', '--', '--host', '0.0.0.0', '--port', String(CLIENT_PORT)], {
   cwd: path.join(__dirname, 'client'),
@@ -81,11 +95,13 @@ const clientProcess = spawn(npmCmd, ['run', 'dev', '--', '--host', '0.0.0.0', '-
 });
 
 const cleanup = () => {
+  isShuttingDown = true;
   console.log('\n🛑 Shutting down services...');
-  serverProcess.kill();
+  if (serverProcess) serverProcess.kill();
   clientProcess.kill();
   process.exit();
 };
 
 process.on('SIGINT', cleanup);
 process.on('SIGTERM', cleanup);
+

@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';
 
-const AIVENE_MODEL = process.env.AIVENE_MODEL || process.env.AIVENE_GEMINI_MODEL || 'gpt-4o-mini';
+const AIVENE_MODEL = process.env.AIVENE_MODEL || process.env.AIVENE_GEMINI_MODEL || 'gemini-3.7-flash';
 const DEFAULT_REFRAME = {
   focusX: 0.5,
   focusY: 0.62,

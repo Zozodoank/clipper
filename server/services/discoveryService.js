@@ -160,8 +160,12 @@ export async function discoverSingleShopeeProduct(keyword, seen = new Set()) {
         const result = batch[i];
         const pageMeta = metas[i].status === 'fulfilled' ? metas[i].value : {};
 
-        const titleCandidate = cleanTitle(pageMeta.title || result.title || keyword, result.url);
-        const descCandidate = cleanDescription(pageMeta.description || result.snippet || '');
+        const rawTitle = pageMeta.title || result.title || '';
+        let titleCandidate = cleanTitle(rawTitle, result.url);
+        if (!titleCandidate || isGenericShopeeTitle(titleCandidate)) {
+          titleCandidate = formatKeywordToProductTitle(keyword);
+        }
+        const descCandidate = cleanDescription(pageMeta.description || result.snippet || '') || `Produk praktis viral: ${titleCandidate}.`;
 
         if (isBulkyOrUnsuitableProduct(titleCandidate) || isBulkyOrUnsuitableProduct(descCandidate) || isBulkyOrUnsuitableProduct(keyword)) {
           continue;
@@ -511,7 +515,11 @@ function isLikelyCleanYouTubeCandidate(candidate) {
   const titleText = normalizeText(candidate.title || '');
   if (isBulkyOrUnsuitableProduct(titleText)) return false;
 
-  const excludedTitleWords = ['podcast', 'reaction', 'kompilasi', 'compilation', 'full album', 'playlist'];
+  const excludedTitleWords = [
+    'podcast', 'reaction', 'kompilasi', 'compilation', 'full album', 'playlist',
+    'cara belanja', 'cara checkout', 'daftar akun', 'tutorial aplikasi', 'cara jualan', 'cara live',
+    'shopee affiliate tutorial', 'aplikasi shopee'
+  ];
   return !excludedTitleWords.some((keyword) => titleText.includes(keyword));
 }
 
@@ -536,16 +544,37 @@ function dedupeByUrl(results) {
   });
 }
 
+export function isGenericShopeeTitle(title = '') {
+  const norm = normalizeText(title);
+  if (!norm || norm.length < 4) return true;
+  const genericPatterns = [
+    'shopee indonesia',
+    'situs belanja online',
+    'terlengkap terpercaya',
+    'jual beli online',
+    'pusat perbelanjaan',
+    'online shopping',
+    'shopee co id',
+    'marketplace',
+  ];
+  return genericPatterns.some((pattern) => norm.includes(pattern));
+}
+
 function cleanTitle(value = '', productUrl = '') {
-  const cleaned = value
+  let cleaned = value
     .replace(/\s*\|\s*Shopee.*$/i, '')
     .replace(/\s*-\s*Shopee.*$/i, '')
+    .replace(/^Shopee\s*(Indonesia)?\s*[:|–-]?\s*/i, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 160);
 
-  if (cleaned && !cleaned.toLowerCase().startsWith('shopee shopee.co.id')) return cleaned;
-  return titleFromShopeeUrl(productUrl) || cleaned || 'Produk Rumah Tangga Viral';
+  if (cleaned && !isGenericShopeeTitle(cleaned)) return cleaned;
+  
+  const fromUrl = titleFromShopeeUrl(productUrl);
+  if (fromUrl && !isGenericShopeeTitle(fromUrl)) return fromUrl;
+
+  return '';
 }
 
 function titleFromShopeeUrl(productUrl = '') {
@@ -554,7 +583,8 @@ function titleFromShopeeUrl(productUrl = '') {
     const decodedPath = decodeURIComponent(parsed.pathname);
     const slug = decodedPath.split('/').filter(Boolean).pop() || '';
     const titleSlug = slug.replace(/-i\.\d+\.\d+.*$/i, '').replace(/\.\d+\.\d+.*$/i, '');
-    return titleSlug.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+    const formatted = titleSlug.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+    return formatted;
   } catch {
     return '';
   }

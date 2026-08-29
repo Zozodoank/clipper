@@ -269,7 +269,7 @@ export async function runStage1Pipeline({
   apiKey,
   options = {},
   extraJobMeta = {},
-  requireCleanGeminiPlan = false,
+  requireCleanGeminiPlan = true,
   onProgress = null,
 }) {
   const sessionTempDir = path.join(tempDir, `job_${jobId}`);

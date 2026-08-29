@@ -46,7 +46,7 @@ export async function selectHighlightWithGeminiFlash({
   productTitle,
   productDescription,
   shopeeLink,
-  allowFallbackClips = true,
+  allowFallbackClips = false,
   onProgress = () => {}
 }) {
   onProgress({
@@ -73,21 +73,23 @@ export async function selectHighlightWithGeminiFlash({
   const systemPrompt = `You are a Strict, World-Class Short-Form Video Editor & Viral Affiliate Content Producer.
 Your task is to analyze the source-video timeline frames and select ONLY pristine, 100% clean 5-second product demo clips suitable for high-converting Indonesian Shopee affiliate ads.
 
-CRITICAL QUALITY & REJECTION RULES:
-1. PRODUCT RELEVANCE: Ensure the video visually features the specific product or its exact category. If completely unrelated, reject with isProductMatch=false, isUsableSourceVideo=false.
+CRITICAL ZERO-TOLERANCE RULES (MANDATORY & NON-NEGOTIABLE):
+1. ZERO-TOLERANCE ON WATERMARKS, CHANNEL IDENTITIES & BRAND NAMES:
+   - REJECT any clip/frame containing channel logos, channel name text, YouTube subscribe badges, channel watermark icons in any corner.
+   - REJECT any TikTok/IG/Douyin handles (@username), moving/bouncing watermarks, or store/creator identifiers.
+   - REJECT intrusive brand logos, text banners, or shop name overlays.
 2. ZERO-TOLERANCE ON SUBTITLES & TEXT OVERLAYS:
-   - REJECT any clip/frame containing burned-in subtitles, captions, lyrics, narrative text, discount banners, price tags, or promo graphics.
-3. ZERO-TOLERANCE ON WATERMARKS & BRAND LOGOS:
-   - REJECT any clip/frame containing creator watermarks, TikTok/IG handles (@username), channel logos, or intrusive brand overlays.
-4. FACELESS / PRODUCT-CENTRIC:
-   - Prioritize hands-only demonstration, unboxing, product features, and practical usage.
-   - Avoid frames where a creator's face or talking head dominates the screen.
-5. REJECTION THRESHOLD:
-   - If the entire video is covered in subtitles, watermarks, or talking heads with NO clean product demonstration moments, set "isUsableSourceVideo": false, "rejectionReason": "Video penuh teks / subtitle / watermark brand.", and return an empty clips array.
-6. RETURN 6 TO 8 CLEAN 5-SECOND CLIPS (TARGET TOTAL DURATION: 30 TO 40 SECONDS):
-   - Each selected clip MUST be exactly 5 seconds long (e.g. 00:05 to 00:10, 00:15 to 00:20, 00:25 to 00:30, 00:35 to 00:40, 00:45 to 00:50, 00:55 to 01:00) from clean timestamps across the video timeline.
-   - Total duration MUST be between 30 and 40 seconds (strictly 6 to 8 clips).
-   - DO NOT return only 2 or 3 clips (10-15 seconds). High-converting affiliate ads require 30 to 40 seconds of content.`;
+   - REJECT any clip/frame containing burned-in subtitles, dialogue captions, lyrics, narrative text, translated subtitles, discount tags, or promo graphics.
+3. ZERO-TOLERANCE ON CREATOR FACES / TALKING HEADS:
+   - REJECT any frame where a creator's face or talking head is visible.
+   - ONLY allow faceless product-centric footage (hands-only demo, unboxing, product features, and physical usage).
+4. PRODUCT RELEVANCE:
+   - Ensure the video visually features the specific product or its exact category. If completely unrelated, set isProductMatch=false, isUsableSourceVideo=false.
+5. REJECTION MANDATE:
+   - If the video contains watermarks, burned-in subtitles, channel identity, brand names, or talking heads with NO clean product demonstration clips available across the timeline, you MUST set "isUsableSourceVideo": false, "rejectionReason": "Video mengandung watermark, subtitle, nama brand, atau identitas channel yang tidak bersih.", and return an empty clips array.
+6. SELECT 6 TO 8 PRISTINE 5-SECOND CLIPS (TARGET TOTAL DURATION: 30 TO 40 SECONDS):
+   - Select 6 to 8 non-overlapping 5-second intervals from ONLY the clean parts of the video timeline.
+   - Total duration MUST be between 30 and 40 seconds.`;
 
   const userPrompt = `Product Title: "${effectiveTitle}"
 ${effectiveDesc ? `Product Description / Key Features: "${effectiveDesc}"` : ''}
@@ -99,12 +101,12 @@ Sampled Visual Frames (${frames.length} frames across timeline):
 ${frames.map((f, i) => `Frame #${i + 1} at timestamp ${f.timeFormatted} (${f.timestamp}s)`).join('\n')}
 
 INSPECTION INSTRUCTION:
-Examine each frame carefully:
-1. Check for burned-in subtitles, captions, Indonesian/foreign text overlays.
-2. Check for watermarks, channel logos, brand logos, or @usernames.
-3. Check for creator faces / talking heads.
-4. Select 6 to 8 CLEAN 5-second product demo intervals (Total duration: 30 to 40 seconds) where no intrusive text or watermarks are present.
-5. If the video does NOT contain clean product-focused clips, set "isUsableSourceVideo": false with the specific rejectionReason.
+Examine each visual frame with absolute strictness:
+1. Watermark & Channel Identity Check: Is there ANY channel logo, channel name, watermark (@handle), subscribe button, or brand text overlay in any corner or area? If YES, REJECT that timestamp.
+2. Subtitle & Text Check: Are there burned-in subtitles, captions, or foreign/Indonesian text overlays? If YES, REJECT that timestamp.
+3. Face / Identity Check: Is there a creator's face or talking head? If YES, REJECT that timestamp.
+4. Select 6 to 8 PRISTINE, 100% clean 5-second product demo intervals (Total duration: 30 to 40 seconds) containing ONLY product and hands.
+5. If the video does NOT have enough clean intervals without watermarks/subtitles/brand identities, set "isUsableSourceVideo": false with rejectionReason.
 
 Return strict JSON in this format:
 {
@@ -703,53 +705,12 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true } = {
 
   console.log(`[normalizeClipPlan] Accepted ${normalized.length} valid clips from AI vision`);
 
-  // Target duration: 30 to 40 seconds (6 to 8 clips)
-  const maxPossibleClips = Math.max(1, Math.floor(totalDuration / clipLength));
-  const targetMinClips = Math.min(6, maxPossibleClips);
-
-  // If AI returned fewer than targetMinClips (e.g. 2 clips = 10s) and source video has more duration:
-  if (normalized.length > 0 && normalized.length < targetMinClips && totalDuration >= 25) {
-    console.log(`[normalizeClipPlan] AI returned ${normalized.length} clips (${normalized.length * 5}s), supplementing clips to reach ${targetMinClips * 5}s target...`);
-    
-    // Find candidate 5s slots across timeline not overlapping with existing normalized clips
-    const existingIntervals = normalized.map(c => ({ start: c.startSeconds, end: c.endSeconds }));
-    const candidateSlots = [];
-    const maxStart = Math.floor(totalDuration - clipLength);
-    const startBound = totalDuration > 30 ? Math.min(maxStart, Math.max(5, Math.floor(totalDuration * 0.05))) : 0;
-    const endBound = totalDuration > 35 ? Math.max(startBound, Math.floor(totalDuration * 0.92) - clipLength) : maxStart;
-
-    for (let s = startBound; s <= endBound; s += clipLength) {
-      const overlaps = existingIntervals.some(iv => Math.abs(iv.start - s) < clipLength);
-      if (!overlaps) {
-        candidateSlots.push(s);
-      }
-    }
-
-    // Add candidate slots until reaching targetMinClips
-    for (const slotStart of candidateSlots) {
-      if (normalized.length >= targetMinClips) break;
-      const endSeconds = slotStart + clipLength;
-      normalized.push({
-        startSeconds: slotStart,
-        endSeconds,
-        startTime: formatSeconds(slotStart),
-        endTime: formatSeconds(endSeconds),
-        reason: 'Supplemental clean 5-second product interval to achieve 30s+ target duration.',
-        reframe: normalizeReframe(normalized[0]?.reframe),
-      });
-      existingIntervals.push({ start: slotStart, end: endSeconds });
-    }
-
-    // Re-sort normalized clips chronologically
-    normalized.sort((a, b) => a.startSeconds - b.startSeconds);
-  }
-
   if (normalized.length >= 2) {
     return normalized;
   }
 
   if (!allowFallback) {
-    throw new Error('AI tidak menemukan potongan faceless bersih yang cocok dengan produk.');
+    throw new Error('AI menolak video ini: tidak ditemukan potongan video yang bersih dari watermark, subtitle, nama brand, atau wajah/talking head.');
   }
 
   // Fallback: build 6 to 8 evenly spaced clips (30 to 40 seconds total)

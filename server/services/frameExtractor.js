@@ -12,8 +12,8 @@ import { getFFmpegPath } from './binaryChecker.js';
  * @returns {Promise<{ frames: Array<{ index: number, timestamp: number, timeFormatted: string, base64: string }>, totalFrames: number, framesDir: string }>}
  */
 export async function extractFrames(videoPath, framesDir, onProgress = () => {}, {
-  sampleIntervalSec = 2,
-  maxSampleFrames = 12,
+  sampleIntervalSec = 1,
+  maxSampleFrames = 30,
 } = {}) {
   if (!fs.existsSync(framesDir)) {
     fs.mkdirSync(framesDir, { recursive: true });
@@ -40,7 +40,7 @@ export async function extractFrames(videoPath, framesDir, onProgress = () => {},
   }
 
   const safeInterval = Math.max(0.5, Number(sampleIntervalSec) || 1);
-  const safeMaxFrames = Math.max(1, Math.floor(Number(maxSampleFrames) || 12));
+  const safeMaxFrames = Math.max(1, Math.floor(Number(maxSampleFrames) || 30));
   onProgress({ step: 'frames', message: `Extracting source timeline frames (1 frame every ${safeInterval}s)...`, progress: 40 });
 
   return new Promise((resolve, reject) => {

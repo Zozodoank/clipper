@@ -9,7 +9,7 @@ import multer from 'multer';
 import { exec } from 'child_process';
 
 import { checkSystemDependencies } from './services/binaryChecker.js';
-import { downloadYouTubeVideo } from './services/downloader.js';
+import { downloadYouTubeVideo, extractVideoId } from './services/downloader.js';
 import { extractFrames } from './services/frameExtractor.js';
 import {
   selectHighlightWithGeminiFlash,
@@ -144,6 +144,18 @@ function deletePersistedJob(jobId) {
 }
 
 loadJobsFromDisk();
+
+/** Helper: get all YouTube video IDs from existing active & persisted jobs */
+function getAllUsedYouTubeVideoIds() {
+  const used = new Set();
+  for (const job of activeJobs.values()) {
+    if (job.youtubeUrl) {
+      const vid = extractVideoId(job.youtubeUrl);
+      if (vid) used.add(vid);
+    }
+  }
+  return used;
+}
 
 function isVideoFilePath(p) {
   if (!p) return false;
@@ -583,6 +595,7 @@ async function runAutoStage1Worker(run) {
     }
 
     const seenShopeeUrls = new Set();
+    const usedYouTubeVideoIds = getAllUsedYouTubeVideoIds();
 
     for (const keyword of candidateKeywords) {
       if (run.status === 'stopping' || run.status === 'stopped') break;
@@ -608,19 +621,25 @@ async function runAutoStage1Worker(run) {
       const candidates = await discoverYouTubeCandidatesForProduct({
         productTitle: product.title,
         productDescription: product.description,
-        limit: 6,
+        limit: 8,
+        excludeVideoIds: usedYouTubeVideoIds,
         onProgress: (p) => updateAutoRun(run, { message: `[${currentTargetIndex}/${run.maxJobs}] ${p.message}` }),
       });
 
       if (!candidates.length) {
         run.skippedProducts++;
-        updateAutoRun(run, { message: `[${currentTargetIndex}/${run.maxJobs}] Skip "${product.title.slice(0, 25)}...": Tidak ada video YouTube cocok.` });
+        updateAutoRun(run, { message: `[${currentTargetIndex}/${run.maxJobs}] Skip "${product.title.slice(0, 25)}...": Tidak ada video YouTube baru yang cocok.` });
         continue;
       }
 
       let jobSuccess = false;
       for (const candidate of candidates) {
         if (run.status === 'stopping' || run.status === 'stopped') break;
+        const candidateVid = extractVideoId(candidate.url) || candidate.id;
+        if (candidateVid) {
+          usedYouTubeVideoIds.add(candidateVid);
+        }
+
         const autoJobId = `auto_${crypto.randomBytes(5).toString('hex')}`;
         run.currentJobId = autoJobId;
 

@@ -14,19 +14,23 @@ import {
   Target,
   Lightbulb,
   Terminal,
-  Volume2
+  Volume2,
+  Clock
 } from 'lucide-react';
 import { copyToClipboardSafe } from '../utils/clipboard';
 
 /**
  * Parse Google AI Studio prompt into 3 separate sections:
  * 1. Scene Setting
- * 2. Sample Context (Style & Pacing)
+ * 2. Sample Context (Style & Pacing & Video Duration)
  * 3. Speaker / Dialogue (Voiceover with emotion tags)
  */
-function parseAiStudioSections(promptText, sampleContext, voiceoverScript) {
+function parseAiStudioSections(promptText, sampleContext, voiceoverScript, videoDuration) {
+  const durationNumber = videoDuration || (sampleContext?.videoDuration ? parseInt(sampleContext.videoDuration, 10) : 30);
+  const defaultDurationPrefix = `Durasi video ${durationNumber} detik. `;
+
   let scene = 'Studio dapur modern yang bersih dengan presenter Indonesia bersuara ramah dan energik.';
-  let context = 'Iklan affiliate viral. Dimulai dengan hook yang menarik perhatian, membangun ke demonstrasi produk, diakhiri CTA yang meyakinkan. Nada suara hangat, antusias, dan persuasif.';
+  let context = `${defaultDurationPrefix}Iklan affiliate viral. Dimulai dengan hook yang menarik perhatian, membangun ke demonstrasi produk, diakhiri CTA yang meyakinkan. Nada suara hangat, antusias, dan persuasif.`;
   let speaker = voiceoverScript || '';
 
   if (typeof promptText === 'string' && promptText.trim().length > 0) {
@@ -41,7 +45,11 @@ function parseAiStudioSections(promptText, sampleContext, voiceoverScript) {
     // Match Sample Context section
     const contextMatch = text.match(/(?:Sample Context|SAMPLE CONTEXT|Context)[\s\r\n:]+([\s\S]*?)(?=(?:Speaker|SPEAKER|$))/i);
     if (contextMatch && contextMatch[1].trim()) {
-      context = contextMatch[1].trim();
+      let matchedContext = contextMatch[1].trim();
+      if (!/durasi\s+video/i.test(matchedContext)) {
+        matchedContext = `${defaultDurationPrefix}${matchedContext}`;
+      }
+      context = matchedContext;
     }
 
     // Match Speaker section (Speaker 1, Speaker 1 - Orus, etc.)
@@ -71,6 +79,9 @@ export default function CaptionCard({ result }) {
 
   if (!result) return null;
 
+  const videoDuration = result.highlight?.duration || (result.sampleContext?.videoDuration ? parseInt(result.sampleContext.videoDuration, 10) : (Array.isArray(result.scenes) && result.scenes.length > 0 ? result.scenes.length * 5 : 30));
+  const formattedDuration = result.sampleContext?.videoDuration || `${videoDuration} detik`;
+
   const copyToClipboard = async (text, fieldName) => {
     await copyToClipboardSafe(text);
     setCopiedField(fieldName);
@@ -89,10 +100,11 @@ export default function CaptionCard({ result }) {
     : '';
 
   const contextText = result.sampleContext
-    ? `Produk: ${result.sampleContext.productName || result.videoTitle}\nTarget Audiens: ${result.sampleContext.targetAudience || '-'}\nMasalah Utama: ${result.sampleContext.coreProblem || '-'}\nKeunggulan Utama:\n${(result.sampleContext.keyFeatures || []).map((f) => `- ${f}`).join('\n')}\nTrigger Pembelian: ${result.sampleContext.buyingTrigger || '-'}`
+    ? `Produk: ${result.sampleContext.productName || result.videoTitle}\nDurasi Video: ${formattedDuration}\nTarget Audiens: ${result.sampleContext.targetAudience || '-'}\nMasalah Utama: ${result.sampleContext.coreProblem || '-'}\nKeunggulan Utama:\n${(result.sampleContext.keyFeatures || []).map((f) => `- ${f}`).join('\n')}\nTrigger Pembelian: ${result.sampleContext.buyingTrigger || '-'}`
     : '';
 
-  const aiStudioSections = parseAiStudioSections(result.aiStudioPrompt, result.sampleContext, result.voiceoverScript);
+  const aiStudioSections = parseAiStudioSections(result.aiStudioPrompt, result.sampleContext, result.voiceoverScript, videoDuration);
+  const fullAiStudioPrompt = `Scene\n${aiStudioSections.scene}\n\nSample Context\n${aiStudioSections.context}\n\nSpeaker 1\n${aiStudioSections.speaker}`;
 
   return (
     <div className="glass-panel rounded-2xl p-6 shadow-xl flex flex-col h-full">
@@ -173,7 +185,7 @@ export default function CaptionCard({ result }) {
             if (activeTab === 'scenes') copyToClipboard(scenesText, 'scenes');
             if (activeTab === 'script') copyToClipboard(result.voiceoverScript, 'script');
             if (activeTab === 'context') copyToClipboard(contextText, 'context');
-            if (activeTab === 'aistudio') copyToClipboard(result.aiStudioPrompt, 'aistudio');
+            if (activeTab === 'aistudio') copyToClipboard(fullAiStudioPrompt, 'aistudio');
             if (activeTab === 'caption') copyToClipboard(result.caption, 'caption');
           }}
           className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition-all active:scale-95 shadow-sm ml-auto"
@@ -276,11 +288,17 @@ export default function CaptionCard({ result }) {
         {/* 3. SAMPLE CONTEXT */}
         {activeTab === 'context' && (
           <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3.5 text-xs">
-            <div>
-              <span className="text-slate-400 font-semibold block mb-1">Nama Produk:</span>
-              <p className="text-slate-100 font-bold text-sm">
-                {result.sampleContext?.productName || result.videoTitle}
-              </p>
+            <div className="flex items-start justify-between gap-2 flex-wrap">
+              <div>
+                <span className="text-slate-400 font-semibold block mb-1">Nama Produk:</span>
+                <p className="text-slate-100 font-bold text-sm">
+                  {result.sampleContext?.productName || result.videoTitle}
+                </p>
+              </div>
+              <div className="px-3 py-1.5 rounded-lg bg-indigo-950/40 border border-indigo-500/30 flex items-center gap-1.5 text-indigo-300">
+                <Clock className="w-3.5 h-3.5 text-indigo-400" />
+                <span className="font-semibold text-xs">Durasi: {formattedDuration}</span>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -337,7 +355,7 @@ export default function CaptionCard({ result }) {
               </span>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => copyToClipboard(result.aiStudioPrompt, 'aistudio_all')}
+                  onClick={() => copyToClipboard(fullAiStudioPrompt, 'aistudio_all')}
                   className="px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-semibold flex items-center gap-1 border border-slate-700 transition-colors"
                 >
                   {copiedField === 'aistudio_all' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}

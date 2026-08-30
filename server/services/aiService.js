@@ -318,6 +318,7 @@ CRITICAL DURATION & WORD-COUNT TIMING RULES (MANDATORY):
 
 1. 'sampleContext':
    - 'productName': Explicit product name.
+   - 'videoDuration': "${targetDuration} detik"
    - 'targetAudience': Specific target audience profile in Indonesia.
    - 'coreProblem': The primary pain point this product solves based on description & visual.
    - 'keyFeatures': List of 3-4 key USPs (Unique Selling Propositions).
@@ -355,7 +356,7 @@ Scene
 [One sentence describing the setting/environment, e.g. "Studio dapur modern yang bersih dengan presenter Indonesia bersuara ramah dan energik."]
 
 Sample Context
-[One or two sentences describing tone, pacing, and style of the ad. e.g. "Iklan affiliate viral. Dimulai dengan hook yang menarik perhatian, membangun ke demonstrasi produk, diakhiri CTA yang meyakinkan. Nada suara hangat, antusias, dan persuasif."]
+[One or two sentences describing tone, pacing, style of the ad, and video duration. ALWAYS start with the video duration, e.g. "Durasi video ${targetDuration} detik. Iklan affiliate viral. Dimulai dengan hook yang menarik perhatian, membangun ke demonstrasi produk, diakhiri CTA yang meyakinkan. Nada suara hangat, antusias, dan persuasif."]
 
 Speaker 1
 [voiceover script with timestamps and emotion tags inline. Use ONLY these emotion tags: [intrigue] [desire] [information] [excited] [inspiration] [confident]. Every line starts with timestamp and emotion tag, e.g.
@@ -385,17 +386,19 @@ Gunakan informasi judul dan deskripsi produk di atas agar naskah sangat relevan 
 Buat Kotak Scene, Sample Context, Naskah Voiceover Ad Advisor, dan AI Studio prompt.
 
 PENTING - ATURAN DURASI, TIMESTAMP & TEMPO NASKAH:
-1. Durasi video adalah ${targetDuration} detik. Naskah voiceover HARUS pas ${minWords} s/d ${maxWords} kata (sekitar 12-14 kata tiap scene 5 detik) agar pas dengan durasi video tanpa perlu diperlambat!
-2. Setiap baris naskah voiceover dan prompt AI Studio WAJIB diawali penanda waktu video, misal: [00:00], [00:05], [00:10], [00:15], [00:20], [00:25], [00:30], [00:35], dst.
-3. JANGAN gunakan nama karakter suara khusus (cukup gunakan header "Speaker 1").
-4. JANGAN PERNAH gunakan kata "Shopee" dalam naskah voiceover maupun Kotak Scene.
-5. JANGAN PERNAH gunakan kata "link di bio".
-6. Selalu gunakan ajakan seperti "Cek produk di bawah sekarang", "Klik produk di bawah", atau "Checkout produk di bawah sebelum kehabisan".
+1. Durasi video adalah ${targetDuration} detik. Pada bagian 'Sample Context' (baik di JSON maupun di prompt AI Studio), WAJIB sertakan durasi video, misal: "Durasi video ${targetDuration} detik. Iklan affiliate viral...".
+2. Naskah voiceover HARUS pas ${minWords} s/d ${maxWords} kata (sekitar 12-14 kata tiap scene 5 detik) agar pas dengan durasi video tanpa perlu diperlambat!
+3. Setiap baris naskah voiceover dan prompt AI Studio WAJIB diawali penanda waktu video, misal: [00:00], [00:05], [00:10], [00:15], [00:20], [00:25], [00:30], [00:35], dst.
+4. JANGAN gunakan nama karakter suara khusus (cukup gunakan header "Speaker 1").
+5. JANGAN PERNAH gunakan kata "Shopee" dalam naskah voiceover maupun Kotak Scene.
+6. JANGAN PERNAH gunakan kata "link di bio".
+7. Selalu gunakan ajakan seperti "Cek produk di bawah sekarang", "Klik produk di bawah", atau "Checkout produk di bawah sebelum kehabisan".
 
 Return strict JSON in this format:
 {
   "sampleContext": {
     "productName": "${effectiveTitle}",
+    "videoDuration": "${targetDuration} detik",
     "targetAudience": "Target audiens",
     "coreProblem": "Masalah utama",
     "keyFeatures": ["Fitur 1", "Fitur 2", "Fitur 3"],
@@ -411,7 +414,7 @@ Return strict JSON in this format:
     }
   ],
   "voiceoverScript": "[00:00] Masih repot marut keju pakai alat lama?\\n[00:05] Kenalin parutan serbaguna ini...\\n[00:30] Cek produk di bawah sekarang!",
-  "aiStudioPrompt": "Scene\\nStudio dapur modern...\\n\\nSample Context\\nIklan affiliate viral...\\n\\nSpeaker 1\\n[00:00] [intrigue] Masih repot...\\n[00:05] [excited] Kenalin...\\n[00:30] [excited] Cek produk di bawah sekarang!",
+  "aiStudioPrompt": "Scene\\nStudio dapur modern...\\n\\nSample Context\\nDurasi video ${targetDuration} detik. Iklan affiliate viral...\\n\\nSpeaker 1\\n[00:00] [intrigue] Masih repot...\\n[00:05] [excited] Kenalin...\\n[00:30] [excited] Cek produk di bawah sekarang!",
   "caption": "Teks caption lengkap dengan link pembelian dan hashtag..."
 }`;
 
@@ -514,7 +517,7 @@ Return strict JSON in this format:
 
   let aiStudioPrompt = (parsed.aiStudioPrompt || '').trim();
   if (!aiStudioPrompt) {
-    aiStudioPrompt = `Scene\nStudio rekaman energik dengan presenter Indonesia yang antusias dan percaya diri.\n\nSample Context\nIklan affiliate viral. Dimulai dengan hook yang mengejutkan, membangun ke demonstrasi manfaat produk, diakhiri CTA yang meyakinkan. Nada suara hangat, antusias, dan persuasif.\n\nSpeaker 1 - Orus\n[intrigue] Stop scroll dulu! [desire] ${effectiveTitle} yang satu ini beneran wajib kamu punya! [information] ${effectiveDesc ? effectiveDesc.slice(0, 120) + '.' : 'Produk ini hadir dengan kualitas premium dan desain yang praktis untuk kebutuhan sehari-hari.'} [excited] Udah ribuan orang pake dan reviewnya bagus semua! [inspiration] Kualitasnya terbukti awet dan terpercaya untuk jangka panjang. [confident] Buruan cek produk di bawah sekarang sebelum kehabisan!`;
+    aiStudioPrompt = `Scene\nStudio rekaman energik dengan presenter Indonesia yang antusias dan percaya diri.\n\nSample Context\nDurasi video ${targetDuration} detik. Iklan affiliate viral. Dimulai dengan hook yang mengejutkan, membangun ke demonstrasi manfaat produk, diakhiri CTA yang meyakinkan. Nada suara hangat, antusias, dan persuasif.\n\nSpeaker 1 - Orus\n[intrigue] Stop scroll dulu! [desire] ${effectiveTitle} yang satu ini beneran wajib kamu punya! [information] ${effectiveDesc ? effectiveDesc.slice(0, 120) + '.' : 'Produk ini hadir dengan kualitas premium dan desain yang praktis untuk kebutuhan sehari-hari.'} [excited] Udah ribuan orang pake dan reviewnya bagus semua! [inspiration] Kualitasnya terbukti awet dan terpercaya untuk jangka panjang. [confident] Buruan cek produk di bawah sekarang sebelum kehabisan!`;
   }
 
   onProgress({
@@ -526,6 +529,7 @@ Return strict JSON in this format:
   return {
     sampleContext: parsed.sampleContext || {
       productName: effectiveTitle,
+      videoDuration: `${targetDuration} detik`,
       targetAudience: "Pencari produk viral & praktis",
       coreProblem: "Mencari produk berkualitas dengan harga terjangkau",
       keyFeatures: ["Praktis & Multifungsi", "Bahan Berkualitas", "Harga Terjangkau"],

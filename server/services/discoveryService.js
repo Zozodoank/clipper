@@ -1,7 +1,7 @@
 import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
 import https from 'https';
-import { searchYouTubeVideos } from './downloader.js';
+import { searchYouTubeVideos, extractVideoId } from './downloader.js';
 
 export const DEFAULT_AUTO_KEYWORDS = [
   // --- ALAT DAPUR & PEMOTONG (Food Prep & Choppers) ---
@@ -241,27 +241,68 @@ export async function discoverYouTubeCandidatesForProduct({
   productTitle,
   productDescription = '',
   limit = 10,
+  excludeVideoIds = new Set(),
   onProgress = () => {},
 } = {}) {
+  const excludeSet = excludeVideoIds instanceof Set ? excludeVideoIds : new Set(excludeVideoIds || []);
   const coreTitle = cleanTitle(productTitle);
   const productWords = normalizeText(coreTitle).split(' ').filter((word) => word.length >= 3);
   const compactTitle = productWords.slice(0, 5).join(' ');
+
+  // Varied search intent modifiers to find diverse video angles and avoid picking the same video repeatedly
+  const searchModifiers = [
+    'review unboxing',
+    'cara pakai demo',
+    'tes fungsi review',
+    'spill racun belanja',
+    'review jujur pemakaian',
+    'unboxing produk viral',
+    'demonstrasi produk',
+    'review',
+    'produk',
+  ];
+
+  // Randomize modifier order slightly so distinct queries are attempted across multiple jobs
+  const shuffledModifiers = [...searchModifiers].sort(() => Math.random() - 0.5);
+
   const queryCandidates = [
+    `${compactTitle} ${shuffledModifiers[0]}`,
+    `${compactTitle} ${shuffledModifiers[1]}`,
+    `${compactTitle} ${shuffledModifiers[2]}`,
     `${compactTitle} review`,
-    `${compactTitle} unboxing review`,
-    `${compactTitle} produk`,
     coreTitle,
   ].filter(Boolean);
 
   let candidates = [];
   let usedQuery = queryCandidates[0];
+
   for (const query of queryCandidates) {
-    candidates = await searchYouTubeVideos(query, { limit, onProgress });
-    if (candidates.length) {
-      usedQuery = query;
-      break;
+    const rawResults = await searchYouTubeVideos(query, { limit, onProgress });
+    if (rawResults && rawResults.length) {
+      // 1. Filter out videos that have already been processed in past or current jobs
+      const freshResults = rawResults.filter((c) => {
+        const vid = c.id || extractVideoId(c.url);
+        return vid && !excludeSet.has(vid);
+      });
+
+      if (freshResults.length > 0) {
+        candidates = freshResults;
+        usedQuery = query;
+        break;
+      }
     }
-    await delayWithJitter(500, 1000);
+    await delayWithJitter(400, 800);
+  }
+
+  // Fallback: If all results were previously used (rare), search broad query
+  if (!candidates.length) {
+    const fallbackResults = await searchYouTubeVideos(`${compactTitle} review`, { limit, onProgress });
+    // Still prioritize non-excluded if any
+    const nonExcluded = (fallbackResults || []).filter((c) => {
+      const vid = c.id || extractVideoId(c.url);
+      return vid && !excludeSet.has(vid);
+    });
+    candidates = nonExcluded.length > 0 ? nonExcluded : (fallbackResults || []);
   }
 
   const cleanCandidates = candidates
@@ -274,7 +315,26 @@ export async function discoverYouTubeCandidatesForProduct({
     .filter((candidate) => candidate.matchScore >= 0)
     .sort((a, b) => b.matchScore - a.matchScore);
 
-  return cleanCandidates.length > 0 ? cleanCandidates : candidates;
+  const pool = cleanCandidates.length > 0 ? cleanCandidates : candidates;
+
+  // Candidate Selection Variety / Weighted Rotation:
+  // If we have multiple high-scoring clean candidates, gently randomize the top tier
+  // so consecutive runs for identical/similar keywords don't always pick candidate #0
+  if (pool.length > 1) {
+    const topScore = pool[0].matchScore || 0;
+    const topTier = pool.filter((c) => (c.matchScore || 0) >= topScore * 0.75);
+    const rest = pool.filter((c) => (c.matchScore || 0) < topScore * 0.75);
+
+    // Shuffle topTier
+    for (let i = topTier.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [topTier[i], topTier[j]] = [topTier[j], topTier[i]];
+    }
+
+    return [...topTier, ...rest];
+  }
+
+  return pool;
 }
 
 export function delayWithJitter(minMs, maxMs) {

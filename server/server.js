@@ -406,7 +406,7 @@ export async function runStage1Pipeline({
       inputVideo: rawVideoPath, startTime: highlight.startTime,
       endTime: highlight.endTime, outputVideo: silentOutputPath,
       clips: highlight.clips,
-      hflip: options.hflip !== undefined ? options.hflip : true,
+      hflip: options.hflip !== undefined ? options.hflip : false,
       speedMultiplier: options.speedMultiplier || 1,
       reframe: highlight.reframe,
       onProgress: updateProgress,

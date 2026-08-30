@@ -12,7 +12,7 @@ import { getFFmpegPath } from './binaryChecker.js';
  * @param {string} params.endTime - Trim end (e.g. "00:55")
  * @param {string} params.outputVideo - Target output .mp4 path
  * @param {Array<{ startTime?: string, endTime?: string, startSeconds?: number, endSeconds?: number, reframe?: object }>} [params.clips] - Gemini cut plan
- * @param {boolean} [params.hflip=true] - Horizontal flip toggle
+ * @param {boolean} [params.hflip=false] - Horizontal flip toggle
  * @param {number} [params.speedMultiplier=1] - Speed factor
  * @param {{ focusX?: number, focusY?: number, faceSafety?: boolean, renderMode?: string }} [params.reframe] - Product-aware framing
  * @param {Function} [params.onProgress] - Progress callback
@@ -24,7 +24,7 @@ export async function renderSilentAntiDetectionVideo({
   endTime,
   outputVideo,
   clips = [],
-  hflip = true,
+  hflip = false,
   speedMultiplier = 1,
   reframe = {},
   onProgress = () => {}

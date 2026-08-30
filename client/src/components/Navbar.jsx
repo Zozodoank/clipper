@@ -179,8 +179,8 @@ export default function Navbar({ onOpenSettings, engineStatus }) {
                   className="mt-1 rounded border-slate-700 text-orange-500 focus:ring-orange-500/30 w-4 h-4 bg-slate-900"
                 />
                 <div>
-                  <span className="text-sm font-medium text-slate-200 block">Jalankan ./update.sh terlebih dahulu</span>
-                  <span className="text-xs text-slate-400 block mt-0.5">Menjalankan git pull dan memperbarui dependency sebelum restart.</span>
+                  <span className="text-sm font-medium text-slate-200 block">Jalankan bash update.sh terlebih dahulu</span>
+                  <span className="text-xs text-slate-400 block mt-0.5">Mengambil commit terbaru dari GitHub & memperbarui dependency sebelum restart.</span>
                 </div>
               </label>
             </div>
@@ -225,12 +225,15 @@ export default function Navbar({ onOpenSettings, engineStatus }) {
                   <AlertTriangle className="w-4 h-4" />
                   <span>Peringatan</span>
                 </div>
-                <p>{restartError}</p>
+                <p className="mb-2">{restartError}</p>
+                <p className="text-[11px] text-slate-400 mb-3">
+                  Di Termux, Anda dapat menjalankan: <code className="text-orange-400 bg-slate-950 px-1 py-0.5 rounded font-mono">npm run dev</code>
+                </p>
                 <button
                   onClick={() => window.location.reload()}
-                  className="mt-3 w-full py-1.5 bg-rose-600 text-white rounded-lg text-xs font-semibold hover:bg-rose-500 transition-colors"
+                  className="w-full py-1.5 bg-rose-600 text-white rounded-lg text-xs font-semibold hover:bg-rose-500 transition-colors"
                 >
-                  Coba Refresh Manual
+                  Coba Refresh Halaman
                 </button>
               </div>
             ) : (

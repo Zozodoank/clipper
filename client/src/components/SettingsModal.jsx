@@ -6,7 +6,7 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
 
   const resetDefaults = () => {
     setSettings({
-      hflip: true,
+      hflip: false,
       speedMultiplier: 1,
       enableSubtitles: false,
       enableTts: false,

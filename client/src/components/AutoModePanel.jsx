@@ -72,7 +72,7 @@ export default function AutoModePanel({ settings, onHistoryRefresh }) {
           niche: 'kitchen_home',
           candidateDepth: { shopee: 5, youtube: 10 },
           options: {
-            hflip: settings.hflip !== undefined ? settings.hflip : true,
+            hflip: settings.hflip !== undefined ? settings.hflip : false,
             speedMultiplier: settings.speedMultiplier || 1,
           },
         }),

@@ -21,7 +21,7 @@ export default function App() {
   }));
 
   const [settings, setSettings] = useState({
-    hflip: true,
+    hflip: false,
     speedMultiplier: 1,
     enableSubtitles: true,
     voice: 'alloy',

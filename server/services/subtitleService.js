@@ -174,21 +174,21 @@ export function generateAssSubtitles(scriptText, totalDurationSec, assOutputPath
     });
   }
 
-  // Native ASS (Advanced SubStation Alpha) Header with exact 720x1280 coordinate system
-  // Fontsize: 34, Outline: 2.8, Shadow: 1.5, Alignment: 2 (Bottom-Center), MarginV: 115
-  // This places bold, highly legible text centered inside the bottom blur area (y: 1115-1165).
+  // Native ASS (Advanced SubStation Alpha) Header with exact 1080x1920 coordinate system
+  // Fontsize: 50, Outline: 4.2, Shadow: 2.2, Alignment: 2 (Bottom-Center), MarginV: 172
+  // This places bold, highly legible text centered inside the bottom area (y: 1680-1760).
   const assContent = `[Script Info]
 Title: TikTok/Reels Affiliate Subtitles
 ScriptType: v4.00+
 WrapStyle: 0
 ScaledBorderAndShadow: yes
 YCbCr Matrix: TV.709
-PlayResX: 720
-PlayResY: 1280
+PlayResX: 1080
+PlayResY: 1920
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,34,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,2.8,1.5,2,40,40,115,1
+Style: Default,Arial,50,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,4.2,2.2,2,60,60,172,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

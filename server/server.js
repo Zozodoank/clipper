@@ -372,7 +372,7 @@ export async function runStage1Pipeline({
     updateProgress({ step: 'frames_raw', message: 'Extracting source frames for AI analysis...', progress: 38, status: 'running' });
     const { frames: rawFrames } = await extractFrames(rawVideoPath, rawFramesDir, updateProgress, {
       sampleIntervalSec: 1,
-      maxSampleFrames: 30,
+      maxSampleFrames: 25,
     });
 
     console.log(`[Job ${jobId}] Sending to AI: videoMeta.duration=${videoMeta.duration}s, ${rawFrames.length} frames`);

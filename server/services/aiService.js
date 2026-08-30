@@ -2,7 +2,15 @@ import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';
 
-const AIVENE_MODEL = process.env.AIVENE_MODEL || process.env.AIVENE_GEMINI_MODEL || 'qwen3.8-flash';
+function getEffectiveModel() {
+  const envModel = (process.env.AIVENE_MODEL || process.env.AIVENE_GEMINI_MODEL || '').trim();
+  if (!envModel || envModel === 'gemini-3.7-flash' || envModel === 'gemini-2.5-flash') {
+    return 'qwen3.8-flash';
+  }
+  return envModel;
+}
+
+const AIVENE_MODEL = getEffectiveModel();
 const DEFAULT_REFRAME = {
   focusX: 0.5,
   focusY: 0.62,

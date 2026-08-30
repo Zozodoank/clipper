@@ -92,7 +92,7 @@ export default function Navbar({ onOpenSettings, engineStatus }) {
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden sm:block">
-                Auto-generate viral Shopee Affiliate clips via Gemini 3.7 Flash & FFmpeg
+                Auto-generate viral Shopee Affiliate clips via Qwen 3.8 Flash & FFmpeg
               </p>
             </div>
           </div>
@@ -129,7 +129,7 @@ export default function Navbar({ onOpenSettings, engineStatus }) {
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
               <span>Aivene</span>
               <span className="text-slate-500">|</span>
-              <span className="text-amber-400 font-mono">gemini-3.7-flash</span>
+              <span className="text-amber-400 font-mono">qwen3.8-flash</span>
             </div>
 
             {/* Anti-detection badge */}

@@ -81,17 +81,29 @@ export async function selectHighlightWithGeminiFlash({
   const systemPrompt = `You are a Strict Short-Form Video Editor & Vision OCR Inspector.
 Your task: Inspect video frames and select ONLY 100% clean 5-second product shots for affiliate ads.
 
-CRITICAL RULES (ZERO TOLERANCE FOR SUBTITLES / TEXT):
-1. OCR INSPECTION:
-   - Check every frame for ANY burned-in text, subtitles, captions (e.g. Indonesian subtitles like "SANGAT", lyrics, prices, usernames, watermarks, stickers, channel logos).
-   - If a frame contains EVEN A SINGLE WORD OR LETTER of text/subtitle anywhere on screen, mark hasTextOrSubtitles=true and isCleanProductShot=false.
-2. NO FACES / TALKING HEADS:
+CRITICAL RULES:
+1. STRICT ZERO TOLERANCE FOR FLOATING SUBTITLES & WATERMARKS (DO NOT CHANGE THIS):
+   - Check every frame for ANY floating/overlay text, burned-in subtitles, captions (e.g. Indonesian subtitles like "SANGAT", lyrics, prices, usernames, watermarks, stickers, channel logos/overlays).
+   - If a frame contains ANY floating subtitle, video caption, watermark, or channel overlay text anywhere on screen, mark hasTextOrSubtitles=true and isCleanProductShot=false.
+
+2. PHYSICAL PRODUCT BRAND & LOGO INSPECTION (RULE FOR VIDEO MIRROR / H-FLIP):
+   - Check if the physical product, packaging, or scene contains a brand name, trademark, or printed text ON THE PRODUCT ITSELF (e.g. "PHILIPS", "SAMSUNG", "XIAOMI", "BOLDe", "TUPPERWARE", or text on product label/box).
+   - If a brand name or readable text is printed on the physical product:
+     * Mark "hasProductBrand": true and specify the detected brand name in "detectedBrand".
+     * Set "allowHflip": false. Video mirroring (hflip) MUST NOT be applied because mirroring will flip the brand text backwards.
+     * Note: The clip is STILL A VALID PRODUCT SHOT (isCleanProductShot=true) if it only has physical brand text and NO floating subtitles/watermarks.
+   - If the product is generic / unbranded (no readable brand text on the object):
+     * Mark "hasProductBrand": false, "detectedBrand": "none", and "allowHflip": true.
+
+3. NO FACES / TALKING HEADS:
    - Only faceless product close-ups, hands demonstrating or testing the product.
-3. CLIP SELECTION:
+
+4. CLIP SELECTION:
    - Select 6 to 8 non-overlapping 5-second intervals.
    - Every selected clip MUST ONLY contain intervals where hasTextOrSubtitles=false and isCleanProductShot=true.
-4. REJECTION MANDATE:
-   - If subtitles/text/faces are present throughout the video so no clean 30-40s product footage exists, set "isUsableSourceVideo": false and explain in "rejectionReason".`;
+
+5. REJECTION MANDATE:
+   - If floating subtitles/watermarks/channel names or faces are present throughout the video so no clean 30-40s product footage exists, set "isUsableSourceVideo": false and explain in "rejectionReason".`;
 
   const userPrompt = `Product Title: "${effectiveTitle}"
 ${effectiveDesc ? `Product Description / Key Features: "${effectiveDesc}"` : ''}
@@ -103,16 +115,20 @@ Sampled Visual Frames (${frames.length} frames across timeline):
 ${frames.map((f, i) => `Frame #${i + 1} at timestamp ${f.timeFormatted} (${f.timestamp}s)`).join('\n')}
 
 INSPECTION STEPS:
-1. Perform OCR on each frame: Identify any text, subtitle, caption, watermark, or face.
+1. Perform OCR on each frame: Identify any floating text/subtitles/watermarks/channel names (strict rejection) vs physical brand name on the product.
 2. In "frameAudit", list every frame and specify detected text ("none" if clean).
-3. If clean product footage without any text exists, select 6 to 8 pristine 5-second intervals.
-4. If the video is contaminated with subtitles/text throughout, set isUsableSourceVideo=false.
+3. If the product has a visible brand/logo on it, set "hasProductBrand": true, "detectedBrand": "<BrandName>", "allowHflip": false.
+4. If clean product footage without floating text exists, select 6 to 8 pristine 5-second intervals.
+5. If the video is contaminated with floating subtitles/watermarks throughout, set isUsableSourceVideo=false.
 
 Return strict JSON in this format:
 {
   "isProductMatch": true,
   "isUsableSourceVideo": true,
   "rejectionReason": "",
+  "hasProductBrand": false,
+  "detectedBrand": "none",
+  "allowHflip": true,
   "frameAudit": [
     {
       "frameIndex": 1,
@@ -129,7 +145,9 @@ Return strict JSON in this format:
       "startTime": "00:05",
       "endTime": "00:10",
       "startSeconds": 5,
-      "reason": "Clean hands-only product demonstration without text, watermarks, or face.",
+      "reason": "Clean hands-only product demonstration without floating text, watermarks, or face.",
+      "hasProductBrand": false,
+      "allowHflip": true,
       "isCleanAffiliateShot": true,
       "sourceOwnerIdentityVisible": false,
       "sourceIdentityRisk": "none",
@@ -141,6 +159,7 @@ Return strict JSON in this format:
         "avoidTextZones": [],
         "avoidFaceZones": ["top_left"],
         "faceSafety": true,
+        "allowHflip": true,
         "notes": "Clean product-only demonstration."
       }
     }
@@ -216,9 +235,17 @@ Return strict JSON in this format:
         parsed.clips = [];
       }
 
+      const hasProductBrand = parsed.hasProductBrand === true ||
+        (Boolean(parsed.detectedBrand) && parsed.detectedBrand.toLowerCase() !== 'none' && parsed.detectedBrand.toLowerCase() !== 'null' && parsed.detectedBrand.toLowerCase() !== 'false') ||
+        (Array.isArray(parsed.clips) && parsed.clips.some(c => c.hasProductBrand === true));
+      const detectedBrand = (parsed.detectedBrand || parsed.detectedBrandName || '').trim() || (hasProductBrand ? 'Brand Terdeteksi' : 'none');
+      const allowHflip = hasProductBrand ? false : (parsed.allowHflip !== false);
+
       const clips = normalizeClipPlan(parsed.clips, totalDuration, {
         allowFallback: allowFallbackClips,
-        frameAudit: parsed.frameAudit || []
+        frameAudit: parsed.frameAudit || [],
+        hasProductBrand,
+        allowHflip,
       });
       const duration = clips.reduce((total, clip) => total + (clip.endSeconds - clip.startSeconds), 0);
       const startTime = clips[0].startTime;
@@ -237,6 +264,9 @@ Return strict JSON in this format:
         endSeconds: clips[clips.length - 1].endSeconds,
         duration,
         productHook: parsed.productHook || 'Racun Shopee Viral Wajib Punya!',
+        hasProductBrand,
+        detectedBrand,
+        allowHflip,
         reframe: clips[0].reframe,
         clips,
       };
@@ -580,26 +610,28 @@ function normalizeReframe(reframe = {}) {
     avoidTextZones,
     avoidFaceZones,
     faceSafety: reframe.faceSafety !== false,
+    allowHflip: reframe.allowHflip !== false,
+    hasProductBrand: Boolean(reframe.hasProductBrand),
     notes: (reframe.notes || DEFAULT_REFRAME.notes).toString().slice(0, 180),
   };
 }
 
-function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, frameAudit = [] } = {}) {
+function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, frameAudit = [], hasProductBrand = false, allowHflip = true } = {}) {
   const clipLength = 5;
   const sourceClips = Array.isArray(rawClips) ? rawClips : [];
   const normalized = [];
   let previousEnd = -1;
 
-  console.log(`[normalizeClipPlan] totalDuration=${totalDuration}s, rawClips=${sourceClips.length}, frameAudit=${frameAudit.length}`);
+  console.log(`[normalizeClipPlan] totalDuration=${totalDuration}s, rawClips=${sourceClips.length}, frameAudit=${frameAudit.length}, hasProductBrand=${hasProductBrand}, allowHflip=${allowHflip}`);
 
-  // Build a set of timestamps containing detected text, subtitles, watermarks, or faces
+  // Build a set of timestamps containing detected floating text, subtitles, watermarks, or faces
   const dirtyTimestamps = [];
   if (Array.isArray(frameAudit)) {
     for (const audit of frameAudit) {
       const text = (audit.detectedText || '').toLowerCase().trim();
-      const hasText = audit.hasTextOrSubtitles === true || (text && text !== 'none' && text !== 'null' && text !== 'false');
+      const hasFloatingText = audit.hasTextOrSubtitles === true || (text && text !== 'none' && text !== 'null' && text !== 'false');
       const isUnclean = audit.isCleanProductShot === false || audit.hasFace === true;
-      if (hasText || isUnclean) {
+      if (hasFloatingText || isUnclean) {
         const sec = Math.round(parseTimeToSeconds(audit.timestamp ?? audit.frameIndex));
         dirtyTimestamps.push(sec);
       }
@@ -627,12 +659,15 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, fram
 
     const endSeconds = startSeconds + clipLength;
 
-    // Discard any clip interval that covers dirty frames containing text/subtitles
+    // Discard any clip interval that covers dirty frames containing floating text/subtitles/watermarks
     const overlapsDirtyFrame = dirtyTimestamps.some(ts => ts >= startSeconds && ts <= endSeconds);
     if (overlapsDirtyFrame) {
-      console.log(`[normalizeClipPlan] Skip clip at ${startSeconds}-${endSeconds}s: overlaps frame with detected subtitle/text`);
+      console.log(`[normalizeClipPlan] Skip clip at ${startSeconds}-${endSeconds}s: overlaps frame with detected subtitle/watermark`);
       continue;
     }
+
+    const clipHasBrand = hasProductBrand || rawClip?.hasProductBrand === true || rawClip?.reframe?.hasProductBrand === true;
+    const clipAllowHflip = clipHasBrand ? false : (allowHflip !== false && rawClip?.allowHflip !== false && rawClip?.reframe?.allowHflip !== false);
 
     normalized.push({
       startSeconds,
@@ -640,7 +675,13 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, fram
       startTime: formatSeconds(startSeconds),
       endTime: formatSeconds(endSeconds),
       reason: (rawClip?.reason || 'Clean full-product affiliate shot.').toString().slice(0, 180),
-      reframe: normalizeReframe(rawClip?.reframe),
+      hasProductBrand: clipHasBrand,
+      allowHflip: clipAllowHflip,
+      reframe: normalizeReframe({
+        ...rawClip?.reframe,
+        hasProductBrand: clipHasBrand,
+        allowHflip: clipAllowHflip,
+      }),
     });
     previousEnd = endSeconds;
     if (normalized.length === 8) break; // Target max 8 clips (40s)
@@ -653,7 +694,7 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, fram
   }
 
   if (!allowFallback) {
-    throw new Error('AI menolak video ini: tidak ditemukan potongan video yang bersih dari watermark, subtitle, nama brand, atau wajah/talking head.');
+    throw new Error('AI menolak video ini: tidak ditemukan potongan video yang bersih dari watermark, subtitle terjemahan, nama channel mengambang, atau wajah/talking head.');
   }
 
   // Fallback: build 6 to 8 evenly spaced clips (30 to 40 seconds total)
@@ -684,7 +725,12 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, fram
       startTime: formatSeconds(startSeconds),
       endTime: formatSeconds(startSeconds + clipLength),
       reason: 'Fallback 5-second product shot.',
-      reframe: normalizeReframe(),
+      hasProductBrand,
+      allowHflip,
+      reframe: normalizeReframe({
+        hasProductBrand,
+        allowHflip,
+      }),
     });
     lastStart = startSeconds;
   }

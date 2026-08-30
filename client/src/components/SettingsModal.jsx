@@ -44,7 +44,7 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
                 <span>Horizontal Flip (hflip)</span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Reverses frame orientation to break visual fingerprint matching.
+                Reverses frame orientation for anti-detection. (Otomatis dinonaktifkan AI jika produk memiliki merek/logo).
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">

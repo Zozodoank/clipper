@@ -413,12 +413,25 @@ export async function runStage1Pipeline({
       persistJob(jobId, updatedMeta);
     }
 
-    updateProgress({ step: 'render_silent', message: `Rendering ${highlight.clips.length} AI-selected 5-second full-product shots (${highlight.duration}s)...`, progress: 62, status: 'running' });
+    const isBrandDetected = highlight.hasProductBrand === true ||
+      (Array.isArray(highlight.clips) && highlight.clips.some(c => c.hasProductBrand === true));
+    const requestedHflip = options.hflip !== undefined ? Boolean(options.hflip) : false;
+    const effectiveHflip = (isBrandDetected || highlight.allowHflip === false) ? false : requestedHflip;
+
+    if (isBrandDetected && requestedHflip) {
+      console.log(`[Job ${jobId}] Merek/Logo produk terdeteksi ("${highlight.detectedBrand || 'Brand'}"). Video mirror (H-Flip) dinonaktifkan otomatis agar logo/merek produk tidak terbalik.`);
+    }
+
+    const renderMessage = isBrandDetected
+      ? `Rendering ${highlight.clips.length} cuplikan produk (${highlight.duration}s) [Mirror H-Flip OFF: Merek "${highlight.detectedBrand || 'Terdeteksi'}"]...`
+      : `Rendering ${highlight.clips.length} AI-selected 5-second full-product shots (${highlight.duration}s)...`;
+
+    updateProgress({ step: 'render_silent', message: renderMessage, progress: 62, status: 'running' });
     await renderSilentAntiDetectionVideo({
       inputVideo: rawVideoPath, startTime: highlight.startTime,
       endTime: highlight.endTime, outputVideo: silentOutputPath,
       clips: highlight.clips,
-      hflip: options.hflip !== undefined ? options.hflip : false,
+      hflip: effectiveHflip,
       speedMultiplier: options.speedMultiplier || 1,
       reframe: highlight.reframe,
       onProgress: updateProgress,
@@ -452,7 +465,18 @@ export async function runStage1Pipeline({
       productDescription: productDescription || '',
       youtubeUrl,
       shopeeLink: shopeeLink || '',
-      highlight: { startTime: highlight.startTime, endTime: highlight.endTime, duration: highlight.duration, reframe: highlight.reframe, clips: highlight.clips },
+      highlight: {
+        startTime: highlight.startTime,
+        endTime: highlight.endTime,
+        duration: highlight.duration,
+        hasProductBrand: isBrandDetected,
+        detectedBrand: highlight.detectedBrand || 'none',
+        allowHflip: !isBrandDetected,
+        reframe: highlight.reframe,
+        clips: highlight.clips
+      },
+      hasProductBrand: isBrandDetected,
+      detectedBrand: highlight.detectedBrand || 'none',
       productHook: highlight.productHook,
       sampleContext: scriptData.sampleContext,
       scenes: scriptData.scenes,

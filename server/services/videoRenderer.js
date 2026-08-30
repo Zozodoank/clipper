@@ -253,8 +253,10 @@ export async function mergeVoiceoverAndBurnSubtitles({
 }
 
 function buildClipFilter({ inputIndex, outputLabel, reframe = {}, hflip, ptsFactor }) {
+  const isFlipDisabled = reframe.allowHflip === false || reframe.hasProductBrand === true;
+  const clipHflip = isFlipDisabled ? false : (reframe.hflip !== undefined ? reframe.hflip : hflip);
   const renderMode = reframe.renderMode === 'vertical_crop' ? 'vertical_crop' : 'preserve_full_product';
-  const preFlip = hflip ? 'hflip,' : '';
+  const preFlip = clipHflip ? 'hflip,' : '';
   const finish = `setsar=1,setpts=${ptsFactor}*PTS,eq=contrast=1.05:saturation=1.05:brightness=0.01`;
 
   if (renderMode === 'vertical_crop') {
@@ -292,7 +294,12 @@ function normalizeRenderClips(clips, fallbackStartTime, fallbackEndTime, fallbac
       normalized.push({
         startSeconds,
         duration: clipLength,
-        reframe: clip?.reframe || fallbackReframe,
+        reframe: {
+          ...(fallbackReframe || {}),
+          ...(clip?.reframe || {}),
+          allowHflip: clip?.allowHflip !== undefined ? clip.allowHflip : clip?.reframe?.allowHflip,
+          hasProductBrand: clip?.hasProductBrand !== undefined ? clip.hasProductBrand : clip?.reframe?.hasProductBrand,
+        },
       });
       if (normalized.length === 12) break;
     }

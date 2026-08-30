@@ -104,16 +104,23 @@ export default function VideoPlayer({ result }) {
           </div>
         </div>
 
-        {/* Timestamps badge */}
+        {/* Timestamps & Brand badges */}
         {result.highlight && (
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-xs font-mono text-amber-400 ml-auto">
-            <Clock className="w-3.5 h-3.5" />
-            <span>
-              {highlightClips.length
-                ? `${highlightClips.length} x 5s`
-                : `${result.highlight.startTime} - ${result.highlight.endTime}`}
-            </span>
-            <span className="text-slate-500">({result.highlight.duration}s)</span>
+          <div className="flex flex-wrap items-center gap-1.5 ml-auto">
+            {(result.hasProductBrand || result.highlight?.hasProductBrand) && (
+              <span className="px-2.5 py-1 rounded-full bg-blue-500/20 border border-blue-500/30 text-blue-300 font-sans text-xs font-medium">
+                🏷️ Merek: {result.detectedBrand && result.detectedBrand !== 'none' ? result.detectedBrand : (result.highlight?.detectedBrand && result.highlight?.detectedBrand !== 'none' ? result.highlight.detectedBrand : 'Terdeteksi')} (No Mirror)
+              </span>
+            )}
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-xs font-mono text-amber-400">
+              <Clock className="w-3.5 h-3.5" />
+              <span>
+                {highlightClips.length
+                  ? `${highlightClips.length} x 5s`
+                  : `${result.highlight.startTime} - ${result.highlight.endTime}`}
+              </span>
+              <span className="text-slate-500">({result.highlight.duration}s)</span>
+            </div>
           </div>
         )}
       </div>

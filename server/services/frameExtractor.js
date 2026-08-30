@@ -44,13 +44,13 @@ export async function extractFrames(videoPath, framesDir, onProgress = () => {},
   onProgress({ step: 'frames', message: `Extracting source timeline frames (1 frame every ${safeInterval}s)...`, progress: 40 });
 
   return new Promise((resolve, reject) => {
-    // 320px wide, q:v 8 JPEG (~8-15 KB/frame) gives sharp vision recognition for AI Vision
+    // 360p height JPEG (~15-25 KB/frame) gives crystal-clear OCR text & subtitle recognition for AI Vision
     // while keeping API request payload minimal and token consumption strictly low.
     const args = [
       '-y',
       '-i', targetVideoPath,
-      '-vf', `fps=1/${safeInterval},scale=320:-1`,
-      '-q:v', '8',
+      '-vf', `fps=1/${safeInterval},scale=-2:360`,
+      '-q:v', '7',
       outputPattern
     ];
 

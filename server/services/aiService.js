@@ -78,18 +78,20 @@ export async function selectHighlightWithGeminiFlash({
   const effectiveTitle = productTitle || videoMetadata?.title || 'Product Showcase Video';
   const effectiveDesc = productDescription || videoMetadata?.description || '';
 
-  const systemPrompt = `You are a Strict Short-Form Video Editor.
-Analyze frames and select ONLY 100% clean 5-second product demo clips for Indonesian Shopee affiliate ads.
+  const systemPrompt = `You are a Strict Short-Form Video Editor & Vision OCR Inspector.
+Your task: Inspect video frames and select ONLY 100% clean 5-second product shots for affiliate ads.
 
-RULES:
-1. NO TEXT TOLERANCE: The 5-second intervals you select MUST BE 100% FREE from:
-   - ANY text, subtitles, captions, lyrics, or UI elements.
-   - Watermarks, channel logos, or brand text overlays.
-   - Creator faces or talking heads (hands/product only).
-   If a frame contains EVEN ONE WORD OF TEXT, DO NOT SELECT IT.
-2. PRODUCT RELEVANCE: Ensure the video visually features the specific product.
-3. REJECTION: Set "isUsableSourceVideo": false ONLY if the ENTIRE video has NO clean product footage at all.
-4. TARGET: Select 6-8 pristine 5-second clips (Total 30-40s).`;
+CRITICAL RULES (ZERO TOLERANCE FOR SUBTITLES / TEXT):
+1. OCR INSPECTION:
+   - Check every frame for ANY burned-in text, subtitles, captions (e.g. Indonesian subtitles like "SANGAT", lyrics, prices, usernames, watermarks, stickers, channel logos).
+   - If a frame contains EVEN A SINGLE WORD OR LETTER of text/subtitle anywhere on screen, mark hasTextOrSubtitles=true and isCleanProductShot=false.
+2. NO FACES / TALKING HEADS:
+   - Only faceless product close-ups, hands demonstrating or testing the product.
+3. CLIP SELECTION:
+   - Select 6 to 8 non-overlapping 5-second intervals.
+   - Every selected clip MUST ONLY contain intervals where hasTextOrSubtitles=false and isCleanProductShot=true.
+4. REJECTION MANDATE:
+   - If subtitles/text/faces are present throughout the video so no clean 30-40s product footage exists, set "isUsableSourceVideo": false and explain in "rejectionReason".`;
 
   const userPrompt = `Product Title: "${effectiveTitle}"
 ${effectiveDesc ? `Product Description / Key Features: "${effectiveDesc}"` : ''}
@@ -100,17 +102,27 @@ Product Link: ${shopeeLink || 'https://shope.ee/link'}
 Sampled Visual Frames (${frames.length} frames across timeline):
 ${frames.map((f, i) => `Frame #${i + 1} at timestamp ${f.timeFormatted} (${f.timestamp}s)`).join('\n')}
 
-INSPECTION INSTRUCTION:
-1. Identify timestamps showing clean, faceless product demonstration.
-2. AVOID any intervals containing ANY TEXT, subtitles, watermarks, or faces. ZERO TEXT ALLOWED.
-3. Select 6 to 8 CLEAN 5-second intervals (Total 30-40 seconds).
-4. Only set "isUsableSourceVideo": false if whole video is unusable.
+INSPECTION STEPS:
+1. Perform OCR on each frame: Identify any text, subtitle, caption, watermark, or face.
+2. In "frameAudit", list every frame and specify detected text ("none" if clean).
+3. If clean product footage without any text exists, select 6 to 8 pristine 5-second intervals.
+4. If the video is contaminated with subtitles/text throughout, set isUsableSourceVideo=false.
 
 Return strict JSON in this format:
 {
   "isProductMatch": true,
   "isUsableSourceVideo": true,
   "rejectionReason": "",
+  "frameAudit": [
+    {
+      "frameIndex": 1,
+      "timestamp": "00:00",
+      "hasTextOrSubtitles": false,
+      "detectedText": "none",
+      "hasFace": false,
+      "isCleanProductShot": true
+    }
+  ],
   "productHook": "Racun Shopee Viral Wajib Punya!",
   "clips": [
     {
@@ -118,101 +130,6 @@ Return strict JSON in this format:
       "endTime": "00:10",
       "startSeconds": 5,
       "reason": "Clean hands-only product demonstration without text, watermarks, or face.",
-      "isCleanAffiliateShot": true,
-      "sourceOwnerIdentityVisible": false,
-      "sourceIdentityRisk": "none",
-      "reframe": {
-        "focusX": 0.5,
-        "focusY": 0.55,
-        "renderMode": "preserve_full_product",
-        "cropStrategy": "keep_full_product_no_text_no_stickers_no_face",
-        "avoidTextZones": [],
-        "avoidFaceZones": ["top_left"],
-        "faceSafety": true,
-        "notes": "Clean product-only demonstration."
-      }
-    },
-    {
-      "startTime": "00:15",
-      "endTime": "00:20",
-      "startSeconds": 15,
-      "reason": "Close-up practical usage shot.",
-      "isCleanAffiliateShot": true,
-      "sourceOwnerIdentityVisible": false,
-      "sourceIdentityRisk": "none",
-      "reframe": {
-        "focusX": 0.5,
-        "focusY": 0.55,
-        "renderMode": "preserve_full_product",
-        "cropStrategy": "keep_full_product_no_text_no_stickers_no_face",
-        "avoidTextZones": [],
-        "avoidFaceZones": ["top_left"],
-        "faceSafety": true,
-        "notes": "Clean product-only demonstration."
-      }
-    },
-    {
-      "startTime": "00:25",
-      "endTime": "00:30",
-      "startSeconds": 25,
-      "reason": "Product features and material detail shot.",
-      "isCleanAffiliateShot": true,
-      "sourceOwnerIdentityVisible": false,
-      "sourceIdentityRisk": "none",
-      "reframe": {
-        "focusX": 0.5,
-        "focusY": 0.55,
-        "renderMode": "preserve_full_product",
-        "cropStrategy": "keep_full_product_no_text_no_stickers_no_face",
-        "avoidTextZones": [],
-        "avoidFaceZones": ["top_left"],
-        "faceSafety": true,
-        "notes": "Clean product-only demonstration."
-      }
-    },
-    {
-      "startTime": "00:35",
-      "endTime": "00:40",
-      "startSeconds": 35,
-      "reason": "Hands demonstrating operation mechanism.",
-      "isCleanAffiliateShot": true,
-      "sourceOwnerIdentityVisible": false,
-      "sourceIdentityRisk": "none",
-      "reframe": {
-        "focusX": 0.5,
-        "focusY": 0.55,
-        "renderMode": "preserve_full_product",
-        "cropStrategy": "keep_full_product_no_text_no_stickers_no_face",
-        "avoidTextZones": [],
-        "avoidFaceZones": ["top_left"],
-        "faceSafety": true,
-        "notes": "Clean product-only demonstration."
-      }
-    },
-    {
-      "startTime": "00:45",
-      "endTime": "00:50",
-      "startSeconds": 45,
-      "reason": "Product result and output showcased.",
-      "isCleanAffiliateShot": true,
-      "sourceOwnerIdentityVisible": false,
-      "sourceIdentityRisk": "none",
-      "reframe": {
-        "focusX": 0.5,
-        "focusY": 0.55,
-        "renderMode": "preserve_full_product",
-        "cropStrategy": "keep_full_product_no_text_no_stickers_no_face",
-        "avoidTextZones": [],
-        "avoidFaceZones": ["top_left"],
-        "faceSafety": true,
-        "notes": "Clean product-only demonstration."
-      }
-    },
-    {
-      "startTime": "00:55",
-      "endTime": "01:00",
-      "startSeconds": 55,
-      "reason": "Final hero shot of the product.",
       "isCleanAffiliateShot": true,
       "sourceOwnerIdentityVisible": false,
       "sourceIdentityRisk": "none",
@@ -276,7 +193,7 @@ Return strict JSON in this format:
           { role: 'user', content: messageContent },
         ],
         response_format: { type: 'json_object' },
-        temperature: 0.5,
+        temperature: 0.3,
       });
 
       clearInterval(heartbeat);
@@ -293,14 +210,16 @@ Return strict JSON in this format:
 
       if (parsed.isProductMatch === false || parsed.isUsableSourceVideo === false) {
         if (!allowFallbackClips) {
-          throw new Error(parsed.rejectionReason || 'Video YouTube tidak cocok atau tidak bersih untuk produk ini.');
+          throw new Error(parsed.rejectionReason || 'Video YouTube ditolak oleh AI: Mengandung teks subtitle, watermark, atau wajah yang tidak dapat dihilangkan.');
         }
-        // When fallback is allowed, log the AI's rejection reason but still try fallback clips
         console.warn(`[AIService] AI flagged video as unclean: "${parsed.rejectionReason}". Applying fallback clip plan...`);
         parsed.clips = [];
       }
 
-      const clips = normalizeClipPlan(parsed.clips, totalDuration, { allowFallback: allowFallbackClips });
+      const clips = normalizeClipPlan(parsed.clips, totalDuration, {
+        allowFallback: allowFallbackClips,
+        frameAudit: parsed.frameAudit || []
+      });
       const duration = clips.reduce((total, clip) => total + (clip.endSeconds - clip.startSeconds), 0);
       const startTime = clips[0].startTime;
       const endTime = clips[clips.length - 1].endTime;
@@ -661,13 +580,27 @@ function normalizeReframe(reframe = {}) {
   };
 }
 
-function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true } = {}) {
+function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, frameAudit = [] } = {}) {
   const clipLength = 5;
   const sourceClips = Array.isArray(rawClips) ? rawClips : [];
   const normalized = [];
   let previousEnd = -1;
 
-  console.log(`[normalizeClipPlan] totalDuration=${totalDuration}s, rawClips=${sourceClips.length}`);
+  console.log(`[normalizeClipPlan] totalDuration=${totalDuration}s, rawClips=${sourceClips.length}, frameAudit=${frameAudit.length}`);
+
+  // Build a set of timestamps containing detected text, subtitles, watermarks, or faces
+  const dirtyTimestamps = [];
+  if (Array.isArray(frameAudit)) {
+    for (const audit of frameAudit) {
+      const text = (audit.detectedText || '').toLowerCase().trim();
+      const hasText = audit.hasTextOrSubtitles === true || (text && text !== 'none' && text !== 'null' && text !== 'false');
+      const isUnclean = audit.isCleanProductShot === false || audit.hasFace === true;
+      if (hasText || isUnclean) {
+        const sec = Math.round(parseTimeToSeconds(audit.timestamp ?? audit.frameIndex));
+        dirtyTimestamps.push(sec);
+      }
+    }
+  }
 
   for (const rawClip of sourceClips) {
     let startSeconds = Math.max(0, Math.round(parseTimeToSeconds(rawClip?.startSeconds ?? rawClip?.startTime)));
@@ -689,6 +622,14 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true } = {
     }
 
     const endSeconds = startSeconds + clipLength;
+
+    // Discard any clip interval that covers dirty frames containing text/subtitles
+    const overlapsDirtyFrame = dirtyTimestamps.some(ts => ts >= startSeconds && ts <= endSeconds);
+    if (overlapsDirtyFrame) {
+      console.log(`[normalizeClipPlan] Skip clip at ${startSeconds}-${endSeconds}s: overlaps frame with detected subtitle/text`);
+      continue;
+    }
+
     normalized.push({
       startSeconds,
       endSeconds,

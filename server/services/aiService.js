@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';
 
-const AIVENE_MODEL = process.env.AIVENE_MODEL || process.env.AIVENE_GEMINI_MODEL || 'gemini-3.7-flash';
+const AIVENE_MODEL = process.env.AIVENE_MODEL || process.env.AIVENE_GEMINI_MODEL || 'qwen3.8-flash';
 const DEFAULT_REFRAME = {
   focusX: 0.5,
   focusY: 0.62,
@@ -70,25 +70,18 @@ export async function selectHighlightWithGeminiFlash({
   const effectiveTitle = productTitle || videoMetadata?.title || 'Product Showcase Video';
   const effectiveDesc = productDescription || videoMetadata?.description || '';
 
-  const systemPrompt = `You are a Strict, World-Class Short-Form Video Editor & Viral Affiliate Content Producer.
-Your task is to analyze the source-video timeline frames and select ONLY pristine, 100% clean 5-second product demo clips suitable for high-converting Indonesian Shopee affiliate ads.
+  const systemPrompt = `You are a Strict Short-Form Video Editor.
+Analyze frames and select ONLY 100% clean 5-second product demo clips for Indonesian Shopee affiliate ads.
 
-CRITICAL SELECTION & CLEANLINESS RULES:
-1. SOURCE VIDEO TOLERANCE VS. CLIP PURITY:
-   - The source video MAY contain watermarks, channel logos, creator faces, or subtitles in OTHER parts of its timeline (e.g. host intro, outro, corner watermark during commentary). That is completely fine and normal!
-   - HOWEVER, for the specific 5-second intervals you select for the final short video, those chosen intervals MUST BE 100% PRISTINE and completely free from:
-     * Watermarks, channel logos, YouTube subscribe buttons, or TikTok/IG handles (@username).
-     * Burned-in subtitles, captions, lyrics, or narrative text overlays.
-     * Creator faces / talking heads (must be faceless hands-only demo or close-up product footage).
-     * Intrusive brand text overlays.
-2. PRODUCT RELEVANCE:
-   - Ensure the video visually features the specific product or its exact category. If completely unrelated, set isProductMatch=false, isUsableSourceVideo=false.
-3. REJECTION MANDATE:
-   - ONLY set "isUsableSourceVideo": false if the ENTIRE video timeline is contaminated and you cannot find enough clean product demo moments anywhere in the video.
-   - If clean product demonstration moments exist in the video, select them!
-4. SELECT 6 TO 8 PRISTINE 5-SECOND CLIPS (TARGET TOTAL DURATION: 30 TO 40 SECONDS):
-   - Select 6 to 8 non-overlapping 5-second intervals from the clean product demonstration parts of the timeline.
-   - Total duration MUST be between 30 and 40 seconds.`;
+RULES:
+1. NO TEXT TOLERANCE: The 5-second intervals you select MUST BE 100% FREE from:
+   - ANY text, subtitles, captions, lyrics, or UI elements.
+   - Watermarks, channel logos, or brand text overlays.
+   - Creator faces or talking heads (hands/product only).
+   If a frame contains EVEN ONE WORD OF TEXT, DO NOT SELECT IT.
+2. PRODUCT RELEVANCE: Ensure the video visually features the specific product.
+3. REJECTION: Set "isUsableSourceVideo": false ONLY if the ENTIRE video has NO clean product footage at all.
+4. TARGET: Select 6-8 pristine 5-second clips (Total 30-40s).`;
 
   const userPrompt = `Product Title: "${effectiveTitle}"
 ${effectiveDesc ? `Product Description / Key Features: "${effectiveDesc}"` : ''}
@@ -100,10 +93,10 @@ Sampled Visual Frames (${frames.length} frames across timeline):
 ${frames.map((f, i) => `Frame #${i + 1} at timestamp ${f.timeFormatted} (${f.timestamp}s)`).join('\n')}
 
 INSPECTION INSTRUCTION:
-1. Scan across the timeline to identify timestamps showing clean, faceless product demonstration (hands testing product, close-up details, unboxing, features).
-2. Skip/avoid any timestamp intervals that contain watermarks, channel logos, burned-in subtitles, or creator faces.
-3. Select 6 to 8 CLEAN 5-second intervals (Total 30-40 seconds) where the footage is 100% pristine.
-4. Only set "isUsableSourceVideo": false if the whole video has NO clean product footage at all.
+1. Identify timestamps showing clean, faceless product demonstration.
+2. AVOID any intervals containing ANY TEXT, subtitles, watermarks, or faces. ZERO TEXT ALLOWED.
+3. Select 6 to 8 CLEAN 5-second intervals (Total 30-40 seconds).
+4. Only set "isUsableSourceVideo": false if whole video is unusable.
 
 Return strict JSON in this format:
 {

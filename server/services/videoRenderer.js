@@ -176,9 +176,10 @@ export async function mergeVoiceoverAndBurnSubtitles({
 
       if (srtPath.endsWith('.ass')) {
         // Native ASS file: exact resolution (720x1280), FontSize (34), and MarginV (115) defined in file header
+        // If the source ASS is 720p, subtitles filter will scale it up automatically for 1080p.
         filterChains.push(`[0:v]subtitles='${sanitizedSrt}'[v]`);
       } else {
-        const subtitleStyle = 'FontName=Arial,FontSize=28,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2.8,Shadow=1.5,Bold=1,Alignment=2,MarginV=115,MarginL=25,MarginR=25';
+        const subtitleStyle = 'FontName=Arial,FontSize=42,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=4.2,Shadow=2.2,Bold=1,Alignment=2,MarginV=172,MarginL=38,MarginR=38';
         filterChains.push(`[0:v]subtitles='${sanitizedSrt}':force_style='${subtitleStyle}'[v]`);
       }
       mapArgs.push('-map', '[v]');
@@ -260,7 +261,7 @@ function buildClipFilter({ inputIndex, outputLabel, reframe = {}, hflip, ptsFact
     const focusX = clampNumber(reframe.focusX, 0, 1, 0.5).toFixed(3);
     const focusY = clampNumber(reframe.focusY, 0, 1, 0.55).toFixed(3);
     return [
-      `[${inputIndex}:v]${preFlip}scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280:(iw-720)*${focusX}:(ih-1280)*${focusY},${finish}[${outputLabel}]`
+      `[${inputIndex}:v]${preFlip}scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920:(iw-1080)*${focusX}:(ih-1920)*${focusY},${finish}[${outputLabel}]`
     ];
   }
 
@@ -270,8 +271,8 @@ function buildClipFilter({ inputIndex, outputLabel, reframe = {}, hflip, ptsFact
   // Put the source into a larger central square stage, matching the visible product area users expect.
   return [
     `[${inputIndex}:v]${preFlip}split=2[bgsrc${inputIndex}][fgsrc${inputIndex}]`,
-    `[bgsrc${inputIndex}]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,boxblur=18:8,eq=brightness=-0.12:saturation=0.85[bg${inputIndex}]`,
-    `[fgsrc${inputIndex}]scale=720:720:force_original_aspect_ratio=increase,crop=720:720:(iw-720)*${focusX}:(ih-720)*${focusY},setsar=1[fg${inputIndex}]`,
+    `[bgsrc${inputIndex}]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=24:12,eq=brightness=-0.12:saturation=0.85[bg${inputIndex}]`,
+    `[fgsrc${inputIndex}]scale=1080:1560:force_original_aspect_ratio=increase,crop=1080:1560:(iw-1080)*${focusX}:(ih-1560)*${focusY},setsar=1[fg${inputIndex}]`,
     `[bg${inputIndex}][fg${inputIndex}]overlay=(W-w)/2:(H-h)/2,${finish}[${outputLabel}]`,
   ];
 }

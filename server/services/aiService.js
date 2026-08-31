@@ -10,11 +10,43 @@ function getEffectiveModel() {
   return envModel;
 }
 
-function getAiClientConfig(apiKeyOverride) {
+function getAiClientConfig({ apiKeyOverride, aiProvider = 'gemini' } = {}) {
   const geminiKey = (process.env.GEMINI_API_KEY || '').trim();
   const aiveneKey = (apiKeyOverride || process.env.AIVENE_API_KEY || '').trim();
 
-  // If GEMINI_API_KEY is configured in .env, prioritize Google Gemini (100% Free, High Quota & Fast)
+  // If user explicitly selected Aivene in Settings:
+  if (aiProvider === 'aivene') {
+    if (aiveneKey) {
+      const model = getEffectiveModel();
+      return {
+        client: new OpenAI({
+          apiKey: aiveneKey,
+          baseURL: 'https://api.aivene.com/v1',
+          timeout: 120000,
+        }),
+        model,
+        provider: 'Aivene',
+        isGemini: false,
+      };
+    }
+    // Fallback to Gemini if Aivene key is missing
+    if (geminiKey) {
+      console.warn('[AIService] Aivene key missing in .env. Falling back to Google Gemini...');
+      const model = (process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
+      return {
+        client: new OpenAI({
+          apiKey: geminiKey,
+          baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+          timeout: 120000,
+        }),
+        model,
+        provider: 'Google Gemini (Fallback)',
+        isGemini: true,
+      };
+    }
+  }
+
+  // Default: Google Gemini 2.5 Flash (100% Free, High Quota & Fast)
   if (geminiKey) {
     const model = (process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
     return {
@@ -29,7 +61,9 @@ function getAiClientConfig(apiKeyOverride) {
     };
   }
 
+  // Fallback to Aivene if Gemini key is missing
   if (aiveneKey) {
+    console.warn('[AIService] GEMINI_API_KEY not found in .env. Falling back to Aivene...');
     const model = getEffectiveModel();
     return {
       client: new OpenAI({
@@ -38,7 +72,7 @@ function getAiClientConfig(apiKeyOverride) {
         timeout: 120000,
       }),
       model,
-      provider: 'Aivene',
+      provider: 'Aivene (Fallback)',
       isGemini: false,
     };
   }
@@ -84,6 +118,7 @@ function formatApiError(err, modelName = 'AI', provider = 'AI') {
  */
 export async function selectHighlightWithGeminiFlash({
   apiKey,
+  aiProvider = 'gemini',
   frames,
   videoMetadata,
   productTitle,
@@ -92,7 +127,7 @@ export async function selectHighlightWithGeminiFlash({
   allowFallbackClips = false,
   onProgress = () => {}
 }) {
-  const { client, model: activeModel, provider } = getAiClientConfig(apiKey);
+  const { client, model: activeModel, provider } = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
 
   onProgress({
     step: 'gemini_vision',
@@ -350,6 +385,7 @@ Return strict JSON in this format:
  */
 export async function generateAdAdvisorScriptWithGemini({
   apiKey,
+  aiProvider = 'gemini',
   trimmedFrames,
   videoMetadata,
   productTitle,
@@ -359,7 +395,7 @@ export async function generateAdAdvisorScriptWithGemini({
   segmentDuration = 45,
   onProgress = () => {}
 }) {
-  const { client, model: activeModel, provider } = getAiClientConfig(apiKey);
+  const { client, model: activeModel, provider } = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
 
   onProgress({
     step: 'gpt_scripting',

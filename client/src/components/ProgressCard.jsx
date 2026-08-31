@@ -160,21 +160,21 @@ export default function ProgressCard({ progressState, onRetry, isLoading }) {
               <div className="font-bold flex items-center justify-between text-amber-300 mb-1.5">
                 <span className="flex items-center gap-1.5">
                   <CreditCard className="w-4 h-4 text-amber-400" />
-                  Saldo / Kuota Aivene API Tidak Mencukupi
+                  Saldo / Kuota AI API Tidak Mencukupi
                 </span>
                 <a
                   href="https://aistudio.google.com"
                   target="_blank"
                   rel="noreferrer"
-                  className="text-[11px] underline text-amber-300 hover:text-white flex items-center gap-1"
+                  className="text-[11px] underline text-emerald-300 hover:text-white flex items-center gap-1"
                 >
-                  <span>Cek Akun Aivene</span>
+                  <span>Google AI Studio</span>
                   <ExternalLink className="w-3 h-3" />
                 </a>
               </div>
               <p className="text-[11px] text-slate-300 leading-relaxed">
-                Panggilan AI berhenti karena saldo kredit Aivene habis. Data formulir (Judul, Deskripsi, Link) dan video yang sudah diunduh <strong>tidak hilang dan tersimpan aman</strong>.
-                Silakan top-up saldo atau perbarui API Key pada kolom di atas, lalu klik <strong>"Coba Lagi (Retry)"</strong>.
+                Panggilan AI berhenti karena kuota atau batas permintaan tercapai. Data formulir dan video yang sudah diunduh <strong>tidak hilang dan tersimpan aman</strong>.
+                Pastikan <code className="text-emerald-300 font-mono">GEMINI_API_KEY</code> terpasang di <code className="text-slate-200">server/.env</code> untuk 1.500 permintaan gratis per hari, lalu klik <strong>"Coba Lagi (Retry)"</strong>.
               </p>
             </div>
           ) : (

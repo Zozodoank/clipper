@@ -2,7 +2,7 @@
 
 A local web application built with **React (Vite)** and **Node.js (Express)** that automates transforming YouTube videos into viral, high-converting **9:16 vertical reels** for **Shopee Affiliate Marketing**.
 
-Powered by **Aivene gpt-4o-mini** (30-60s faceless visual highlight clipping, product-aware crop focus, and Ad Advisor scripting), **yt-dlp**, and **FFmpeg** anti-detection rendering with voiceover upload and bottom-safe synchronized subtitle burning.
+Powered by **Google Gemini 2.5 Flash** (100% Free - 1,500 video/day for faceless product clipping, crop focus, and Ad Advisor scripting) with **Aivene AI** as fallback, **yt-dlp**, and **FFmpeg** anti-detection rendering with voiceover upload and synchronized subtitle burning.
 
 ---
 
@@ -11,19 +11,19 @@ Powered by **Aivene gpt-4o-mini** (30-60s faceless visual highlight clipping, pr
 ```mermaid
 flowchart TD
     subgraph TAHAP 1: Clipping & Scripting AI
-        A[Judul & Deskripsi Produk + URL YouTube + Link Shopee] --> B[yt-dlp: Unduh 1080p]
-        B --> C[FFmpeg: Ekstraksi Frame Sumber]
-        C --> D[GPT-4o Mini: Pilih Highlight Faceless + Fokus Crop Produk]
-        D --> E[FFmpeg: Render Crop Produk/Tangan 9:16 Tanpa Suara -an]
+        A[Judul & Deskripsi Produk + URL YouTube + Link Shopee] --> B[yt-dlp: Unduh Ringan 360p]
+        B --> C[FFmpeg: Ekstraksi 36 Frame Sumber]
+        C --> D[Google Gemini 2.5 Flash: Pilih Highlight Faceless + Fokus Crop Produk]
+        D --> E[yt-dlp: Unduh 1080p Full HD + FFmpeg Render Crop 9:16]
         E --> F[FFmpeg: Ekstraksi Frame Video Potongan]
-        F --> G[GPT-4o Mini: Buat Kotak Scene, Context & Naskah Akurat]
+        F --> G[Google Gemini 2.5 Flash: Buat Kotak Scene, Context & Naskah Akurat]
         G --> H[Preview 9:16 Muted Clip + Kotak Scene + Naskah]
     end
 
     subgraph TAHAP 2: Upload Voiceover & Burn Subtitle
         H --> I[User Generate TTS di Google AI Studio]
         I --> J[User Upload File .mp3 ke Aplikasi]
-        J --> K[Backend: Generate Subtitle Sinkron .srt]
+        J --> K[Backend: Generate Subtitle Sinkron .ass]
         K --> L[FFmpeg: Gabung Audio + Bakar Subtitle Kontras]
         L --> M[Video Final 9:16 Siap Upload + Download Button]
     end
@@ -41,15 +41,16 @@ flowchart TD
 
 ---
 
-## 🚀 Cara Menjalankan Aplikasi Secara Lokal
+## 🚀 Cara Menjalankan Aplikasi Secara Lokal / Termux
 
 ### 1. Buka Terminal di Folder Proyek
-```powershell
+```bash
 cd "c:\Users\SEMOGA AWET\Documents\clipper"
+# atau di Termux: cd ~/clipper
 ```
 
 ### 2. Jalankan Server & Client Bersamaan
-```powershell
+```bash
 npm run dev
 ```
 
@@ -62,14 +63,13 @@ npm run dev
 ## 📱 Panduan Penggunaan 2-Tahap
 
 1. **Tahap 1 (Clipping & Scripting)**:
-   - Pastikan `AIVENE_API_KEY` sudah terisi di file `server/.env`.
+   - Pastikan `GEMINI_API_KEY` sudah terisi di file `server/.env` (Dapatkan gratis di [aistudio.google.com](https://aistudio.google.com)).
    - Masukkan **Judul / Nama Produk** (Contoh: *Mini Portable Blender USB 350ml Rechargeable*).
    - Masukkan **Deskripsi & Spesifikasi Produk** (Poin penting & keunggulan barang).
    - Masukkan **YouTube Video URL** dan **Shopee Affiliate Link**.
    - Klik **"Generate Kotak Scene & Video 9:16"**.
-   - **GPT-4o Mini** memotong segmen 30-60 detik yang faceless, memilih fokus crop produk/tangan, dan menghindari teks bawaan video.
-   - **FFmpeg** merender video 9:16 penuh tanpa suara (`-an`) tanpa bar hitam besar, dengan crop area atas untuk menghindari wajah creator.
-   - **GPT-4o Mini** membuat Kotak Scene, Sample Context, dan Naskah Voiceover yang akurat sesuai detail produk Anda.
+   - **Google Gemini 2.5 Flash** menganalisis 36 frame visual, memilih cuplikan peragaan produk tanpa wajah, dan membuat Kotak Scene & Naskah Ad Advisor.
+   - **FFmpeg** merender video 9:16 bersih tanpa audio bawaan YouTube.
 2. **Tahap 2 (Upload Voiceover & Finalisasi)**:
    - Buka tab **Prompt Google AI Studio** atau **Naskah Voiceover** dan copy teksnya.
    - Generate audio TTS di [Google AI Studio](https://aistudio.google.com) lalu download file `.mp3`.
@@ -79,72 +79,11 @@ npm run dev
 
 ---
 
----
-
-## ☁️ Panduan Lengkap: Menjalankan di GitHub Codespaces / Cloud Server
-
-Menjalankan backend di cloud server (seperti GitHub Codespaces / Azure / AWS) memerlukan penanganan khusus karena YouTube secara aktif memblokir IP Datacenter. Berikut adalah prosedur resmi dan teruji agar pencarian dan pengunduhan video berjalan 100% lancar:
-
-```
-                  ┌─────────────────────────────────────────────────────────┐
-                  │                 GITHUB CODESPACES                       │
-                  │                                                         │
-   [Search Video] ├─► RapidAPI (yt-api.p.rapidapi.com) ───────────────────► │
-                  │                                                         │
- [Download Video] ├─► yt-dlp + Node JS Runtime + EJS Solver                 │
-                  │        │                                                │
-                  │        ▼                                                │
-                  │   Cloudflare WARP (socks5://127.0.0.1:40000)            │
-                  │        │                                                │
-                  │        ▼                                                │
-                  │   Client Spoofing (android_vr, android, ios, web) ────► │
-                  └─────────────────────────────────────────────────────────┘
-```
-
----
-
-### 1. Konfigurasi Environment (`server/.env`)
-
-Buat file `server/.env` di Codespace dengan konfigurasi berikut:
-
-```env
-PORT=5000
-
-# API Key untuk AI Scripting & Visual Analysis
-AIVENE_API_KEY=your_aivene_api_key_here
-
-# RapidAPI (Digunakan untuk Search Video & Download Stream Delegasi)
-RAPIDAPI_KEY=your_rapidapi_key_here
-RAPIDAPI_HOST=yt-api.p.rapidapi.com
-
-# (Opsional) Cobalt API Delegasi Ekstraksi (Bebas Blokir 100%)
-# COBALT_API_URL=https://your-cobalt-instance.up.railway.app
-# COBALT_API_KEY=your_optional_cobalt_token
-
-# (Opsional) Residential Proxy Rotasi IP Asli (Bukan Datacenter VPN)
-# RESIDENTIAL_PROXY=http://username:password@proxy-provider.com:port
-```
-
----
-
-### 2. Arsitektur 3-Tier Multi-Delegasi Downloader
-
-Backend secara otomatis menggunakan 3 lapisan pengunduhan video:
-1. **Tier 1 (Cobalt API):** Jika `COBALT_API_URL` diatur, backend akan mengirim request ke instance Cobalt untuk mengekstrak dan mengunduh video tanpa batasan scraping.
-2. **Tier 2 (RapidAPI Stream Extractor):** Jika `RAPIDAPI_KEY` aktif, backend mengekstrak link stream langsung dari cluster RapidAPI dan mengunduh file video mentah tanpa login.
-3. **Tier 3 (Direct Client Spoofing `ios, tv, android, web`):** Fallback yt-dlp native dengan parameter human-like:
-   - `--sleep-requests 5` : Jeda 5 detik tiap request fragment/api.
-   - `--sleep-interval 5` & `--max-sleep-interval 10` : Jeda acak 5-10 detik antar video untuk mensimulasikan jeda penelusuran manusia normal.
-   - `--limit-rate 5M` : Membatasi bandwidth download maksimum 5MB/s agar traffic wajar seperti streaming video biasa dan tidak memicu alarm DDoS/Scraping rakus.
-   - `--proxy` : Otomatis menggunakan `RESIDENTIAL_PROXY` jika dikonfigurasi di `server/.env`.
-
----
-
-### 4. Mode Hemat Kuota (Smart Two-Stage Download untuk Android / Termux)
+## ☁️ Panduan Codespaces & Termux (Hemat Kuota)
 
 Aplikasi secara default mengaktifkan fitur **Smart Two-Stage Download** untuk menghemat kuota internet hingga **90%**:
 1. **Tahap 1 (Analisa Ringan 360p):** Video diunduh dalam format ultra-ringan (hanya berukuran **~1 - 3 MB**) untuk diekstrak framenya dan dianalisis oleh AI Vision.
-2. **Eliminasi Cepat:** Jika kandidat video tidak cocok (ditolak karena ada wajah manusia/bukan review produk), kandidat langsung dibuang. Kuota yang terpakai **hanya ~1.5 MB** (bukan 50 MB!).
+2. **Eliminasi Cepat:** Jika kandidat video tidak cocok, kandidat langsung dibuang tanpa mengunduh video berat.
 3. **Tahap 2 (Unduh 1080p Full HD HANYA untuk Video yang Lolos):** Begitu AI memvalidasi video layak dipotong, barulah sistem mendownload video 1080p Full HD asli untuk proses pemotongan 9:16 vertikal dan dubbing voiceover.
 
 *(Opsional)* Anda dapat mengatur `LOW_DATA_MODE=true` atau `LOW_DATA_MODE=false` di file `server/.env`.

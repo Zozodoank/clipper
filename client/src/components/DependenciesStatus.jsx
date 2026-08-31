@@ -6,7 +6,8 @@ export default function DependenciesStatus({ status, onRefresh, loading }) {
 
   const ffmpegOk = status?.dependencies?.ffmpeg?.available;
   const ytdlpOk = status?.dependencies?.ytdlp?.available;
-  const aiveneOk = status?.aiveneConfigured;
+  const geminiOk = status?.geminiKeyConfigured;
+  const aiveneOk = status?.aiveneKeyConfigured;
 
   return (
     <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -44,18 +45,29 @@ export default function DependenciesStatus({ status, onRefresh, loading }) {
 
         <span className="text-slate-500">|</span>
 
-        {/* Aivene API status */}
+        {/* Gemini API (Default) */}
         <div className="flex items-center gap-1.5">
-          {aiveneOk ? (
+          {geminiOk ? (
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
           ) : (
             <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
           )}
-          <span className="text-slate-300 font-mono">Aivene API</span>
-          <span className={`px-1.5 py-0.5 rounded text-[10px] ${aiveneOk ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
-            {aiveneOk ? 'Terhubung (.env)' : 'Missing in .env'}
+          <span className="text-slate-300 font-mono font-medium">Gemini (Default)</span>
+          <span className={`px-1.5 py-0.5 rounded text-[10px] ${geminiOk ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
+            {geminiOk ? 'Terhubung (.env)' : 'Missing in .env'}
           </span>
         </div>
+
+        {/* Aivene API (Fallback) */}
+        {aiveneOk && (
+          <div className="hidden sm:flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="text-slate-300 font-mono">Aivene</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] bg-indigo-500/10 text-indigo-300">
+              Cadangan
+            </span>
+          </div>
+        )}
       </div>
 
       <button

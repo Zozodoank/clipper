@@ -4,7 +4,9 @@ import https from 'https';
 import { searchYouTubeVideos, extractVideoId } from './downloader.js';
 
 export const DEFAULT_AUTO_KEYWORDS = [
-  // --- ALAT DAPUR & PEMOTONG (Food Prep & Choppers) ---
+  // =========================================================================
+  // 1. ALAT DAPUR, PEMOTONG & FOOD PREP (Kitchen Prep & Choppers)
+  // =========================================================================
   'chopper mini elektrik portable viral',
   'chopper manual tarik serbaguna viral',
   'alat potong sayur multifungsi slicer',
@@ -23,8 +25,32 @@ export const DEFAULT_AUTO_KEYWORDS = [
   'cetakan bakso manual praktis serbaguna',
   'alat pengupas kulit udang praktis',
   'alat pembuang biji apel buah praktis',
+  'alat pemotong nanas spiral stainless',
+  'alat pengiris daging beku manual slicer',
+  'alat perajang bawang manual putar praktis',
+  'alat pencacah daging manual serbaguna',
+  'alat pelubang kelapa muda praktis stainless',
+  'parutan wortel kentang 6 in 1 multifungsi',
+  'alat pencabut bulu ayam ikan stainless',
+  'alat pemotong alpukat 3 in 1 praktis',
+  'alat pengiris telur rebus praktis stainless',
+  'alat pemotong jagung serut stainless',
+  'alat pengupas sisik ikan stainless praktis',
+  'alat pemecah cangkang kepiting walnut',
+  'blender kapsul serbaguna mini cutter',
+  'alat pelumat kentang potato masher stainless',
+  'alat pengiris mentega keju butter slicer',
+  'alat pemeras santan kelapa manual mini',
+  'alat penusuk daging tenderizer empuk',
+  'gunting daging tulang unggas heavy duty',
+  'alat pemotong pizza roda stainless bulat',
+  'alat pembuka kaleng putar praktis aman',
+  'alat pembuka tutup botol toples serbaguna',
+  'parutan serbaguna wadah penampung baskom',
 
-  // --- PENYIMPANAN & WADAH DAPUR (Kitchen Organizers & Storage) ---
+  // =========================================================================
+  // 2. PENYIMPANAN, WADAH & ORGANIZER DAPUR (Kitchen Storage & Organizers)
+  // =========================================================================
   'botol minyak kuas silikon 2 in 1 anti tumpah',
   'botol semprot minyak spray olive oil praktis',
   'tempat bumbu putar serbaguna dapur viral',
@@ -42,8 +68,33 @@ export const DEFAULT_AUTO_KEYWORDS = [
   'botol bumbu dapur sendok terintegrasi praktis',
   'wadah bumbu 4 sekat praktis sendok',
   'rak gantungan cangkir gelas dapur tempel',
+  'tempat pisau dapur magnetic strip dinding',
+  'wadah penyimpanan sayur kulkas drain basket',
+  'kotak bumbu dapur putar 360 derajat',
+  'dispenser minyak goreng kaca otomatis tuang',
+  'rak sudut dapur susun serbaguna stainless',
+  'wadah kantong teh kopi gula kedap udara',
+  'kotak penyimpanan bawang cabai mini kulkas',
+  'rak bawah wastafel dapur expandable adjustable',
+  'rak piring stainless susun 2 tingkat tirisan',
+  'organizer kulkas laci gantung slide drawer',
+  'wadah bumbu dapur kaca label estetik',
+  'dispenser air galon meja mini keran',
+  'rak gantung spons cuci piring kran wastafel',
+  'tatakan sendok spatula silikon anti kotor meja',
+  'rak penyimpanan talenan nampan dapur standing',
+  'toples kaca kedap udara tutup bambu estetik',
+  'dispenser sereal biji-bijian putar otomatis',
+  'tempat tisu gulung dapur magnetik kulkas',
+  'rak gantung gelas wine cangkir bawah lemari',
+  'wadah minyak bekas jelantah saringan stainless',
+  'kotak organizer bumbu sachet kulkas dapur',
+  'rak bumbu dapur tingkat tangga akrilik estetik',
+  'penutup makanan payung tudung saji lipat',
 
-  // --- PERALATAN MASAK MINI & BAKING (Mini Cooking & Baking) ---
+  // =========================================================================
+  // 3. PERALATAN MASAK MINI & BAKING (Mini Cooking & Baking Gadgets)
+  // =========================================================================
   'wajan penggorengan mini telur 4 lubang anti lengket',
   'panci listrik mini serbaguna portable',
   'alat pembuat waffle mini elektrik praktis',
@@ -58,8 +109,36 @@ export const DEFAULT_AUTO_KEYWORDS = [
   'alat pencetak kue kering biskuit praktis',
   'capitan makanan silikon stainless food grade',
   'termometer makanan digital masak dapur',
+  'alat pembuat crepes mini elektrik anti lengket',
+  'panci kukus mini elektrik serbaguna',
+  'cetakan takoyaki mini anti lengket teflon',
+  'wajan grill pan mini anti lengket pemanggang',
+  'mixer tangan mini elektrik portable usb',
+  'frother pengocok susu kopi mini elektrik',
+  'kertas baking parchment paper air fryer bulat',
+  'silikon pot air fryer reusable anti lengket',
+  'cetakan es loli popsicle silikon bpa free',
+  'dispenser adonan kue pencet pancake batter',
+  'spatula silikon tahan panas food grade set',
+  'kuas minyak silikon baking tahan panas',
+  'cetakan donat manual praktis adonan',
+  'rolling pin kayu silikon penggiling adonan',
+  'cetakan puding silikon bentuk bunga estetik',
+  'sendok takar bumbu dapur digital lcd',
+  'saringan tepung stainless putar manual praktis',
+  'pemanggang sandwich toaster mini elektrik',
+  'cetakan sushi roll manual praktis bazooka',
+  'cetakan onigiri nasi bento segitiga praktis',
+  'alat tusuk sate praktis pembuat sate cepat',
+  'cetakan martabak mini 7 lubang anti lengket',
+  'panci rebus mie telur mini stainless gagang',
+  'penutup silikon microwave anti cipratan',
+  'tatakan kompor gas pelindung api hemat gas',
+  'pematik api kompor gas elektrik usb recharge',
 
-  // --- ALAT KEBERSIHAN RUMAH & DAPUR (Cleaning Gadgets) ---
+  // =========================================================================
+  // 4. ALAT KEBERSIHAN RUMAH & DAPUR (Cleaning Gadgets)
+  // =========================================================================
   'alat pembersih sikat elektrik mini multifungsi',
   'dispenser sabun cuci piring otomatis sponge pump',
   'alat pel lantai semprot spray mop praktis',
@@ -76,8 +155,29 @@ export const DEFAULT_AUTO_KEYWORDS = [
   'alat pembersih saluran wastafel mampet fleksibel',
   'sikat pembersih keyboard earphone multifungsi',
   'sikat cuci sepatu otomatis multifungsi praktis',
+  'lap microfiber cuci piring serap air tebal',
+  'alat pembersih debu kolong kasur fleksibel panjang',
+  'sikat pembersih celah ubin keramik kawat baja',
+  'alat penyedot debu mini vacuum meja usb',
+  'pembersih bulu hewan baju karpet lint remover',
+  'sikat pembersih kawat sarang nyamuk jendela',
+  'alat pel lantai mikrofiber jepit otomatis peras',
+  'sikat pembersih dispenser galon air elektrik',
+  'spons kawat cuci piring sabut stainless anti gores',
+  'kain lap nano berserat pembersih minyak dapur',
+  'alat pembersih kerak wajan panci serbaguna',
+  'pembersih jamur kaca jendela kamar mandi',
+  'sikat sudut kamar mandi bentuk segitiga putar',
+  'penghisap debu wireless vacuum cleaner portable',
+  'pembersih lantai robot otomatis sweep vacuum',
+  'sikat pembersih blender mata pisau dapur',
+  'wiper pembersih lantai silikon pengeruk air',
+  'sikat pembersih rantai motor sepeda multifungsi',
+  'alat semprot cuci mobil busa salju manual',
 
-  // --- ORGANIZER & GADGET RUMAH TANGGA (Home Gadgets & Organizers) ---
+  // =========================================================================
+  // 5. ORGANIZER & GADGET RUMAH TANGGA (Home Gadgets & Organizers)
+  // =========================================================================
   'gantungan tempel dinding serbaguna kait transparan',
   'organizer kabel klip meja dinding rapi',
   'kotak organizer kabel colokan anti debu',
@@ -96,7 +196,172 @@ export const DEFAULT_AUTO_KEYWORDS = [
   'tutup saringan lubang pembuangan silikon',
   'rak sepatu lipat susun portable praktis',
   'timbangan badan digital mini led akurat',
+  'kantong vakum pakaian kompres hemat lemari',
+  'kotak penyimpanan selimut baju serbaguna zipper',
+  'gantungan baju ajaib 9 lubang magic hanger',
+  'lampu tidur proyektor bintang galaksi led',
+  'rak gantung celana jins 5 tingkat hemat tempat',
+  'lampu meja belajar led lipat touch sensor',
+  'gantungan tas jilbab lemari susun hanger',
+  'penjepit sprei kasur elastis anti geser lepas',
+  'stop kontak putar anti petir usb fast charge',
+  'kotak obat p3k mini organizer susun sekat',
+  'tempat sampah pintar sensor gerak otomatis',
+  'rak gantung pintu organizer sepatu serbaguna',
+  'diffuser lilin elektrik aroma terapi ruangan',
+  'penjepit kantong sampah gantungan wastafel',
+  'gembok koper kombinasi angka tsa anti maling',
+  'perangkap nyamuk elektrik led uv suction',
+  'rak susun meja kantor atk organizer laci',
+  'kotak tisu serbaguna holder handphone meja',
+  'jam weker digital led temperatur suhu meja',
+  'rak pajangan dinding heksagonal minimalis',
+  'gantungan kunci tempel magnetik dinding estetik',
+  'pengganjal pintu karet silikon stopper lantai',
+
+  // =========================================================================
+  // 6. KAMAR MANDI, SANITASI & LAUNDRY (Bathroom & Laundry Gadgets)
+  // =========================================================================
+  'keset kaki diatomite menyerap air cepat kering',
+  'kepala shower turbo propeller hemat air bertekanan',
+  'dispenser sabun cair otomatis sensor sentuh',
+  'gantungan handuk tempel dinding lipat stainless',
+  'tempat sikat gigi sterilizer uv anti bakteri',
+  'tutup saluran floor drain anti bau dan serangga',
+  'spons mandi pengangkat sel kulit mati daki',
+  'pemberat tirai kamar mandi magnetik anti air',
+  'gantungan shower head tempel dinding adjustable',
+  'tempat sabun batang tirisan bentuk daun unik',
+  'kantong cuci baju jaring mesin cuci bra laundry net',
+  'jepitan jemuran baju stainless steel anti karat',
+  'sikat punggung mandi silikon gagang panjang',
+  'papan gilasan baju silikon mini wastafel',
+  'rak gantung pengering sepatu gantungan balkon',
+  'sarung tangan cuci piring silikon bergerigi',
+  'dispenser plastik pembungkus sepatu otomatis',
+  'alat pencuci kuas makeup elektrik cleaner dryer',
+  'rak gantung pengering pakaian jemuran lipat dinding',
+  'penyaring rambut kotoran mesin cuci laundry filter',
+
+  // =========================================================================
+  // 7. GADGET MEJA KERJA, ELEKTRONIK & GAYA HIDUP (Desk, Tech & Lifestyle)
+  // =========================================================================
+  'stand holder handphone lipat meja aluminium',
+  'stand laptop portable lipat pendingin aluminium',
+  'kipas angin mini portable leher neck fan usb',
+  'kipas angin meja portable baterai rechargeable',
+  'mouse pad extended meja kerja kulit pu anti air',
+  'lampu led strip rgb kamar tv usb sensor suara',
+  'alat pembersih layar handphone semprot microfiber',
+  'kabel data 3 in 1 magnetik fast charging',
+  'holder handphone mobil magnetik ac dashboard',
+  'vacuum cleaner mobil wireless portable mini',
+  'tempat sampah mini mobil cup holder praktis',
+  'charger mobil fast charging usb type c led',
+  'alat pijat leher pundak elektrik ems massage',
+  'alat pijat mata elektrik kompres hangat relaksasi',
+  'gunting kuku elektrik bayi dewasa aman otomatis',
+  'alat cukur bulu hidung telinga elektrik portable',
+  'alat pembersih komedo pori wajah vakum cleaner',
+  'face roller guasha pijat wajah elektrik getar',
+  'catokan rambut mini portable travel anti rusak',
+  'pelipat baju praktis lipat pakaian instan',
+  'botol minum motivasi 2 liter penanda waktu',
+  'payung lipat otomatis buka tutup tombol anti uv',
+  'bantal leher memory foam travel portable empuk',
+  'timbangan koper digital gantung mini praktis',
+  'kacamata anti radiasi sinar biru blueray komputer',
+  'alat pengering sepatu elektrik timer otomatis',
+  'pelindung kabel charger spiral silikon kartun',
+  'pouch kabel organizer travel waterproof gadget bag',
+  'ring light mini selfie clip on handphone led',
+  'mikrofon wireless clip on type c podcast rekaman',
+
+  // =========================================================================
+  // 8. ALAT PERTUKANGAN MINI & PERBAIKAN RUMAH (Mini Tools & DIY)
+  // =========================================================================
+  'obeng elektrik mini set presisi rechargeable usb',
+  'meteran laser digital ukur jarak presisi portable',
+  'lem perekat serbaguna super glue serbaguna kuat',
+  'lakban tambal bocor atap pipa anti air aluminium',
+  'stiker tambal kasur sofa kulit jok mobil sofa patch',
+  'alat pelubang sabuk kulit ikat pinggang putar',
+  'palu mini serbaguna multifungsi multi tools',
+  'tang lipat multifungsi stainless pisau obeng camping',
+  'lem bakar tembak glue gun mini praktis diy',
+  'klem penjepit sudut siku kayu 90 derajat diy',
+  'alat pengangkat barang berat perabot roda ganjal',
+  'lakban nano bening double tape serbaguna kuat cuci',
+  'senter led super terang usb rechargeable zoom',
+  'gantungan kunci perkakas 18 in 1 snowflake tool',
+  'gergaji tangan lipat serbaguna kayu dahan pohon',
+  'kunci pas universal multifungsi serbaguna baut',
+  'alat pendeteksi kabel dinding wall scanner led',
+  'karet pelindung kaki meja kursi silikon peredam',
+  'stiker wallpaper dinding 3d bata busa foam kedap',
+  'alat semprot tanaman busa manual bertekanan'
 ];
+
+/**
+ * Returns a randomized, expansive array of 1000+ unique product keywords
+ * by combining our curated base keywords with high-intent e-commerce product modifiers.
+ */
+export function getAutoKeywords(limit = 1000) {
+  const combinedSet = new Set(DEFAULT_AUTO_KEYWORDS);
+
+  const productNouns = [
+    'chopper', 'blender', 'parutan', 'slicer', 'pisau', 'gunting', 'pengupas',
+    'botol minyak', 'rak bumbu', 'dispenser beras', 'kotak telur', 'sealer plastik',
+    'wajan mini', 'panci listrik', 'sutil silikon', 'timbangan digital', 'cetakan es',
+    'sikat elektrik', 'dispenser sabun', 'spray mop', 'pel putar', 'pel mini',
+    'kemoceng microfiber', 'sikat botol', 'wiper kaca', 'sikat kloset', 'lint roller',
+    'magic sponge', 'pembersih wastafel', 'lampu sensor', 'pompa galon', 'humidifier',
+    'dispenser odol', 'organizer pakaian', 'gantungan baju', 'rak sepatu', 'vacuum cleaner',
+    'stand hp', 'stand laptop', 'kipas mini', 'alat pijat', 'catokan mini', 'botol minum',
+    'payung lipat', 'bantal leher', 'obeng elektrik', 'lem serbaguna', 'lakban nano',
+    'shower turbo', 'sikat punggung mandi', 'tutup saluran silikon', 'lampu tidur proyektor',
+    'alat pembuat dumpling', 'pemeras jeruk lemon', 'pemotong kentang spiral', 'cetakan bakso',
+    'alat pengasah pisau', 'termometer makanan', 'frother pengocok susu', 'silikon air fryer',
+    'kotak organizer kabel', 'stop kontak usb', 'jam weker digital', 'keset diatomite',
+    'alat pembersih komedo', 'gunting kuku elektrik', 'alat pengering sepatu', 'meteran laser'
+  ];
+
+  const modifiers = [
+    'mini portable viral',
+    'multifungsi serbaguna',
+    'praktis anti tumpah',
+    'otomatis rechargeable usb',
+    'stainless anti karat',
+    'silikon food grade',
+    'tempel dinding tanpa paku',
+    'lipat hemat tempat',
+    'hemat listrik estetik',
+    'rekomendasi racun shopee',
+    'kualitas premium awet',
+    'unik berfaedah murah',
+    'praktis untuk dapur',
+    'solusi rumah tangga rapi',
+    'review produk viral tiktok',
+    'alat rumah tangga modern'
+  ];
+
+  for (const noun of productNouns) {
+    for (const mod of modifiers) {
+      combinedSet.add(`${noun} ${mod}`);
+      if (combinedSet.size >= limit) break;
+    }
+    if (combinedSet.size >= limit) break;
+  }
+
+  const allKeywords = Array.from(combinedSet);
+  // Shuffle array thoroughly
+  for (let i = allKeywords.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [allKeywords[i], allKeywords[j]] = [allKeywords[j], allKeywords[i]];
+  }
+
+  return allKeywords.slice(0, limit);
+}
 
 export const BULKY_EXCLUDE_WORDS = [
   'lemari',
@@ -252,14 +517,14 @@ export async function discoverYouTubeCandidatesForProduct({
   // Varied search intent modifiers to find diverse video angles and avoid picking the same video repeatedly
   const searchModifiers = [
     'review unboxing',
-    'cara pakai demo',
-    'tes fungsi review',
-    'spill racun belanja',
-    'review jujur pemakaian',
-    'unboxing produk viral',
-    'demonstrasi produk',
-    'review',
-    'produk',
+    'cara pakai demo praktis',
+    'tes fungsi review jujur',
+    'spill racun shopee viral',
+    'review pemakaian unboxing',
+    'unboxing produk viral shopee',
+    'demonstrasi cara kerja produk',
+    'review barang unik praktis',
+    'spill barang berfaedah unik',
   ];
 
   // Randomize modifier order slightly so distinct queries are attempted across multiple jobs
@@ -267,9 +532,11 @@ export async function discoverYouTubeCandidatesForProduct({
 
   const queryCandidates = [
     `${compactTitle} ${shuffledModifiers[0]}`,
+    `unboxing ${compactTitle}`,
     `${compactTitle} ${shuffledModifiers[1]}`,
-    `${compactTitle} ${shuffledModifiers[2]}`,
+    `racun shopee ${compactTitle}`,
     `${compactTitle} review`,
+    `spill ${compactTitle}`,
     coreTitle,
   ].filter(Boolean);
 
@@ -291,13 +558,13 @@ export async function discoverYouTubeCandidatesForProduct({
         break;
       }
     }
-    await delayWithJitter(400, 800);
+    await delayWithJitter(300, 600);
   }
 
-  // Fallback: If all results were previously used (rare), search broad query
+  // Fallback: If all results were previously used, search broader query
   if (!candidates.length) {
-    const fallbackResults = await searchYouTubeVideos(`${compactTitle} review`, { limit, onProgress });
-    // Still prioritize non-excluded if any
+    const broaderQuery = productWords.slice(0, 3).join(' ');
+    const fallbackResults = await searchYouTubeVideos(`${broaderQuery} unboxing review`, { limit, onProgress });
     const nonExcluded = (fallbackResults || []).filter((c) => {
       const vid = c.id || extractVideoId(c.url);
       return vid && !excludeSet.has(vid);
@@ -318,8 +585,6 @@ export async function discoverYouTubeCandidatesForProduct({
   const pool = cleanCandidates.length > 0 ? cleanCandidates : candidates;
 
   // Candidate Selection Variety / Weighted Rotation:
-  // If we have multiple high-scoring clean candidates, gently randomize the top tier
-  // so consecutive runs for identical/similar keywords don't always pick candidate #0
   if (pool.length > 1) {
     const topScore = pool[0].matchScore || 0;
     const topTier = pool.filter((c) => (c.matchScore || 0) >= topScore * 0.75);

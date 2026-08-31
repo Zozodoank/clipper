@@ -30,7 +30,8 @@ import {
   discoverShopeeProducts,
   discoverSingleShopeeProduct,
   discoverYouTubeCandidatesForProduct,
-  DEFAULT_AUTO_KEYWORDS
+  DEFAULT_AUTO_KEYWORDS,
+  getAutoKeywords
 } from './services/discoveryService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -145,11 +146,12 @@ function deletePersistedJob(jobId) {
 
 loadJobsFromDisk();
 
-/** Helper: get all YouTube video IDs from existing active & persisted jobs */
+/** Helper: get all YouTube video IDs from existing active & successfully completed jobs */
 function getAllUsedYouTubeVideoIds() {
   const used = new Set();
   for (const job of activeJobs.values()) {
-    if (job.youtubeUrl) {
+    // Only exclude video if the job actually SUCCEEDED or is currently processing
+    if (job.youtubeUrl && (job.stage === 'completed' || job.stage === 'awaiting_voiceover' || job.stage === 'running')) {
       const vid = extractVideoId(job.youtubeUrl);
       if (vid) used.add(vid);
     }
@@ -611,12 +613,8 @@ async function runAutoStage1Worker(run) {
   try {
     updateAutoRun(run, { status: 'running', message: 'Memulai pencarian produk viral Shopee...', progress: 5 });
 
-    // Thoroughly shuffle keywords so each auto run picks varied, fresh product categories
-    const candidateKeywords = [...DEFAULT_AUTO_KEYWORDS];
-    for (let i = candidateKeywords.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [candidateKeywords[i], candidateKeywords[j]] = [candidateKeywords[j], candidateKeywords[i]];
-    }
+    // Thoroughly shuffle 1000+ keywords so each auto run picks varied, fresh product categories
+    const candidateKeywords = getAutoKeywords(1000);
 
     const seenShopeeUrls = new Set();
     const usedYouTubeVideoIds = getAllUsedYouTubeVideoIds();

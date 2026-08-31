@@ -409,7 +409,7 @@ Return strict JSON in this format:
       lastError = err;
       const status = err.status || err.statusCode;
       const msg = (err.message || '').toLowerCase();
-      const isOverloaded = status === 503 || status === 529 || msg.includes('overload') || msg.includes('overloaded');
+      const isOverloaded = status === 429 || status === 503 || status === 529 || msg.includes('overload') || msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('429');
 
       if (isOverloaded && attempt < MAX_RETRIES) {
         console.warn(`[AIService] AI overloaded (attempt ${attempt + 1}). Will retry...`);
@@ -642,7 +642,7 @@ Return strict JSON in this format:
       lastError = err;
       const status = err.status || err.statusCode;
       const msg = (err.message || '').toLowerCase();
-      const isOverloaded = status === 503 || status === 529 || msg.includes('overload') || msg.includes('overloaded');
+      const isOverloaded = status === 429 || status === 503 || status === 529 || msg.includes('overload') || msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('429');
 
       if (isOverloaded && attempt < MAX_RETRIES) {
         console.warn(`[AIService Scripting] AI overloaded (attempt ${attempt + 1}). Will retry...`);

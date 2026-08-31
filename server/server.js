@@ -280,6 +280,8 @@ app.get('/api/health', async (req, res) => {
     activeGeminiModel = 'gemini-3.6-flash';
   }
 
+  const binaryCheck = await checkSystemDependencies();
+
   res.json({
     status: 'ok',
     serverTime: new Date().toISOString(),

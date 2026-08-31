@@ -31,11 +31,28 @@ function loadEnvFromDisk() {
   for (const envPath of envCandidates) {
     if (fs.existsSync(envPath)) {
       try {
-        const parsed = dotenv.parse(fs.readFileSync(envPath, 'utf8'));
+        const raw = fs.readFileSync(envPath, 'utf8').replace(/^\uFEFF/, '');
+        const parsed = dotenv.parse(raw);
         for (const [key, value] of Object.entries(parsed)) {
           const cleaned = cleanEnvKey(value);
           if (cleaned && !cleaned.startsWith('your_') && !cleaned.endsWith('_here')) {
             process.env[key] = cleaned;
+            process.env[key.toUpperCase()] = cleaned;
+          }
+        }
+        // Manual line-by-line fallback parser (handles Android/Google Drive line endings & BOM)
+        const lines = raw.split(/\r?\n/);
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          const eqIdx = trimmed.indexOf('=');
+          if (eqIdx > 0) {
+            const k = trimmed.slice(0, eqIdx).replace(/^\uFEFF/, '').trim();
+            const v = cleanEnvKey(trimmed.slice(eqIdx + 1));
+            if (v && !v.startsWith('your_') && !v.endsWith('_here')) {
+              process.env[k] = v;
+              process.env[k.toUpperCase()] = v;
+            }
           }
         }
       } catch {}

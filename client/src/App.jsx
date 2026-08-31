@@ -73,7 +73,7 @@ export default function App() {
       step: 'start',
       message: overrideJobId
         ? '🔄 Melanjutkan job sebelumnya (Retry)... Video yang sudah diunduh digunakan kembali.'
-        : `Memulai Tahap 1: Analisis AI (${settings.aiProvider === 'aivene' ? 'Aivene' : 'Google Gemini 2.5 Flash'})...`,
+        : `Memulai Tahap 1: Analisis AI (${settings.aiProvider === 'aivene' ? 'Aivene' : 'Google Gemini 3.6 Flash'})...`,
       progress: 5, status: 'running', error: null, isQuotaError: false, canRetry: false,
     });
 
@@ -281,7 +281,7 @@ export default function App() {
                 <h3 className="text-lg font-bold text-white mb-2">Alur 2-Tahap: Google Gemini + FFmpeg</h3>
                 <p className="text-xs text-slate-400 max-w-md leading-relaxed mb-6">
                   1. Masukkan Judul Produk, Deskripsi, URL YouTube, & Link Shopee.<br />
-                  2. <strong className="text-emerald-400">Google Gemini 2.5 Flash</strong> menganalisis 36 frame video panjang dan memilih potongan faceless 5 detik yang fokus produk.<br />
+                  2. <strong className="text-emerald-400">Google Gemini 3.6 Flash</strong> menganalisis 36 frame video panjang dan memilih potongan faceless 5 detik yang fokus produk.<br />
                   3. <strong className="text-indigo-400">FFmpeg</strong> memotong sesuai instruksi AI, menjaga produk full body dalam frame 9:16, lalu AI membuat Kotak Scene & Naskah Ad Advisor.<br />
                   4. Upload audio voiceover dari AI Studio untuk menghasilkan <strong className="text-emerald-400">Video Final + Subtitle</strong>.
                 </p>
@@ -289,7 +289,7 @@ export default function App() {
                   <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
                     <div className="font-bold text-slate-200 flex items-center gap-1.5 mb-1">
                       <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Gemini 2.5 Flash</span>
+                      <span>Gemini 3.6 Flash</span>
                     </div>
                     <p className="text-[11px] text-slate-400">Analisis visual 36 frame gratis</p>
                   </div>
@@ -316,7 +316,7 @@ export default function App() {
       />
 
       <footer className="border-t border-slate-800/60 py-4 bg-slate-950/40 text-center text-xs text-slate-500">
-        <p>Local AI Affiliate Clipper &bull; React + Node.js + FFmpeg &bull; Google Gemini 2.5 Flash &bull; 2-Stage Ad Advisor Pipeline</p>
+        <p>Local AI Affiliate Clipper &bull; React + Node.js + FFmpeg &bull; Google Gemini 3.6 Flash &bull; 2-Stage Ad Advisor Pipeline</p>
       </footer>
     </div>
   );

@@ -73,7 +73,7 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
                   </span>
                 </div>
                 <div className="text-[11px] font-mono text-slate-200 font-semibold mb-1">
-                  gemini-2.5-flash
+                  gemini-3.6-flash
                 </div>
                 <p className="text-[10px] text-slate-400 leading-tight">
                   100% Gratis via Google AI Studio. Kuota 1.500 video/hari, analisis visual 36 frame instan.

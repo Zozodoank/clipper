@@ -2,21 +2,39 @@ import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';
 
+function cleanEnvKey(key) {
+  if (!key) return '';
+  let cleaned = String(key).trim();
+  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+    cleaned = cleaned.slice(1, -1).trim();
+  }
+  return cleaned;
+}
+
 function getEffectiveModel() {
-  const envModel = (process.env.AIVENE_MODEL || process.env.AIVENE_GEMINI_MODEL || '').trim();
-  if (!envModel || envModel === 'gemini-3.7-flash' || envModel === 'gemini-2.5-flash') {
+  const envModel = cleanEnvKey(process.env.AIVENE_MODEL || process.env.AIVENE_GEMINI_MODEL);
+  if (!envModel || envModel.startsWith('gemini-')) {
     return 'qwen3.8-flash';
   }
   return envModel;
 }
 
+function getEffectiveGeminiModel() {
+  const envModel = cleanEnvKey(process.env.GEMINI_MODEL);
+  // Auto-upgrade retired / deprecated model versions to gemini-3.6-flash
+  if (!envModel || envModel === 'gemini-2.5-flash' || envModel === 'gemini-2.0-flash' || envModel === 'gemini-1.5-flash') {
+    return 'gemini-3.6-flash';
+  }
+  return envModel;
+}
+
 function getAiClientConfig({ apiKeyOverride, aiProvider = 'gemini' } = {}) {
-  const geminiKey = (process.env.GEMINI_API_KEY || '').trim();
-  const aiveneKey = (apiKeyOverride || process.env.AIVENE_API_KEY || '').trim();
+  const geminiKey = cleanEnvKey(process.env.GEMINI_API_KEY);
+  const aiveneKey = cleanEnvKey(apiKeyOverride || process.env.AIVENE_API_KEY);
 
   // If user explicitly selected Aivene in Settings:
   if (aiProvider === 'aivene') {
-    if (aiveneKey) {
+    if (aiveneKey && aiveneKey !== 'your_aivene_api_key_here') {
       const model = getEffectiveModel();
       return {
         client: new OpenAI({
@@ -30,9 +48,9 @@ function getAiClientConfig({ apiKeyOverride, aiProvider = 'gemini' } = {}) {
       };
     }
     // Fallback to Gemini if Aivene key is missing
-    if (geminiKey) {
+    if (geminiKey && geminiKey !== 'your_gemini_api_key_here') {
       console.warn('[AIService] Aivene key missing in .env. Falling back to Google Gemini...');
-      const model = (process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
+      const model = getEffectiveGeminiModel();
       return {
         client: new OpenAI({
           apiKey: geminiKey,
@@ -46,9 +64,9 @@ function getAiClientConfig({ apiKeyOverride, aiProvider = 'gemini' } = {}) {
     }
   }
 
-  // Default: Google Gemini 2.5 Flash (100% Free, High Quota & Fast)
-  if (geminiKey) {
-    const model = (process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
+  // Default: Google Gemini (100% Free, High Quota & Fast)
+  if (geminiKey && geminiKey !== 'your_gemini_api_key_here') {
+    const model = getEffectiveGeminiModel();
     return {
       client: new OpenAI({
         apiKey: geminiKey,
@@ -62,7 +80,7 @@ function getAiClientConfig({ apiKeyOverride, aiProvider = 'gemini' } = {}) {
   }
 
   // Fallback to Aivene if Gemini key is missing
-  if (aiveneKey) {
+  if (aiveneKey && aiveneKey !== 'your_aivene_api_key_here') {
     console.warn('[AIService] GEMINI_API_KEY not found in .env. Falling back to Aivene...');
     const model = getEffectiveModel();
     return {

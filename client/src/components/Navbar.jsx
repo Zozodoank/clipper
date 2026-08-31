@@ -138,7 +138,7 @@ export default function Navbar({ onOpenSettings, engineStatus }) {
                   <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
                   <span className="text-slate-300 font-medium">Google Gemini</span>
                   <span className="text-slate-500">|</span>
-                  <span className="text-emerald-400 font-mono">{engineStatus?.geminiModel || 'gemini-2.5-flash'}</span>
+                  <span className="text-emerald-400 font-mono">{engineStatus?.geminiModel || 'gemini-3.6-flash'}</span>
                 </>
               )}
             </div>

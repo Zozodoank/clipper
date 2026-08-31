@@ -47,11 +47,15 @@ const envCandidates = [
   path.join(process.cwd(), '.env.txt')
 ];
 
-for (const envPath of envCandidates) {
-  if (fs.existsSync(envPath)) {
-    dotenv.config({ path: envPath });
+export function reloadEnvironment() {
+  for (const envPath of envCandidates) {
+    if (fs.existsSync(envPath)) {
+      dotenv.config({ path: envPath, override: true });
+    }
   }
 }
+
+reloadEnvironment();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -176,22 +180,34 @@ function isQuotaErrorMessage(msg = '') {
 
 // 1. Health check & dependency verification
 app.get('/api/health', async (req, res) => {
+  reloadEnvironment();
   const binaryCheck = await checkSystemDependencies();
-  const geminiKeySet = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
-  const aiveneKeySet = Boolean(process.env.AIVENE_API_KEY && process.env.AIVENE_API_KEY.trim());
+  const rawGeminiKey = (process.env.GEMINI_API_KEY || '').trim().replace(/^["']|["']$/g, '');
+  const geminiKeySet = Boolean(rawGeminiKey && rawGeminiKey !== 'your_gemini_api_key_here');
+  const rawAiveneKey = (process.env.AIVENE_API_KEY || '').trim().replace(/^["']|["']$/g, '');
+  const aiveneKeySet = Boolean(rawAiveneKey && rawAiveneKey !== 'your_aivene_api_key_here');
 
   const activeAiEngine = geminiKeySet ? 'gemini' : (aiveneKeySet ? 'aivene' : 'none');
+
+  let activeGeminiModel = (process.env.GEMINI_MODEL || '').trim();
+  if (!activeGeminiModel || activeGeminiModel === 'gemini-2.5-flash' || activeGeminiModel === 'gemini-2.0-flash' || activeGeminiModel === 'gemini-1.5-flash') {
+    activeGeminiModel = 'gemini-3.6-flash';
+  }
 
   res.json({
     status: 'ok',
     serverTime: new Date().toISOString(),
     ffmpeg: binaryCheck.ffmpeg,
     ytdlp: binaryCheck.ytdlp,
+    dependencies: {
+      ffmpeg: binaryCheck.ffmpeg,
+      ytdlp: binaryCheck.ytdlp,
+    },
     geminiKeyConfigured: geminiKeySet,
     aiveneKeyConfigured: aiveneKeySet,
     activeAiEngine,
     defaultAiProvider: 'gemini',
-    geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+    geminiModel: activeGeminiModel,
     aiveneModel: process.env.AIVENE_MODEL || 'qwen3.8-flash',
     ready: binaryCheck.ffmpeg.available && binaryCheck.ytdlp.available,
   });
@@ -1105,10 +1121,11 @@ app.post('/api/upload-cookies', express.text({ type: '*/*', limit: '10mb' }), (r
 app.listen(PORT, '0.0.0.0', () => {
   const geminiKey = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : '';
   const aiveneKey = process.env.AIVENE_API_KEY ? process.env.AIVENE_API_KEY.trim() : '';
+  const geminiModel = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
 
-  const activeProvider = geminiKey
-    ? `✨ Google Gemini (Free Tier - 1,500 RPD) [${process.env.GEMINI_MODEL || 'gemini-2.5-flash'}]`
-    : aiveneKey
+  const activeProvider = (geminiKey && geminiKey !== 'your_gemini_api_key_here')
+    ? `✨ Google Gemini (Free Tier - 1,500 RPD) [${geminiModel}]`
+    : (aiveneKey && aiveneKey !== 'your_aivene_api_key_here')
       ? `🤖 Aivene AI [${process.env.AIVENE_MODEL || 'qwen3.8-flash'}]`
       : '❌ None (Set GEMINI_API_KEY or AIVENE_API_KEY in server/.env)';
 
@@ -1116,10 +1133,10 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🎬 Local AI Affiliate Clipper Backend Server`);
   console.log(`🌐 Running at: http://localhost:${PORT}`);
   console.log(`⚡ Active AI Engine: ${activeProvider}`);
-  if (geminiKey) {
+  if (geminiKey && geminiKey !== 'your_gemini_api_key_here') {
     console.log(`🔑 Gemini Key: ${geminiKey.slice(0, 8)}...${geminiKey.slice(-4)} (100% Free & Unlimited 36-frame vision)`);
   }
-  if (aiveneKey) {
+  if (aiveneKey && aiveneKey !== 'your_aivene_api_key_here') {
     console.log(`🔑 Aivene Key: ${aiveneKey.slice(0, 8)}...${aiveneKey.slice(-4)}`);
   }
   console.log(`======================================================\n`);

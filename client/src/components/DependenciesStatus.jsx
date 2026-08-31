@@ -4,10 +4,11 @@ import { CheckCircle2, AlertTriangle, RefreshCw, Cpu, HardDrive } from 'lucide-r
 export default function DependenciesStatus({ status, onRefresh, loading }) {
   if (!status) return null;
 
-  const ffmpegOk = status?.dependencies?.ffmpeg?.available;
-  const ytdlpOk = status?.dependencies?.ytdlp?.available;
+  const ffmpegOk = status?.dependencies?.ffmpeg?.available || status?.ffmpeg?.available;
+  const ytdlpOk = status?.dependencies?.ytdlp?.available || status?.ytdlp?.available;
   const geminiOk = status?.geminiKeyConfigured;
   const aiveneOk = status?.aiveneKeyConfigured;
+  const geminiModel = status?.geminiModel || 'gemini-3.6-flash';
 
   return (
     <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -52,7 +53,7 @@ export default function DependenciesStatus({ status, onRefresh, loading }) {
           ) : (
             <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
           )}
-          <span className="text-slate-300 font-mono font-medium">Gemini (Default)</span>
+          <span className="text-slate-300 font-mono font-medium">Gemini ({geminiModel})</span>
           <span className={`px-1.5 py-0.5 rounded text-[10px] ${geminiOk ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
             {geminiOk ? 'Terhubung (.env)' : 'Missing in .env'}
           </span>

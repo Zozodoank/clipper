@@ -143,7 +143,7 @@ export default function InputCard({
 
           <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-medium text-[10px]">
             <Key className="w-3 h-3" />
-            <span>{settings?.aiProvider === 'aivene' ? 'Aivene API: .env Active' : 'Gemini 2.5 Flash: .env Active (Gratis)'}</span>
+            <span>{settings?.aiProvider === 'aivene' ? 'Aivene API: .env Active' : 'Gemini 3.6 Flash: .env Active (Gratis)'}</span>
           </div>
         </div>
 

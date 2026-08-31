@@ -106,19 +106,21 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
             </label>
           </div>
 
-          {/* API Endpoint & .env Note */}
-          <div className="p-3 rounded-xl bg-indigo-950/30 border border-indigo-500/30 text-xs text-indigo-300 space-y-1">
+          {/* API Engine Note */}
+          <div className="p-3 rounded-xl bg-indigo-950/30 border border-indigo-500/30 text-xs text-indigo-300 space-y-1.5">
             <div className="flex items-center justify-between">
-              <span className="font-bold">Aivene Configuration:</span>
+              <span className="font-bold flex items-center gap-1.5">
+                <Bot className="w-3.5 h-3.5 text-emerald-400" />
+                <span>AI Vision Engine</span>
+              </span>
               <span className="text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">server/.env</span>
             </div>
             <p className="text-[11px] text-slate-400">
-              API key dibaca langsung dari file <code className="text-slate-200">.env</code> backend untuk keamanan dan kenyamanan.
+              Sistem mendukung <strong className="text-emerald-300">Google Gemini 2.5 Flash (100% Gratis, 1.500 RPD)</strong> &amp; Aivene API. Kunci dibaca langsung dari <code className="text-slate-200">.env</code>.
             </p>
-            <div className="pt-1">
-              <code className="bg-slate-900 px-2 py-0.5 rounded font-mono text-[11px] text-indigo-200 block">
-                https://api.aivene.com/v1
-              </code>
+            <div className="pt-0.5 flex flex-wrap gap-1 font-mono text-[10px]">
+              <span className="bg-slate-900/90 text-emerald-300 px-2 py-0.5 rounded border border-slate-800">GEMINI_API_KEY</span>
+              <span className="bg-slate-900/90 text-indigo-300 px-2 py-0.5 rounded border border-slate-800">AIVENE_API_KEY</span>
             </div>
           </div>
 

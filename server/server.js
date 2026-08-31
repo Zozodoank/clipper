@@ -1085,14 +1085,24 @@ app.post('/api/upload-cookies', express.text({ type: '*/*', limit: '10mb' }), (r
 });
 
 app.listen(PORT, '0.0.0.0', () => {
+  const geminiKey = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : '';
   const aiveneKey = process.env.AIVENE_API_KEY ? process.env.AIVENE_API_KEY.trim() : '';
-  const maskedKey = aiveneKey
-    ? `${aiveneKey.slice(0, 8)}...${aiveneKey.slice(-4)}`
-    : '❌ Not found (Please set AIVENE_API_KEY in server/.env)';
+
+  const activeProvider = geminiKey
+    ? `✨ Google Gemini (Free Tier - 1,500 RPD) [${process.env.GEMINI_MODEL || 'gemini-2.5-flash'}]`
+    : aiveneKey
+      ? `🤖 Aivene AI [${process.env.AIVENE_MODEL || 'qwen3.8-flash'}]`
+      : '❌ None (Set GEMINI_API_KEY or AIVENE_API_KEY in server/.env)';
 
   console.log(`\n======================================================`);
   console.log(`🎬 Local AI Affiliate Clipper Backend Server`);
   console.log(`🌐 Running at: http://localhost:${PORT}`);
-  console.log(`🔑 Aivene API Key: ${maskedKey}`);
+  console.log(`⚡ Active AI Engine: ${activeProvider}`);
+  if (geminiKey) {
+    console.log(`🔑 Gemini Key: ${geminiKey.slice(0, 8)}...${geminiKey.slice(-4)} (100% Free & Unlimited 36-frame vision)`);
+  }
+  if (aiveneKey) {
+    console.log(`🔑 Aivene Key: ${aiveneKey.slice(0, 8)}...${aiveneKey.slice(-4)}`);
+  }
   console.log(`======================================================\n`);
 });

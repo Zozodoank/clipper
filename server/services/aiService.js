@@ -10,7 +10,42 @@ function getEffectiveModel() {
   return envModel;
 }
 
-const AIVENE_MODEL = getEffectiveModel();
+function getAiClientConfig(apiKeyOverride) {
+  const geminiKey = (process.env.GEMINI_API_KEY || '').trim();
+  const aiveneKey = (apiKeyOverride || process.env.AIVENE_API_KEY || '').trim();
+
+  // If GEMINI_API_KEY is configured in .env, prioritize Google Gemini (100% Free, High Quota & Fast)
+  if (geminiKey) {
+    const model = (process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
+    return {
+      client: new OpenAI({
+        apiKey: geminiKey,
+        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+        timeout: 120000,
+      }),
+      model,
+      provider: 'Google Gemini',
+      isGemini: true,
+    };
+  }
+
+  if (aiveneKey) {
+    const model = getEffectiveModel();
+    return {
+      client: new OpenAI({
+        apiKey: aiveneKey,
+        baseURL: 'https://api.aivene.com/v1',
+        timeout: 120000,
+      }),
+      model,
+      provider: 'Aivene',
+      isGemini: false,
+    };
+  }
+
+  throw new Error('API Key tidak ditemukan. Pastikan GEMINI_API_KEY (Google AI Studio Gratis) atau AIVENE_API_KEY sudah disetel di file server/.env.');
+}
+
 const DEFAULT_REFRAME = {
   focusX: 0.5,
   focusY: 0.62,
@@ -22,29 +57,29 @@ const DEFAULT_REFRAME = {
 };
 
 /**
- * Helper to format Aivene / OpenAI API errors into clear Indonesian messages.
+ * Helper to format AI API errors into clear Indonesian messages.
  */
-function formatApiError(err, modelName = 'AI') {
+function formatApiError(err, modelName = 'AI', provider = 'AI') {
   const status = err.status || err.statusCode;
   const message = err.message || '';
 
   if (status === 402 || message.toLowerCase().includes('insufficient') || message.toLowerCase().includes('balance') || message.toLowerCase().includes('quota') || message.toLowerCase().includes('credit')) {
-    return `Saldo / Kuota Aivene API Anda tidak mencukupi (Insufficient Credits/Balance). Silakan periksa atau isi ulang saldo akun Aivene Anda di https://aivene.com.`;
+    return `Saldo / Kuota ${provider} API Anda tidak mencukupi. Silakan periksa akun ${provider} Anda.`;
   }
-  if (status === 401 || message.toLowerCase().includes('invalid api key') || message.toLowerCase().includes('unauthorized')) {
-    return `Aivene API Key tidak valid atau tidak memiliki izin akses. Silakan periksa kembali API Key Anda.`;
+  if (status === 401 || message.toLowerCase().includes('invalid api key') || message.toLowerCase().includes('unauthorized') || message.toLowerCase().includes('api_key_invalid')) {
+    return `${provider} API Key tidak valid atau tidak memiliki izin akses. Silakan periksa kembali API Key Anda di file server/.env.`;
   }
-  if (status === 429 || message.toLowerCase().includes('rate limit')) {
-    return `Batas frekuensi permintaan (Rate Limit) Aivene tercapai. Silakan tunggu beberapa saat dan coba lagi.`;
+  if (status === 429 || message.toLowerCase().includes('rate limit') || message.toLowerCase().includes('resource_exhausted')) {
+    return `Batas frekuensi permintaan (Rate Limit) ${provider} tercapai. Silakan tunggu beberapa saat dan coba lagi.`;
   }
   if (status === 404 || message.toLowerCase().includes('model_not_found') || message.toLowerCase().includes('does not exist')) {
-    return `Model '${modelName}' tidak tersedia di akun Aivene Anda.`;
+    return `Model '${modelName}' tidak tersedia di akun ${provider} Anda.`;
   }
-  return `Aivene API Error (${modelName}): ${message}`;
+  return `${provider} API Error (${modelName}): ${message}`;
 }
 
 /**
- * Stage 1, Step A: Calls Aivene API with vision
+ * Stage 1, Step A: Calls AI Vision API (Google Gemini / Aivene)
  * to analyze the full video timeline and select a cut plan made of 5-second product shots.
  */
 export async function selectHighlightWithGeminiFlash({
@@ -57,21 +92,12 @@ export async function selectHighlightWithGeminiFlash({
   allowFallbackClips = false,
   onProgress = () => {}
 }) {
+  const { client, model: activeModel, provider } = getAiClientConfig(apiKey);
+
   onProgress({
     step: 'gemini_vision',
-    message: `Analyzing full video frames with ${AIVENE_MODEL} to plan 5-second product shots...`,
+    message: `Analyzing full video frames with ${provider} (${activeModel}) to plan 5-second product shots...`,
     progress: 45
-  });
-
-  const effectiveApiKey = apiKey || process.env.AIVENE_API_KEY;
-  if (!effectiveApiKey) {
-    throw new Error('Aivene API Key tidak ditemukan. Pastikan AIVENE_API_KEY sudah disetel di file server/.env.');
-  }
-
-  const client = new OpenAI({
-    apiKey: effectiveApiKey,
-    baseURL: 'https://api.aivene.com/v1',
-    timeout: 120000,
   });
 
   const totalDuration = videoMetadata?.duration || 60;
@@ -200,7 +226,7 @@ Return strict JSON in this format:
     const elapsedSec = Math.round((Date.now() - startTimeMs) / 1000);
     onProgress({
       step: 'gemini_vision',
-      message: `AI (${AIVENE_MODEL}) menganalisa ${frames.length} frame visual... (${elapsedSec} detik)`,
+      message: `${provider} (${activeModel}) menganalisa ${frames.length} frame visual... (${elapsedSec} detik)`,
       progress: Math.min(58, 48 + Math.floor(elapsedSec / 4)),
     });
   }, 2000);
@@ -224,7 +250,7 @@ Return strict JSON in this format:
       }
 
       const response = await client.chat.completions.create({
-        model: AIVENE_MODEL,
+        model: activeModel,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: messageContent },
@@ -236,7 +262,7 @@ Return strict JSON in this format:
       clearInterval(heartbeat);
 
       const rawContent = response.choices?.[0]?.message?.content || '{}';
-      console.log(`[AIService ${AIVENE_MODEL}] Raw response:`, rawContent);
+      console.log(`[AIService ${provider} ${activeModel}] Raw response:`, rawContent);
       let parsed;
       try {
         parsed = JSON.parse(rawContent);
@@ -275,7 +301,7 @@ Return strict JSON in this format:
 
       onProgress({
         step: 'gemini_vision',
-        message: `${AIVENE_MODEL} selected ${clips.length} clean 5-second product shots (${duration}s total).`,
+        message: `${provider} (${activeModel}) selected ${clips.length} clean 5-second product shots (${duration}s total).`,
         progress: 55
       });
 
@@ -304,13 +330,13 @@ Return strict JSON in this format:
       }
 
       clearInterval(heartbeat);
-      console.error(`[AIService ${AIVENE_MODEL}] Error:`, err);
-      throw new Error(formatApiError(err, AIVENE_MODEL));
+      console.error(`[AIService ${provider} ${activeModel}] Error:`, err);
+      throw new Error(formatApiError(err, activeModel, provider));
     }
   }
 
   clearInterval(heartbeat);
-  throw new Error(formatApiError(lastError, AIVENE_MODEL));
+  throw new Error(formatApiError(lastError, activeModel, provider));
 }
 
 /**
@@ -333,21 +359,12 @@ export async function generateAdAdvisorScriptWithGemini({
   segmentDuration = 45,
   onProgress = () => {}
 }) {
+  const { client, model: activeModel, provider } = getAiClientConfig(apiKey);
+
   onProgress({
     step: 'gpt_scripting',
-    message: `Analyzing trimmed video frames with ${AIVENE_MODEL} for Kotak Scene & Ad Advisor Naskah...`,
+    message: `Analyzing trimmed video frames with ${provider} (${activeModel}) for Kotak Scene & Ad Advisor Naskah...`,
     progress: 75
-  });
-
-  const effectiveApiKey = apiKey || process.env.AIVENE_API_KEY;
-  if (!effectiveApiKey) {
-    throw new Error('Aivene API Key tidak ditemukan. Pastikan AIVENE_API_KEY sudah disetel di file server/.env.');
-  }
-
-  const client = new OpenAI({
-    apiKey: effectiveApiKey,
-    baseURL: 'https://api.aivene.com/v1',
-    timeout: 120000,
   });
 
   const effectiveTitle = (productTitle || '').trim() || videoMetadata?.title || 'Produk Viral Shopee';
@@ -486,7 +503,7 @@ Return strict JSON in this format:
     const elapsedSec = Math.round((Date.now() - startTimeMs) / 1000);
     onProgress({
       step: 'gpt_scripting',
-      message: `AI (${AIVENE_MODEL}) menyusun Kotak Scene & Naskah Ad Advisor... (${elapsedSec} detik)`,
+      message: `${provider} (${activeModel}) menyusun Kotak Scene & Naskah Ad Advisor... (${elapsedSec} detik)`,
       progress: Math.min(88, 78 + Math.floor(elapsedSec / 4)),
     });
   }, 2000);
@@ -512,7 +529,7 @@ Return strict JSON in this format:
       }
 
       const response = await client.chat.completions.create({
-        model: AIVENE_MODEL,
+        model: activeModel,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: messageContent },
@@ -524,7 +541,7 @@ Return strict JSON in this format:
       clearInterval(heartbeat);
 
       const rawContent = response.choices?.[0]?.message?.content || '{}';
-      console.log(`[AIService ${AIVENE_MODEL} Scripting] Raw response:`, rawContent);
+      console.log(`[AIService ${provider} ${activeModel} Scripting] Raw response:`, rawContent);
       try {
         parsed = JSON.parse(rawContent);
       } catch (e) {
@@ -545,14 +562,14 @@ Return strict JSON in this format:
       }
 
       clearInterval(heartbeat);
-      console.error(`[AIService ${AIVENE_MODEL} Scripting] Error:`, err);
-      throw new Error(formatApiError(err, AIVENE_MODEL));
+      console.error(`[AIService ${provider} ${activeModel} Scripting] Error:`, err);
+      throw new Error(formatApiError(err, activeModel, provider));
     }
   }
 
   if (lastError && !parsed.sampleContext) {
     clearInterval(heartbeat);
-    throw new Error(formatApiError(lastError, AIVENE_MODEL));
+    throw new Error(formatApiError(lastError, activeModel, provider));
   }
 
   let voiceoverScript = (parsed.voiceoverScript || '').trim();
@@ -589,7 +606,7 @@ Return strict JSON in this format:
 
   onProgress({
     step: 'gpt_scripting',
-    message: `${AIVENE_MODEL} generated Kotak Scene, Sample Context, and Naskah successfully!`,
+    message: `${provider} (${activeModel}) generated Kotak Scene, Sample Context, and Naskah successfully!`,
     progress: 88
   });
 

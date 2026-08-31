@@ -31,9 +31,12 @@ if [ ! -f "server/.env" ]; then
   echo "🔑 Setting up server/.env..."
   cat << 'EOF' > server/.env
 PORT=5000
-AIVENE_API_KEY=isk-wv59eTLD
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-3.6-flash
+AIVENE_API_KEY=your_aivene_api_key_here
+AIVENE_MODEL=qwen3.8-flash
 EOF
-  echo "✅ Created server/.env (Please ensure AIVENE_API_KEY is correct)."
+  echo "✅ Created server/.env. Edit GEMINI_API_KEY before running the app."
 fi
 
 echo "======================================================"

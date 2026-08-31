@@ -247,6 +247,7 @@ export default function App() {
               onGenerate={handleGenerate}
               isLoading={isLoading}
               settings={settings}
+              engineStatus={engineStatus}
               onOpenSettings={() => setIsSettingsOpen(true)}
             />
 

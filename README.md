@@ -2,7 +2,7 @@
 
 A local web application built with **React (Vite)** and **Node.js (Express)** that automates transforming YouTube videos into viral, high-converting **9:16 vertical reels** for **Shopee Affiliate Marketing**.
 
-Powered by **Google Gemini 2.5 Flash** (100% Free - 1,500 video/day for faceless product clipping, crop focus, and Ad Advisor scripting) with **Aivene AI** as fallback, **yt-dlp**, and **FFmpeg** anti-detection rendering with voiceover upload and synchronized subtitle burning.
+Powered by **Google Gemini 3.6 Flash** as the default engine for faceless product clipping, crop focus, and Ad Advisor scripting, with **Aivene AI** as fallback, **yt-dlp**, and **FFmpeg** rendering with voiceover upload and synchronized subtitle burning.
 
 ---
 
@@ -42,6 +42,21 @@ flowchart TD
 ---
 
 ## 🚀 Cara Menjalankan Aplikasi Secara Lokal / Termux
+
+### Setup Termux pertama kali
+```bash
+cd ~/clipper
+bash setup-termux.sh
+nano server/.env
+```
+
+Isi minimal:
+```bash
+GEMINI_API_KEY=isi_api_key_gemini_anda
+GEMINI_MODEL=gemini-3.6-flash
+```
+
+Jika `GEMINI_API_KEY` baru ditambahkan saat server sudah berjalan, klik **Check** di status engine atau restart server agar `.env` dibaca ulang. Backend juga akan reload `.env` otomatis saat request generate berikutnya.
 
 ### 1. Buka Terminal di Folder Proyek
 ```bash

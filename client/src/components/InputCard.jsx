@@ -7,8 +7,16 @@ export default function InputCard({
   onGenerate,
   isLoading,
   settings,
+  engineStatus,
   onOpenSettings
 }) {
+  const selectedProvider = settings?.aiProvider === 'aivene' ? 'aivene' : 'gemini';
+  const selectedProviderReady = selectedProvider === 'aivene'
+    ? Boolean(engineStatus?.aiveneKeyConfigured)
+    : Boolean(engineStatus?.geminiKeyConfigured);
+  const selectedProviderLabel = selectedProvider === 'aivene'
+    ? `Aivene API: ${selectedProviderReady ? '.env Active' : 'Missing in .env'}`
+    : `Gemini ${engineStatus?.geminiModel || '3.6 Flash'}: ${selectedProviderReady ? '.env Active' : 'Missing in .env'}`;
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -141,9 +149,13 @@ export default function InputCard({
             </span>
           </div>
 
-          <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-medium text-[10px]">
+          <div className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full border font-medium text-[10px] ${
+            selectedProviderReady
+              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+              : 'bg-amber-500/10 border-amber-500/20 text-amber-300'
+          }`}>
             <Key className="w-3 h-3" />
-            <span>{settings?.aiProvider === 'aivene' ? 'Aivene API: .env Active' : 'Gemini 3.6 Flash: .env Active (Gratis)'}</span>
+            <span>{selectedProviderLabel}</span>
           </div>
         </div>
 

@@ -6,7 +6,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import multer from 'multer';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 
 import { checkSystemDependencies } from './services/binaryChecker.js';
 import { downloadYouTubeVideo, extractVideoId } from './services/downloader.js';
@@ -37,7 +37,8 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load .env from multiple candidate paths
+// Load .env from multiple candidate paths. Keep server/.env as the primary
+// Termux/local source, but still accept root-level .env files for portability.
 const envCandidates = [
   path.join(__dirname, '.env'),
   path.join(__dirname, '.env.txt'),
@@ -47,12 +48,47 @@ const envCandidates = [
   path.join(process.cwd(), '.env.txt')
 ];
 
+const PLACEHOLDER_ENV_VALUES = new Set([
+  '',
+  'your_gemini_api_key_here',
+  'your_aivene_api_key_here',
+  'your_rapidapi_key_here',
+  'your_cobalt_api_key_here',
+]);
+
+let loadedEnvFiles = [];
+
+function cleanEnvValue(value) {
+  let cleaned = String(value || '').trim();
+  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+    cleaned = cleaned.slice(1, -1).trim();
+  }
+  return cleaned;
+}
+
+function isPlaceholderEnvValue(value) {
+  return PLACEHOLDER_ENV_VALUES.has(cleanEnvValue(value).toLowerCase());
+}
+
 export function reloadEnvironment() {
+  const loaded = [];
   for (const envPath of envCandidates) {
     if (fs.existsSync(envPath)) {
-      dotenv.config({ path: envPath, override: true });
+      try {
+        const parsed = dotenv.parse(fs.readFileSync(envPath, 'utf8'));
+        for (const [key, value] of Object.entries(parsed)) {
+          const cleaned = cleanEnvValue(value);
+          if (isPlaceholderEnvValue(cleaned)) continue;
+          process.env[key] = cleaned;
+        }
+        loaded.push(envPath);
+      } catch (err) {
+        console.warn(`[Env] Could not load ${envPath}:`, err.message);
+      }
     }
   }
+  loadedEnvFiles = [...new Set(loaded)];
+  return loadedEnvFiles;
 }
 
 reloadEnvironment();
@@ -78,11 +114,40 @@ const storage = multer.diskStorage({
     cb(null, `voiceover_${Date.now()}_${crypto.randomBytes(4).toString('hex')}${ext}`);
   },
 });
-const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
+const upload = multer({
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    const allowedExts = new Set(['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.opus']);
+    const mime = String(file.mimetype || '').toLowerCase();
+    if (allowedExts.has(ext) || mime.startsWith('audio/')) return cb(null, true);
+    cb(new Error('File voiceover harus berupa audio (.mp3, .wav, .m4a, .aac, .ogg, .opus).'));
+  },
+});
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+function isValidHttpUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function resolveOutputVideoPath(filename) {
+  const safeName = String(filename || '').trim();
+  if (!/^(silent|final)_clip_[a-zA-Z0-9_-]+\.mp4$/.test(safeName)) {
+    return null;
+  }
+  const resolved = path.resolve(outputDir, safeName);
+  const outputRoot = path.resolve(outputDir) + path.sep;
+  return resolved.startsWith(outputRoot) ? resolved : null;
+}
 
 // ─── Persistent Job Store ────────────────────────────────────────────────────
 
@@ -180,7 +245,7 @@ function isQuotaErrorMessage(msg = '') {
 
 // 1. Health check & dependency verification
 app.get('/api/health', async (req, res) => {
-  reloadEnvironment();
+  const envFiles = reloadEnvironment();
   const binaryCheck = await checkSystemDependencies();
   const rawGeminiKey = (process.env.GEMINI_API_KEY || '').trim().replace(/^["']|["']$/g, '');
   const geminiKeySet = Boolean(rawGeminiKey && rawGeminiKey !== 'your_gemini_api_key_here');
@@ -209,6 +274,7 @@ app.get('/api/health', async (req, res) => {
     defaultAiProvider: 'gemini',
     geminiModel: activeGeminiModel,
     aiveneModel: process.env.AIVENE_MODEL || 'qwen3.8-flash',
+    envFilesLoaded: envFiles.map((envPath) => path.relative(path.resolve(__dirname, '..'), envPath).replace(/\\/g, '/')),
     ready: binaryCheck.ffmpeg.available && binaryCheck.ytdlp.available,
   });
 });
@@ -573,6 +639,7 @@ export async function runStage1Pipeline({
 
 // 5. Manual STAGE 1 Endpoint
 app.post('/api/generate', async (req, res) => {
+  reloadEnvironment();
   const {
     youtubeUrl,
     shopeeLink,
@@ -585,6 +652,12 @@ app.post('/api/generate', async (req, res) => {
 
   if (!youtubeUrl) {
     return res.status(400).json({ error: 'YouTube Video URL is required.' });
+  }
+  if (!isValidHttpUrl(youtubeUrl) || !extractVideoId(youtubeUrl)) {
+    return res.status(400).json({ error: 'URL YouTube tidak valid. Gunakan URL youtube.com atau youtu.be yang berisi video ID.' });
+  }
+  if (shopeeLink && !isValidHttpUrl(shopeeLink)) {
+    return res.status(400).json({ error: 'Link produk harus berupa URL http/https yang valid.' });
   }
 
   const jobId = clientJobId || crypto.randomBytes(6).toString('hex');
@@ -784,6 +857,7 @@ app.get('/api/auto/status', (req, res) => {
 });
 
 app.post('/api/auto/start', (req, res) => {
+  reloadEnvironment();
   const latest = getLatestAutoRun();
   if (latest && latest.status === 'running') {
     return res.json({ run: publicAutoRunState(latest) });
@@ -846,6 +920,7 @@ app.get('/api/auto/progress/:runId', (req, res) => {
 
 // 6. STAGE 2: Upload Voiceover & Merge Subtitles
 app.post('/api/upload-voiceover', upload.single('audio'), async (req, res) => {
+  reloadEnvironment();
   const { jobId } = req.body;
   const audioFile = req.file;
 
@@ -931,7 +1006,8 @@ app.post('/api/upload-voiceover', upload.single('audio'), async (req, res) => {
 
 // 7. Stream output video
 app.get('/api/video/:filename', (req, res) => {
-  const filePath = path.join(outputDir, req.params.filename);
+  const filePath = resolveOutputVideoPath(req.params.filename);
+  if (!filePath) return res.status(400).send('Invalid video filename.');
   if (!fs.existsSync(filePath)) return res.status(404).send('Video not found.');
   const stat = fs.statSync(filePath);
   const fileSize = stat.size;
@@ -941,6 +1017,9 @@ app.get('/api/video/:filename', (req, res) => {
     const parts = range.replace(/bytes=/, '').split('-');
     const start = parseInt(parts[0], 10);
     const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || end >= fileSize) {
+      return res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
+    }
     const chunksize = end - start + 1;
     res.writeHead(206, {
       'Content-Range': `bytes ${start}-${end}/${fileSize}`,
@@ -955,7 +1034,8 @@ app.get('/api/video/:filename', (req, res) => {
 
 // 8. Download endpoint for videos
 app.get('/api/download/:filename', (req, res) => {
-  const filePath = path.join(outputDir, req.params.filename);
+  const filePath = resolveOutputVideoPath(req.params.filename);
+  if (!filePath) return res.status(400).json({ error: 'Invalid filename.' });
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found.' });
   res.download(filePath, req.params.filename);
 });
@@ -1002,8 +1082,8 @@ app.post('/api/open-folder', (req, res) => {
   let targetFile = null;
 
   if (filename) {
-    const candidate = path.join(outputDir, filename);
-    if (fs.existsSync(candidate)) {
+    const candidate = resolveOutputVideoPath(filename);
+    if (candidate && fs.existsSync(candidate)) {
       targetFile = candidate;
     }
   }
@@ -1053,27 +1133,43 @@ app.post('/api/restart', async (req, res) => {
 
   console.log(`[System] Received restart request (runUpdate=${runUpdate})...`);
   let updateLog = '';
+  let updateExitCode = 0;
 
   if (runUpdate) {
     console.log('[System] Menjalankan ./update.sh sebelum me-restart server...');
     try {
-      await new Promise((resolve) => {
-        const cmd = process.platform === 'win32'
-          ? (fs.existsSync(updateScriptPath) ? `bash "${updateScriptPath}"` : 'git pull')
-          : `chmod +x "${updateScriptPath}" 2>/dev/null; bash "${updateScriptPath}"`;
+      updateExitCode = await new Promise((resolve) => {
+        const child = fs.existsSync(updateScriptPath)
+          ? spawn('bash', [updateScriptPath], { cwd: rootDir })
+          : spawn('git', ['pull', '--ff-only'], { cwd: rootDir });
 
-        exec(cmd, { cwd: rootDir, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
-          updateLog = (stdout || '') + (stderr || '');
-          if (err) {
-            console.warn('[System] Warning saat update.sh:', err.message);
+        child.stdout.on('data', (chunk) => { updateLog += chunk.toString(); });
+        child.stderr.on('data', (chunk) => { updateLog += chunk.toString(); });
+        child.on('error', (err) => {
+          updateLog += `\nError: ${err.message}`;
+          console.warn('[System] Warning saat menjalankan update:', err.message);
+          resolve(1);
+        });
+        child.on('close', (code) => {
+          if (code !== 0) {
+            console.warn(`[System] Warning: update process exited with code ${code}`);
           }
           console.log('[System] Log update.sh:\n' + updateLog);
-          resolve();
+          resolve(code || 0);
         });
       });
     } catch (e) {
       console.warn('[System] Gagal menjalankan update script:', e.message);
       updateLog += `\nError: ${e.message}`;
+      updateExitCode = 1;
+    }
+
+    if (updateExitCode !== 0) {
+      return res.status(500).json({
+        success: false,
+        message: 'Update dibatalkan atau gagal. Server tidak di-restart.',
+        updateLog,
+      });
     }
   }
 
@@ -1097,7 +1193,7 @@ app.get('/api/cookies-status', (req, res) => {
   const cookiesPath = path.join(__dirname, 'cookies.txt');
   if (fs.existsSync(cookiesPath)) {
     const stat = fs.statSync(cookiesPath);
-    res.json({ exists: true, sizeBytes: stat.size, path: cookiesPath });
+    res.json({ exists: true, sizeBytes: stat.size });
   } else {
     res.json({ exists: false });
   }
@@ -1115,10 +1211,24 @@ app.post('/api/upload-cookies', express.text({ type: '*/*', limit: '10mb' }), (r
   const cookiesPath = path.join(__dirname, 'cookies.txt');
   fs.writeFileSync(cookiesPath, content, 'utf8');
   console.log(`[Cookies] cookies.txt saved to ${cookiesPath} (${content.length} bytes)`);
-  res.json({ success: true, message: 'cookies.txt berhasil disimpan. Sekarang retry job Anda.', path: cookiesPath });
+  res.json({ success: true, message: 'cookies.txt berhasil disimpan. Sekarang retry job Anda.' });
+});
+
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    const message = err.code === 'LIMIT_FILE_SIZE'
+      ? 'File voiceover maksimal 50 MB.'
+      : err.message;
+    return res.status(400).json({ success: false, error: message });
+  }
+  if (err) {
+    return res.status(400).json({ success: false, error: err.message || 'Request tidak valid.' });
+  }
+  next();
 });
 
 app.listen(PORT, '0.0.0.0', () => {
+  reloadEnvironment();
   const geminiKey = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : '';
   const aiveneKey = process.env.AIVENE_API_KEY ? process.env.AIVENE_API_KEY.trim() : '';
   const geminiModel = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
@@ -1132,12 +1242,15 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n======================================================`);
   console.log(`🎬 Local AI Affiliate Clipper Backend Server`);
   console.log(`🌐 Running at: http://localhost:${PORT}`);
+  if (loadedEnvFiles.length) {
+    console.log(`[Env] Loaded: ${loadedEnvFiles.map((envPath) => path.relative(path.resolve(__dirname, '..'), envPath).replace(/\\/g, '/')).join(', ')}`);
+  }
   console.log(`⚡ Active AI Engine: ${activeProvider}`);
   if (geminiKey && geminiKey !== 'your_gemini_api_key_here') {
-    console.log(`🔑 Gemini Key: ${geminiKey.slice(0, 8)}...${geminiKey.slice(-4)} (100% Free & Unlimited 36-frame vision)`);
+    console.log(`🔑 Gemini Key: configured (${geminiKey.length} chars)`);
   }
   if (aiveneKey && aiveneKey !== 'your_aivene_api_key_here') {
-    console.log(`🔑 Aivene Key: ${aiveneKey.slice(0, 8)}...${aiveneKey.slice(-4)}`);
+    console.log(`🔑 Aivene Key: configured (${aiveneKey.length} chars)`);
   }
   console.log(`======================================================\n`);
 });

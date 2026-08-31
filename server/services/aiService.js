@@ -103,7 +103,9 @@ function getGeminiKeys(apiKeyOverride) {
   return keys;
 }
 
-function getAiClientConfig({ apiKeyOverride, aiProvider = 'gemini', keyIndex = 0 } = {}) {
+let currentGeminiKeyIndex = 0;
+
+function getAiClientConfig({ apiKeyOverride, aiProvider = 'gemini' } = {}) {
   loadEnvFromDisk();
   
   const aiveneKey = cleanEnvKey(
@@ -133,7 +135,9 @@ function getAiClientConfig({ apiKeyOverride, aiProvider = 'gemini', keyIndex = 0
   // Default: Google Gemini (Strictly according to user choice / default)
   const geminiKeys = getGeminiKeys(apiKeyOverride);
   if (geminiKeys.length > 0) {
-    const safeIndex = keyIndex % geminiKeys.length;
+    const safeIndex = currentGeminiKeyIndex % geminiKeys.length;
+    currentGeminiKeyIndex++; // Increment for the next request in round-robin fashion
+    
     const geminiKey = geminiKeys[safeIndex];
     const model = getEffectiveGeminiModel();
     return {
@@ -435,7 +439,7 @@ Return strict JSON in this format:
       if (isOverloaded && attempt < MAX_RETRIES) {
         console.warn(`[AIService] AI overloaded (attempt ${attempt + 1}). Will retry...`);
         if (provider === 'Google Gemini') {
-          const nextConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider, keyIndex: attempt + 1 });
+          const nextConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
           client = nextConfig.client;
           console.log(`[AIService] API Key rotation: Switching to key #${nextConfig.keyIndex + 1} of ${nextConfig.totalKeys}`);
         }
@@ -673,7 +677,7 @@ Return strict JSON in this format:
       if (isOverloaded && attempt < MAX_RETRIES) {
         console.warn(`[AIService Scripting] AI overloaded (attempt ${attempt + 1}). Will retry...`);
         if (provider === 'Google Gemini') {
-          const nextConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider, keyIndex: attempt + 1 });
+          const nextConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
           client = nextConfig.client;
           console.log(`[AIService Scripting] API Key rotation: Switching to key #${nextConfig.keyIndex + 1} of ${nextConfig.totalKeys}`);
         }

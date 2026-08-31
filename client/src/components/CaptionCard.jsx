@@ -22,15 +22,12 @@ import { copyToClipboardSafe } from '../utils/clipboard';
 /**
  * Parse Google AI Studio prompt into 3 separate sections:
  * 1. Scene Setting
- * 2. Sample Context (Style & Pacing & Video Duration)
+ * 2. Sample Context (Style & Pacing & Voiceover Duration)
  * 3. Speaker / Dialogue (Voiceover with emotion tags)
  */
 function parseAiStudioSections(promptText, sampleContext, voiceoverScript, videoDuration) {
-  const durationNumber = videoDuration || (sampleContext?.videoDuration ? parseInt(sampleContext.videoDuration, 10) : 30);
-  const defaultDurationPrefix = `Durasi video ${durationNumber} detik. `;
-
   let scene = 'Studio dapur modern yang bersih dengan presenter Indonesia bersuara ramah dan energik.';
-  let context = `${defaultDurationPrefix}Iklan affiliate viral. Dimulai dengan hook yang menarik perhatian, membangun ke demonstrasi produk, diakhiri CTA yang meyakinkan. Nada suara hangat, antusias, dan persuasif.`;
+  let context = '';
   let speaker = voiceoverScript || '';
 
   if (typeof promptText === 'string' && promptText.trim().length > 0) {
@@ -45,11 +42,7 @@ function parseAiStudioSections(promptText, sampleContext, voiceoverScript, video
     // Match Sample Context section
     const contextMatch = text.match(/(?:Sample Context|SAMPLE CONTEXT|Context)[\s\r\n:]+([\s\S]*?)(?=(?:Speaker|SPEAKER|$))/i);
     if (contextMatch && contextMatch[1].trim()) {
-      let matchedContext = contextMatch[1].trim();
-      if (!/durasi\s+video/i.test(matchedContext)) {
-        matchedContext = `${defaultDurationPrefix}${matchedContext}`;
-      }
-      context = matchedContext;
+      context = contextMatch[1].trim();
     }
 
     // Match Speaker section (Speaker 1, Speaker 1 - Orus, etc.)
@@ -68,6 +61,35 @@ function parseAiStudioSections(promptText, sampleContext, voiceoverScript, video
 
   // Clean any accidental leftover header lines from speaker text
   speaker = speaker.replace(/^Speaker\s*\d*(?:\s*-\s*[A-Za-z0-9]+)?[\s\r\n:]+/i, '').trim();
+
+  // Extract the last timestamp from Speaker 1 (e.g. [00:30] -> 30s)
+  const timestampMatches = [...(speaker || '').matchAll(/\[(\d{1,2}):(\d{2})\]/g)];
+  let effectiveDuration = null;
+  if (timestampMatches.length > 0) {
+    const lastMatch = timestampMatches[timestampMatches.length - 1];
+    const minutes = parseInt(lastMatch[1], 10);
+    const seconds = parseInt(lastMatch[2], 10);
+    effectiveDuration = minutes * 60 + seconds;
+  }
+
+  if (effectiveDuration === null || effectiveDuration <= 0) {
+    effectiveDuration = videoDuration || (sampleContext?.videoDuration ? parseInt(sampleContext.videoDuration, 10) : 30);
+  }
+
+  const defaultDurationPrefix = `Durasi voice over ${effectiveDuration} detik. `;
+
+  if (!context) {
+    context = `${defaultDurationPrefix}Iklan affiliate viral. Dimulai dengan hook yang menarik perhatian, membangun ke demonstrasi produk, diakhiri CTA yang meyakinkan. Nada suara hangat, antusias, dan persuasif.`;
+  } else {
+    // Replace existing "Durasi video XX detik" or "Durasi voice over XX detik" or "Durasi XX detik"
+    if (/durasi\s+(?:video|voice\s+over)?\s*\d+\s*detik/i.test(context)) {
+      context = context.replace(/durasi\s+(?:video|voice\s+over)?\s*\d+\s*detik/i, `Durasi voice over ${effectiveDuration} detik`);
+    } else {
+      context = `${defaultDurationPrefix}${context}`;
+    }
+    // Also replace any leftover "durasi video" with "durasi voice over"
+    context = context.replace(/durasi\s+video/gi, 'durasi voice over');
+  }
 
   return { scene, context, speaker };
 }

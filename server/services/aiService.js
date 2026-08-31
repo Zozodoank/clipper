@@ -81,15 +81,31 @@ function getEffectiveGeminiModel() {
   return envModel;
 }
 
-function getAiClientConfig({ apiKeyOverride, aiProvider = 'gemini' } = {}) {
+function getGeminiKeys(apiKeyOverride) {
   loadEnvFromDisk();
-  const geminiKey = cleanEnvKey(
-    apiKeyOverride ||
-    process.env.GEMINI_API_KEY ||
-    process.env.GOOGLE_GEMINI_API_KEY ||
-    process.env.GOOGLE_API_KEY ||
-    process.env.GEMINI_KEY
-  );
+  const keys = [];
+  if (apiKeyOverride) {
+    const cleaned = cleanEnvKey(apiKeyOverride);
+    if (cleaned && !cleaned.startsWith('your_') && !cleaned.endsWith('_here')) {
+      keys.push(cleaned);
+    }
+  }
+  
+  // Collect all keys matching our patterns
+  const envKeys = Object.keys(process.env).filter(k => k.startsWith('GEMINI_API_KEY') || k.startsWith('GOOGLE_GEMINI_API_KEY') || k.startsWith('GEMINI_KEY') || k === 'GOOGLE_API_KEY').sort();
+  
+  for (const k of envKeys) {
+    const cleaned = cleanEnvKey(process.env[k]);
+    if (cleaned && !cleaned.startsWith('your_') && !cleaned.endsWith('_here')) {
+      if (!keys.includes(cleaned)) keys.push(cleaned);
+    }
+  }
+  return keys;
+}
+
+function getAiClientConfig({ apiKeyOverride, aiProvider = 'gemini', keyIndex = 0 } = {}) {
+  loadEnvFromDisk();
+  
   const aiveneKey = cleanEnvKey(
     apiKeyOverride ||
     process.env.AIVENE_API_KEY ||
@@ -115,7 +131,10 @@ function getAiClientConfig({ apiKeyOverride, aiProvider = 'gemini' } = {}) {
   }
 
   // Default: Google Gemini (Strictly according to user choice / default)
-  if (geminiKey && !geminiKey.startsWith('your_') && !geminiKey.endsWith('_here')) {
+  const geminiKeys = getGeminiKeys(apiKeyOverride);
+  if (geminiKeys.length > 0) {
+    const safeIndex = keyIndex % geminiKeys.length;
+    const geminiKey = geminiKeys[safeIndex];
     const model = getEffectiveGeminiModel();
     return {
       client: new OpenAI({
@@ -126,6 +145,8 @@ function getAiClientConfig({ apiKeyOverride, aiProvider = 'gemini' } = {}) {
       model,
       provider: 'Google Gemini',
       isGemini: true,
+      keyIndex: safeIndex,
+      totalKeys: geminiKeys.length
     };
   }
 
@@ -179,7 +200,7 @@ export async function selectHighlightWithGeminiFlash({
   allowFallbackClips = false,
   onProgress = () => {}
 }) {
-  const { client, model: activeModel, provider } = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
+  let { client, model: activeModel, provider } = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
 
   onProgress({
     step: 'gemini_vision',
@@ -413,6 +434,11 @@ Return strict JSON in this format:
 
       if (isOverloaded && attempt < MAX_RETRIES) {
         console.warn(`[AIService] AI overloaded (attempt ${attempt + 1}). Will retry...`);
+        if (provider === 'Google Gemini') {
+          const nextConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider, keyIndex: attempt + 1 });
+          client = nextConfig.client;
+          console.log(`[AIService] API Key rotation: Switching to key #${nextConfig.keyIndex + 1} of ${nextConfig.totalKeys}`);
+        }
         continue;
       }
 
@@ -447,7 +473,7 @@ export async function generateAdAdvisorScriptWithGemini({
   segmentDuration = 45,
   onProgress = () => {}
 }) {
-  const { client, model: activeModel, provider } = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
+  let { client, model: activeModel, provider } = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
 
   onProgress({
     step: 'gpt_scripting',
@@ -646,6 +672,11 @@ Return strict JSON in this format:
 
       if (isOverloaded && attempt < MAX_RETRIES) {
         console.warn(`[AIService Scripting] AI overloaded (attempt ${attempt + 1}). Will retry...`);
+        if (provider === 'Google Gemini') {
+          const nextConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider, keyIndex: attempt + 1 });
+          client = nextConfig.client;
+          console.log(`[AIService Scripting] API Key rotation: Switching to key #${nextConfig.keyIndex + 1} of ${nextConfig.totalKeys}`);
+        }
         continue;
       }
 

@@ -246,11 +246,16 @@ function isQuotaErrorMessage(msg = '') {
 // 1. Health check & dependency verification
 app.get('/api/health', async (req, res) => {
   const envFiles = reloadEnvironment();
-  const binaryCheck = await checkSystemDependencies();
-  const rawGeminiKey = (process.env.GEMINI_API_KEY || '').trim().replace(/^["']|["']$/g, '');
-  const geminiKeySet = Boolean(rawGeminiKey && rawGeminiKey !== 'your_gemini_api_key_here');
-  const rawAiveneKey = (process.env.AIVENE_API_KEY || '').trim().replace(/^["']|["']$/g, '');
-  const aiveneKeySet = Boolean(rawAiveneKey && rawAiveneKey !== 'your_aivene_api_key_here');
+  const rawGeminiKey = (
+    process.env.GEMINI_API_KEY ||
+    process.env.GOOGLE_GEMINI_API_KEY ||
+    process.env.GOOGLE_API_KEY ||
+    process.env.GEMINI_KEY ||
+    ''
+  ).trim().replace(/^["']|["']$/g, '');
+  const geminiKeySet = Boolean(rawGeminiKey && !rawGeminiKey.startsWith('your_') && !rawGeminiKey.endsWith('_here'));
+  const rawAiveneKey = (process.env.AIVENE_API_KEY || process.env.AIVENE_KEY || '').trim().replace(/^["']|["']$/g, '');
+  const aiveneKeySet = Boolean(rawAiveneKey && !rawAiveneKey.startsWith('your_') && !rawAiveneKey.endsWith('_here'));
 
   const activeAiEngine = geminiKeySet ? 'gemini' : (aiveneKeySet ? 'aivene' : 'none');
 

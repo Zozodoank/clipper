@@ -1,6 +1,22 @@
 import OpenAI from 'openai';
+import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const envCandidates = [
+  path.join(__dirname, '..', '.env'),
+  path.join(__dirname, '..', '.env.txt'),
+  path.join(__dirname, '..', '..', '.env'),
+  path.join(__dirname, '..', '..', '.env.txt'),
+  path.join(process.cwd(), 'server', '.env'),
+  path.join(process.cwd(), 'server', '.env.txt'),
+  path.join(process.cwd(), '.env'),
+  path.join(process.cwd(), '.env.txt'),
+];
 
 function cleanEnvKey(key) {
   if (!key) return '';
@@ -11,7 +27,24 @@ function cleanEnvKey(key) {
   return cleaned;
 }
 
+function loadEnvFromDisk() {
+  for (const envPath of envCandidates) {
+    if (fs.existsSync(envPath)) {
+      try {
+        const parsed = dotenv.parse(fs.readFileSync(envPath, 'utf8'));
+        for (const [key, value] of Object.entries(parsed)) {
+          const cleaned = cleanEnvKey(value);
+          if (cleaned && !cleaned.startsWith('your_') && !cleaned.endsWith('_here')) {
+            process.env[key] = cleaned;
+          }
+        }
+      } catch {}
+    }
+  }
+}
+
 function getEffectiveModel() {
+  loadEnvFromDisk();
   const envModel = cleanEnvKey(process.env.AIVENE_MODEL || process.env.AIVENE_GEMINI_MODEL);
   if (!envModel || envModel.startsWith('gemini-')) {
     return 'qwen3.8-flash';
@@ -20,6 +53,7 @@ function getEffectiveModel() {
 }
 
 function getEffectiveGeminiModel() {
+  loadEnvFromDisk();
   const envModel = cleanEnvKey(process.env.GEMINI_MODEL);
   // Auto-upgrade retired / deprecated model versions to gemini-3.6-flash
   if (!envModel || envModel === 'gemini-2.5-flash' || envModel === 'gemini-2.0-flash' || envModel === 'gemini-1.5-flash') {
@@ -29,12 +63,23 @@ function getEffectiveGeminiModel() {
 }
 
 function getAiClientConfig({ apiKeyOverride, aiProvider = 'gemini' } = {}) {
-  const geminiKey = cleanEnvKey(process.env.GEMINI_API_KEY);
-  const aiveneKey = cleanEnvKey(apiKeyOverride || process.env.AIVENE_API_KEY);
+  loadEnvFromDisk();
+  const geminiKey = cleanEnvKey(
+    apiKeyOverride ||
+    process.env.GEMINI_API_KEY ||
+    process.env.GOOGLE_GEMINI_API_KEY ||
+    process.env.GOOGLE_API_KEY ||
+    process.env.GEMINI_KEY
+  );
+  const aiveneKey = cleanEnvKey(
+    apiKeyOverride ||
+    process.env.AIVENE_API_KEY ||
+    process.env.AIVENE_KEY
+  );
 
   // If user explicitly selected Aivene in Settings:
   if (aiProvider === 'aivene') {
-    if (aiveneKey && aiveneKey !== 'your_aivene_api_key_here') {
+    if (aiveneKey && !aiveneKey.startsWith('your_') && !aiveneKey.endsWith('_here')) {
       const model = getEffectiveModel();
       return {
         client: new OpenAI({
@@ -51,7 +96,7 @@ function getAiClientConfig({ apiKeyOverride, aiProvider = 'gemini' } = {}) {
   }
 
   // Default: Google Gemini (Strictly according to user choice / default)
-  if (geminiKey && geminiKey !== 'your_gemini_api_key_here') {
+  if (geminiKey && !geminiKey.startsWith('your_') && !geminiKey.endsWith('_here')) {
     const model = getEffectiveGeminiModel();
     return {
       client: new OpenAI({

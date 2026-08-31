@@ -55,7 +55,9 @@ function loadEnvFromDisk() {
             }
           }
         }
-      } catch {}
+      } catch (err) {
+        console.warn(`[Peringatan] Gagal membaca file ${envPath}: ${err.message}. (Jika ini di Termux, mungkin masalah izin/permission. Coba jalankan: chmod 644 ${envPath})`);
+      }
     }
   }
 }

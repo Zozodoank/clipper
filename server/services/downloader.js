@@ -56,7 +56,7 @@ function findCookiesFile() {
  * Base yt-dlp args used for all requests (search + download).
  * Stripped of --remote-components and --js-runtimes which break on Android/Termux.
  */
-function getYtDlpArgs() {
+function getYtDlpArgs(clientSpoof = 'android,ios,mweb,web') {
   const residentialProxy = (process.env.RESIDENTIAL_PROXY || process.env.PROXY_URL || '').trim();
   const proxyArgs = residentialProxy ? ['--proxy', residentialProxy] : [];
 
@@ -70,6 +70,8 @@ function getYtDlpArgs() {
   return [
     '--no-check-certificates',
     '--geo-bypass',
+    '--extractor-args', `youtube:player_client=${clientSpoof}`,
+    '--user-agent', 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro Build/UQ1A.240205.004) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36',
     ...cookiesArgs,
     ...proxyArgs
   ];
@@ -80,20 +82,18 @@ function getYtDlpArgs() {
  */
 function getFastArgs() {
   return [
-    ...getYtDlpArgs(),
+    ...getYtDlpArgs('android,mweb'),
     '--rm-cache-dir',
   ];
 }
 
 /**
- * Download args with gentle rate-limiting to avoid bot detection.
+ * Download args with gentle rate-limiting and Android/iOS client spoofing to avoid bot detection.
  */
-function getDownloadArgs() {
+function getDownloadArgs(clientProfile = 'android,mweb') {
   return [
-    ...getYtDlpArgs(),
-    '--limit-rate', '4M',
-    '--sleep-interval', '1',
-    '--max-sleep-interval', '3',
+    ...getYtDlpArgs(clientProfile),
+    '--limit-rate', '6M',
     '--rm-cache-dir',
   ];
 }
@@ -449,7 +449,6 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
     }
   }
 
-  // Tier 2: Direct resilient yt-dlp with client spoofing (web, mweb, ios, android)
   const ytDlpPath = await getYtDlpPath(onProgress);
   const ffmpegPath = getFFmpegPath();
   const outputTemplate = path.join(outputDir, `${prefix}_${videoId}.%(ext)s`);
@@ -457,10 +456,7 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
   const qualityLabel = isPreview ? '360p (Hemat Kuota)' : '1080p Full HD';
   onProgress({ step: 'download', message: `Downloading preview (${qualityLabel}) for AI analysis...`, progress: 10 });
 
-  const dlBaseArgs = getDownloadArgs();
-
-  // For preview mode: use a single combined download call (skip metadata step to save time)
-  // For full 1080p: also fetch metadata first for scripting
+  // For full 1080p: fetch metadata first for scripting
   let metadata = { title: 'YouTube Video', duration: 60 };
   if (!isPreview) {
     const infoArgs = [
@@ -486,84 +482,135 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
     }
   }
 
-  const formatSelector = isPreview
-    ? 'bestvideo[height<=360]/best[height<=360]/bestvideo[height<=480]/best[height<=480]/worst[ext=mp4]/worst'
-    : 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
-
-  const dlArgs = [
-    '--ffmpeg-location',
-    ffmpegPath,
-    ...dlBaseArgs,
-    '-f',
-    formatSelector,
-    '--merge-output-format',
-    'mp4',
-    '--no-playlist',
-    '--no-part',
-    '--no-mtime',
-    '--retries', '3',
-    '--fragment-retries', '3',
-    '-o',
-    outputTemplate,
-    url,
+  // Multi-profile rotation to bypass YouTube bot detection & 429/403 IP throttling
+  const clientProfiles = [
+    'android,mweb',
+    'ios,web',
+    'tv,android',
+    'web_embedded,android',
   ];
 
-  console.log(`[Downloader] Spawning yt-dlp (${qualityLabel}): ${ytDlpPath} ${dlArgs.join(' ')}`);
-  onProgress({ step: 'download', message: `Downloading (${qualityLabel})...`, progress: 20 });
+  let lastDownloadError = '';
 
-  const downloadResult = await runYtDlp(ytDlpPath, dlArgs, {
-    onStdout: (text) => {
-      const match = text.match(/(\d+(\.\d+)?)%/);
-      if (match) {
-        const percent = parseFloat(match[1]);
-        const scaledProgress = 20 + Math.round(percent * 0.15);
-        onProgress({ step: 'download', message: `Downloading video: ${Math.round(percent)}%`, progress: scaledProgress });
-      }
-    },
-  });
+  for (let attempt = 0; attempt < clientProfiles.length; attempt++) {
+    const clientType = clientProfiles[attempt];
+    const attemptLabel = attempt > 0 ? ` (Retry ${attempt + 1}/${clientProfiles.length} via ${clientType})` : '';
 
-  if (downloadResult.code === 0) {
-    let downloadedFile = finalExpectedPath;
+    onProgress({
+      step: 'download',
+      message: `Downloading (${qualityLabel})${attemptLabel}...`,
+      progress: Math.min(25, 12 + (attempt * 4))
+    });
 
-    if (!fs.existsSync(downloadedFile)) {
-      const videoFiles = fs.readdirSync(outputDir).filter(f =>
-        f.startsWith(`${prefix}_${videoId}`) &&
-        !f.endsWith('.m4a') &&
-        !f.endsWith('.mp3') &&
-        !f.endsWith('.aac') &&
-        !f.endsWith('.opus') &&
-        !f.endsWith('.part') &&
-        !f.endsWith('.ytdl') &&
-        (f.endsWith('.mp4') || f.endsWith('.webm') || f.endsWith('.mkv') || f.endsWith('.mov'))
-      );
+    const dlBaseArgs = getDownloadArgs(clientType);
 
-      const audioFiles = fs.readdirSync(outputDir).filter(f =>
-        f.startsWith(`${prefix}_${videoId}`) &&
-        (f.endsWith('.m4a') || f.endsWith('.mp3') || f.endsWith('.aac') || f.endsWith('.opus'))
-      );
+    // Resilient format selector: tries 360p combined, pre-muxed mp4 format 18, and generic fallback
+    const formatSelector = isPreview
+      ? '18/bestvideo[height<=360]+bestaudio/best[height<=360]/bestvideo[height<=480]+bestaudio/best[height<=480]/worstvideo+worstaudio/worst/best'
+      : 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
 
-      if (videoFiles.length > 0) {
-        const primaryVideo = path.join(outputDir, videoFiles[0]);
-        if (audioFiles.length > 0) {
-          const primaryAudio = path.join(outputDir, audioFiles[0]);
-          onProgress({ step: 'download', message: 'Merging video & audio streams with FFmpeg...', progress: 32 });
-          try {
-            await mergeStreamsWithFfmpeg(primaryVideo, primaryAudio, finalExpectedPath);
-            downloadedFile = finalExpectedPath;
-          } catch (mErr) {
+    const dlArgs = [
+      '--ffmpeg-location',
+      ffmpegPath,
+      ...dlBaseArgs,
+      '-f',
+      formatSelector,
+      '--merge-output-format',
+      'mp4',
+      '--no-playlist',
+      '--no-part',
+      '--no-mtime',
+      '--retries', '2',
+      '--fragment-retries', '2',
+      '-o',
+      outputTemplate,
+      url,
+    ];
+
+    console.log(`[Downloader] Spawning yt-dlp [Profile: ${clientType}] (${qualityLabel}): ${ytDlpPath} ${dlArgs.join(' ')}`);
+
+    const downloadResult = await runYtDlp(ytDlpPath, dlArgs, {
+      onStdout: (text) => {
+        const match = text.match(/(\d+(\.\d+)?)%/);
+        if (match) {
+          const percent = parseFloat(match[1]);
+          const scaledProgress = 15 + Math.round(percent * 0.20);
+          onProgress({ step: 'download', message: `Downloading video: ${Math.round(percent)}%`, progress: scaledProgress });
+        }
+      },
+    });
+
+    if (downloadResult.code === 0) {
+      let downloadedFile = finalExpectedPath;
+
+      if (!fs.existsSync(downloadedFile)) {
+        const videoFiles = fs.readdirSync(outputDir).filter(f =>
+          f.startsWith(`${prefix}_${videoId}`) &&
+          !f.endsWith('.m4a') &&
+          !f.endsWith('.mp3') &&
+          !f.endsWith('.aac') &&
+          !f.endsWith('.opus') &&
+          !f.endsWith('.part') &&
+          !f.endsWith('.ytdl') &&
+          (f.endsWith('.mp4') || f.endsWith('.webm') || f.endsWith('.mkv') || f.endsWith('.mov'))
+        );
+
+        const audioFiles = fs.readdirSync(outputDir).filter(f =>
+          f.startsWith(`${prefix}_${videoId}`) &&
+          (f.endsWith('.m4a') || f.endsWith('.mp3') || f.endsWith('.aac') || f.endsWith('.opus'))
+        );
+
+        if (videoFiles.length > 0) {
+          const primaryVideo = path.join(outputDir, videoFiles[0]);
+          if (audioFiles.length > 0) {
+            onProgress({ step: 'download', message: 'Merging video & audio streams with FFmpeg...', progress: 32 });
+            try {
+              await mergeStreamsWithFfmpeg(primaryVideo, path.join(outputDir, audioFiles[0]), finalExpectedPath);
+              downloadedFile = finalExpectedPath;
+            } catch (mErr) {
+              downloadedFile = primaryVideo;
+            }
+          } else {
             downloadedFile = primaryVideo;
           }
-        } else {
-          downloadedFile = primaryVideo;
         }
-      } else {
-        throw new Error(`Video file not found in ${outputDir} after download.`);
+      }
+
+      if (fs.existsSync(downloadedFile) && fs.statSync(downloadedFile).size > 100000) {
+        onProgress({ step: 'download', message: `Video download (${qualityLabel}) completed successfully.`, progress: 35 });
+        return { filePath: downloadedFile, metadata };
       }
     }
 
-    onProgress({ step: 'download', message: `Video download (${qualityLabel}) completed successfully.`, progress: 35 });
-    return { filePath: downloadedFile, metadata };
+    lastDownloadError = downloadResult.stderr || `Exit code ${downloadResult.code}`;
+    console.warn(`[Downloader] Profile ${clientType} failed: ${lastDownloadError.slice(-200)}`);
   }
 
-  throw new Error(`Download failed with code ${downloadResult.code}: ${downloadResult.stderr.slice(-800)}`);
+  // Tier 3: Try RapidAPI fallback if available
+  if (process.env.RAPIDAPI_KEY) {
+    onProgress({ step: 'download', message: 'Mencoba pengunduhan cadangan via RapidAPI Stream Proxy...', progress: 28 });
+    const rapidDl = await downloadWithYouTubeMediaDownloader(url, finalExpectedPath, onProgress);
+    if (rapidDl && fs.existsSync(rapidDl.filePath)) {
+      return rapidDl;
+    }
+  }
+
+  // Format clean human-readable error with actionable advice for IP block / bot detection
+  const isBotOrIpBlock = (lastDownloadError || '').includes('Sign in to confirm') ||
+    (lastDownloadError || '').includes('429') ||
+    (lastDownloadError || '').includes('403') ||
+    (lastDownloadError || '').includes('block') ||
+    (lastDownloadError || '').includes('bot') ||
+    (lastDownloadError || '').includes('rate limit');
+
+  if (isBotOrIpBlock) {
+    throw new Error(
+      `YouTube membatasi/memblokir IP Anda sementara (Bot Detection/HTTP 429).\n` +
+      `Solusi cepat:\n` +
+      `1. Aktifkan Mode Pesawat (Airplane Mode) di HP selama 5 detik lalu matikan lagi untuk mendapatkan IP operator seluler baru.\n` +
+      `2. Atau letakkan file cookies.txt dari browser YouTube ke folder project.`
+    );
+  }
+
+  throw new Error(`Download video gagal (${qualityLabel}): ${lastDownloadError.slice(-400)}`);
 }

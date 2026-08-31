@@ -47,24 +47,10 @@ function getAiClientConfig({ apiKeyOverride, aiProvider = 'gemini' } = {}) {
         isGemini: false,
       };
     }
-    // Fallback to Gemini if Aivene key is missing
-    if (geminiKey && geminiKey !== 'your_gemini_api_key_here') {
-      console.warn('[AIService] Aivene key missing in .env. Falling back to Google Gemini...');
-      const model = getEffectiveGeminiModel();
-      return {
-        client: new OpenAI({
-          apiKey: geminiKey,
-          baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-          timeout: 120000,
-        }),
-        model,
-        provider: 'Google Gemini (Fallback)',
-        isGemini: true,
-      };
-    }
+    throw new Error('Aivene API Key belum disetel di server/.env (AIVENE_API_KEY). Silakan tambahkan AIVENE_API_KEY di file server/.env.');
   }
 
-  // Default: Google Gemini (100% Free, High Quota & Fast)
+  // Default: Google Gemini (Strictly according to user choice / default)
   if (geminiKey && geminiKey !== 'your_gemini_api_key_here') {
     const model = getEffectiveGeminiModel();
     return {
@@ -79,23 +65,7 @@ function getAiClientConfig({ apiKeyOverride, aiProvider = 'gemini' } = {}) {
     };
   }
 
-  // Fallback to Aivene if Gemini key is missing
-  if (aiveneKey && aiveneKey !== 'your_aivene_api_key_here') {
-    console.warn('[AIService] GEMINI_API_KEY not found in .env. Falling back to Aivene...');
-    const model = getEffectiveModel();
-    return {
-      client: new OpenAI({
-        apiKey: aiveneKey,
-        baseURL: 'https://api.aivene.com/v1',
-        timeout: 120000,
-      }),
-      model,
-      provider: 'Aivene (Fallback)',
-      isGemini: false,
-    };
-  }
-
-  throw new Error('API Key tidak ditemukan. Pastikan GEMINI_API_KEY (Google AI Studio Gratis) atau AIVENE_API_KEY sudah disetel di file server/.env.');
+  throw new Error('Google Gemini API Key belum disetel di server/.env (GEMINI_API_KEY). Silakan tambahkan GEMINI_API_KEY dari Google AI Studio (aistudio.google.com) di file server/.env.');
 }
 
 const DEFAULT_REFRAME = {
@@ -211,7 +181,7 @@ INSPECTION & QUALITY CONTROL STEPS:
    - "hasPhysicalBrandText": true if brand/text is printed on the physical product/box.
    - "isCleanProductShot": true if well-framed, free of floating subtitles/watermarks/faces.
 4. If the product has a visible brand/logo on it, set "hasProductBrand": true, "detectedBrand": "<BrandName>", "allowHflip": false.
-5. Select 6 to 8 clean 5-second intervals of active product demonstration with centered framing.
+5. Select 4 to 7 clean 5-second intervals of active product demonstration with centered framing (Total duration: 20 to 35 seconds, strictly 5 seconds per scene/clip).
 
 Return strict JSON in this format:
 {
@@ -423,7 +393,8 @@ export async function generateAdAdvisorScriptWithGemini({
 
   const effectiveTitle = (productTitle || '').trim() || videoMetadata?.title || 'Produk Viral Shopee';
   const effectiveDesc = (productDescription || '').trim();
-  const targetDuration = Math.max(30, Math.min(40, Math.round(Number(segmentDuration) || 35)));
+  const targetDuration = Math.max(20, Math.min(35, Math.round(Number(segmentDuration) || 30)));
+  const sceneCount = Math.round(targetDuration / 5);
   const targetWords = Math.round(targetDuration * 2.6);
   const minWords = Math.round(targetDuration * 2.3);
   const maxWords = Math.round(targetDuration * 2.8);
@@ -433,7 +404,7 @@ export async function generateAdAdvisorScriptWithGemini({
 You will receive the explicit Product Title, Product Description, and the sampled frames of a ${targetDuration}-second video clip. Use this precise product knowledge together with the visual frames to generate 5 high-converting marketing assets without making incorrect assumptions:
 
 CRITICAL DURATION & WORD-COUNT TIMING RULES (MANDATORY):
-- The final video duration is EXACTLY ${targetDuration} seconds.
+- The final video duration is EXACTLY ${targetDuration} seconds (${sceneCount} scenes of 5 seconds each).
 - In standard, engaging Indonesian voiceover tempo (2.5 - 2.8 words/second), the TOTAL voiceover script MUST contain between ${minWords} and ${maxWords} words (Target ideal: exactly ~${targetWords} words).
 - DO NOT make the script too short (fewer than ${minWords} words)! A short script will leave dead silence or force the backend to unnaturally slow down audio playback.
 - DO NOT make the script too long (more than ${maxWords} words)! A script that is too long will be cut off before the video finishes.
@@ -448,23 +419,22 @@ CRITICAL DURATION & WORD-COUNT TIMING RULES (MANDATORY):
    - 'buyingTrigger': Psychological trigger (FOMO, convenience, discount, viral trend).
 
 2. 'scenes' (Kotak Scene / Scene-by-Scene Breakdown):
-   - Break the ${targetDuration}-second video into short editing beats of 4 to 5 seconds each.
-   - Produce enough scenes to cover the full clip duration, usually ${Math.ceil(targetDuration / 5)} to ${Math.ceil(targetDuration / 4)} scenes.
-   - No single scene may be longer than 5 seconds unless it is the final leftover scene.
+   - Break the ${targetDuration}-second video into EXACTLY ${sceneCount} scenes of 5 seconds each (Scene 1: 00:00 - 00:05, Scene 2: 00:05 - 00:10, ..., Scene ${sceneCount}).
+   - Produce exactly ${sceneCount} scenes, each exactly 5 seconds long.
    - For each scene provide:
-     * 'sceneNumber': integer (1, 2, 3...)
-     * 'timeRange': e.g. "00:00 - 00:05"
+     * 'sceneNumber': integer (1, 2, 3... up to ${sceneCount})
+     * 'timeRange': e.g. "00:00 - 00:05", "00:05 - 00:10", etc.
      * 'visualDescription': What is happening visually in Indonesian.
      * 'voiceover': The exact spoken narration line for this scene (around 12-14 words per 5-second scene).
      * 'adAdvisorNotes': Director notes for sound effects (SFX), visual text overlays, or emotional pacing.
 
 3. 'voiceoverScript' (Naskah Voiceover Lengkap dengan Penanda Waktu):
    - A complete Indonesian spoken narration (${minWords} - ${maxWords} words total).
-   - Each line MUST start with an exact timestamp corresponding to the video timeline (e.g. [00:00], [00:05], [00:10], [00:15], [00:20], [00:25], [00:30], [00:35]), followed by the spoken line, e.g.:
+   - Each line MUST start with an exact timestamp corresponding to each 5-second scene (e.g. [00:00], [00:05], [00:10], up to [${formatSeconds(targetDuration - 5)}]), followed by the spoken line, e.g.:
      [00:00] Masih repot marut keju atau kelapa pakai alat lama?
      [00:05] Kenalin, Parutan Serbaguna Stainless super praktis ini!
      ...
-     [00:30] Cek produk di bawah sekarang sebelum kehabisan promo spesialnya!
+     [${formatSeconds(targetDuration - 5)}] Cek produk di bawah sekarang sebelum kehabisan promo spesialnya!
 
 STRICT RULES FOR VOICE OVER & CALL TO ACTION:
 - NEVER use the word "Shopee" in the voiceover script or scene spoken lines.
@@ -804,29 +774,29 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, fram
       }),
     });
     previousEnd = endSeconds;
-    if (normalized.length === 8) break; // Target max 8 clips (40s)
+    if (normalized.length === 7) break; // Target max 7 clips (35s)
   }
 
   console.log(`[normalizeClipPlan] Accepted ${normalized.length} valid clips from AI vision`);
 
-  if (normalized.length >= 2) {
+  if (normalized.length >= 4) {
     return normalized;
   }
 
   if (!allowFallback) {
-    throw new Error('AI menolak video ini: tidak ditemukan potongan video yang bersih dari watermark, subtitle terjemahan, nama channel mengambang, atau wajah/talking head.');
+    throw new Error('AI menolak video ini: tidak ditemukan minimal 4 potongan video bersih (20 detik) dari watermark, subtitle terjemahan, nama channel mengambang, atau wajah/talking head.');
   }
 
-  // Fallback: build 6 to 8 evenly spaced clips (30 to 40 seconds total)
-  console.log(`[normalizeClipPlan] Building 30-40s fallback clip plan for ${totalDuration}s video`);
+  // Fallback: build 4 to 7 evenly spaced clips (20 to 35 seconds total, exactly 5s per clip)
+  console.log(`[normalizeClipPlan] Building 20-35s fallback clip plan for ${totalDuration}s video`);
   const fallbackClips = [];
-  const fallbackTargetClips = Math.min(8, Math.max(6, Math.floor(totalDuration / clipLength)));
+  const fallbackTargetClips = Math.min(7, Math.max(4, Math.floor(totalDuration / clipLength)));
   const maxStart = Math.max(0, Math.floor(totalDuration - clipLength));
-  const fallbackStart = totalDuration > 30
-    ? Math.min(maxStart, Math.max(5, Math.floor(totalDuration * 0.06)))
+  const fallbackStart = totalDuration > 25
+    ? Math.min(maxStart, Math.max(0, Math.floor(totalDuration * 0.05)))
     : 0;
-  const fallbackLastStart = totalDuration > 35
-    ? Math.max(fallbackStart, Math.min(maxStart, Math.floor(totalDuration * 0.92) - clipLength))
+  const fallbackLastStart = totalDuration > 30
+    ? Math.max(fallbackStart, Math.min(maxStart, Math.floor(totalDuration * 0.95) - clipLength))
     : maxStart;
 
   const span = fallbackLastStart - fallbackStart;
@@ -856,7 +826,7 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, fram
   }
 
   if (!fallbackClips.length) {
-    throw new Error('Video terlalu pendek untuk membuat potongan produk utama 5 detik.');
+    throw new Error('Video terlalu pendek untuk membuat potongan produk utama 5 detik (minimal 20 detik).');
   }
   return fallbackClips;
 }
@@ -877,9 +847,9 @@ function clampNumber(value, min, max, fallback) {
 }
 
 function buildFallbackScenes(productName, segmentDuration) {
-  const totalDuration = Math.max(5, Math.round(Number(segmentDuration) || 45));
+  const totalDuration = Math.max(20, Math.min(35, Math.round(Number(segmentDuration) || 30)));
   const sceneLength = 5;
-  const sceneCount = Math.ceil(totalDuration / sceneLength);
+  const sceneCount = Math.round(totalDuration / sceneLength);
   const sceneTemplates = [
     {
       visualDescription: `Close-up produk ${productName} sebagai hook awal.`,

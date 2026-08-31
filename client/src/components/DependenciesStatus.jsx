@@ -65,7 +65,7 @@ export default function DependenciesStatus({ status, onRefresh, loading }) {
             <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400" />
             <span className="text-slate-300 font-mono">Aivene</span>
             <span className="px-1.5 py-0.5 rounded text-[10px] bg-indigo-500/10 text-indigo-300">
-              Cadangan
+              Alternatif
             </span>
           </div>
         )}

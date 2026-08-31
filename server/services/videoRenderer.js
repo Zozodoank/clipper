@@ -307,7 +307,7 @@ function normalizeRenderClips(clips, fallbackStartTime, fallbackEndTime, fallbac
           hasProductBrand: clip?.hasProductBrand !== undefined ? clip.hasProductBrand : clip?.reframe?.hasProductBrand,
         },
       });
-      if (normalized.length === 12) break;
+      if (normalized.length === 7) break; // Max 7 clips (35s)
     }
   }
 
@@ -315,8 +315,8 @@ function normalizeRenderClips(clips, fallbackStartTime, fallbackEndTime, fallbac
 
   const fallbackStart = parseTimeToSeconds(fallbackStartTime);
   const fallbackEnd = parseTimeToSeconds(fallbackEndTime);
-  const fallbackDuration = fallbackEnd > fallbackStart ? fallbackEnd - fallbackStart : clipLength;
-  const clipCount = Math.max(1, Math.min(12, Math.floor(fallbackDuration / clipLength)));
+  const fallbackDuration = fallbackEnd > fallbackStart ? fallbackEnd - fallbackStart : (clipLength * 6);
+  const clipCount = Math.max(4, Math.min(7, Math.floor(fallbackDuration / clipLength)));
 
   for (let index = 0; index < clipCount; index++) {
     normalized.push({

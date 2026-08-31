@@ -83,7 +83,7 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
                 )}
               </button>
 
-              {/* Option 2: Aivene AI (Fallback) */}
+              {/* Option 2: Aivene AI (Alternative) */}
               <button
                 type="button"
                 onClick={() => setSettings({ ...settings, aiProvider: 'aivene' })}
@@ -99,14 +99,14 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
                     Aivene AI
                   </span>
                   <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                    CADANGAN
+                    ALTERNATIF
                   </span>
                 </div>
                 <div className="text-[11px] font-mono text-slate-200 font-semibold mb-1">
                   qwen3.8-flash
                 </div>
                 <p className="text-[10px] text-slate-400 leading-tight">
-                  Digunakan sebagai alternatif jika terjadi kendala pada Gemini. Memerlukan saldo kredit Aivene.
+                  Model alternatif berbasis Aivene API (Qwen 3.8 Flash). Memerlukan AIVENE_API_KEY di server/.env.
                 </p>
               </button>
 

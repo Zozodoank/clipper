@@ -360,8 +360,61 @@ async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress) {
 }
 
 
+// ── Direct Native YouTube Web Search Scraper (0-second lag & 0 dependency) ───
+
+async function searchDirectYouTubeWeb(query, limit = 10) {
+  try {
+    const res = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+        'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7'
+      },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const match = html.match(/var ytInitialData = ({.*?});<\/script>/s) || html.match(/ytInitialData\s*=\s*({.+?});/);
+    if (!match) return null;
+    const data = JSON.parse(match[1]);
+    const sections = data.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents || [];
+    const videos = [];
+    for (const sec of sections) {
+      const items = sec.itemSectionRenderer?.contents || [];
+      for (const item of items) {
+        const v = item.videoRenderer;
+        if (v && v.videoId) {
+          const title = v.title?.runs?.map(r => r.text).join('') || v.title?.simpleText || 'YouTube Video';
+          const durationStr = v.lengthText?.simpleText || '';
+          const parts = durationStr.replace(/[^0-9:]/g, ':').split(':').map(Number);
+          let duration = 60;
+          if (parts.length === 3) duration = (parts[0] * 3600) + (parts[1] * 60) + parts[2];
+          else if (parts.length === 2) duration = (parts[0] * 60) + parts[1];
+          else if (parts.length === 1 && parts[0] > 0) duration = parts[0];
+
+          const channel = v.ownerText?.runs?.[0]?.text || '';
+          const desc = v.detailedMetadataSnippets?.[0]?.snippetText?.runs?.map(r => r.text).join('') || '';
+          videos.push({
+            id: v.videoId,
+            title,
+            url: `https://www.youtube.com/watch?v=${v.videoId}`,
+            duration: duration || 60,
+            channel,
+            description: desc.slice(0, 500)
+          });
+          if (videos.length >= limit) break;
+        }
+      }
+      if (videos.length >= limit) break;
+    }
+    return videos;
+  } catch (err) {
+    console.warn(`[Downloader] Direct YouTube search notice: ${err.message}`);
+    return null;
+  }
+}
+
 /**
- * Searches YouTube candidates using RapidAPI or direct Android API client.
+ * Searches YouTube candidates using Native Web Search, RapidAPI, or yt-dlp.
  * @param {string} query - Search query text
  * @param {{ limit?: number, onProgress?: Function }} options
  * @returns {Promise<Array<{ id: string, title: string, url: string, duration: number, channel: string, description: string }>>}
@@ -375,58 +428,74 @@ export async function searchYouTubeVideos(query, { limit = 10, onProgress = () =
     }
   };
 
+  const safeLimit = Math.max(1, Math.min(20, Number(limit) || 10));
+
   // 1. Prioritize RapidAPI search if key is configured
-  const rapidResults = await searchWithRapidApi(query, limit);
+  const rapidResults = await searchWithRapidApi(query, safeLimit);
   if (rapidResults && rapidResults.length > 0) {
     return rapidResults;
   }
 
-  // 2. Fallback to direct Android API yt-dlp search
-  const ytDlpPath = await getYtDlpPath(reportProgress);
-  const safeLimit = Math.max(1, Math.min(20, Number(limit) || 10));
-  const searchTarget = `ytsearch${safeLimit}:${query}`;
-
-  reportProgress({
-    step: 'auto_youtube_search',
-    message: `Searching YouTube candidates: ${query}`,
-    progress: 8,
-  });
-
-  const baseArgs = [
-    ...getFastArgs(),
-    '--flat-playlist',
-    '--dump-json',
-    '--no-playlist',
-    '--skip-download',
-    searchTarget
-  ];
-  const result = await runYtDlp(ytDlpPath, baseArgs);
-
-  if (result.code !== 0) {
-    throw new Error(`yt-dlp search failed with code ${result.code}: ${result.stderr.slice(-400)}`);
+  // 2. Direct fast native YouTube web search parser (0-second lag, 0 external binary dependency)
+  const webResults = await searchDirectYouTubeWeb(query, safeLimit);
+  if (webResults && webResults.length > 0) {
+    return webResults;
   }
 
-  return result.stdout
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        return JSON.parse(line);
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean)
-    .map((item) => ({
-      id: item.id,
-      title: item.title || 'YouTube Video',
-      url: item.webpage_url || item.original_url || (item.id ? `https://www.youtube.com/watch?v=${item.id}` : ''),
-      duration: Number(item.duration) || 0,
-      channel: item.uploader || item.channel || '',
-      description: (item.description || '').slice(0, 500),
-    }))
-    .filter((item) => item.id && item.url && item.duration >= 20 && item.duration <= 900);
+  // 3. Fallback to direct yt-dlp search
+  try {
+    const ytDlpPath = await getYtDlpPath(reportProgress);
+    const searchTarget = `ytsearch${safeLimit}:${query}`;
+
+    reportProgress({
+      step: 'auto_youtube_search',
+      message: `Searching YouTube candidates: ${query}`,
+      progress: 8,
+    });
+
+    const baseArgs = [
+      '--no-check-certificates',
+      '--geo-bypass',
+      '--flat-playlist',
+      '--dump-json',
+      '--no-playlist',
+      '--skip-download',
+      searchTarget
+    ];
+
+    const foundCookies = findCookiesFile();
+    if (foundCookies) baseArgs.push('--cookies', foundCookies);
+
+    const result = await runYtDlp(ytDlpPath, baseArgs);
+
+    if (result.code === 0 && result.stdout) {
+      return result.stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+          try {
+            return JSON.parse(line);
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean)
+        .map((item) => ({
+          id: item.id,
+          title: item.title || 'YouTube Video',
+          url: item.webpage_url || item.original_url || (item.id ? `https://www.youtube.com/watch?v=${item.id}` : ''),
+          duration: Number(item.duration) || 60,
+          channel: item.uploader || item.channel || '',
+          description: (item.description || '').slice(0, 500),
+        }))
+        .filter((item) => item.id && item.url);
+    }
+  } catch (err) {
+    console.warn(`[Downloader] yt-dlp search fallback warning: ${err.message}`);
+  }
+
+  return [];
 }
 
 /**

@@ -835,7 +835,8 @@ function isShopeeProductUrl(url) {
 
 function isLikelyCleanYouTubeCandidate(candidate) {
   if (!candidate.url || !candidate.id) return false;
-  if (candidate.duration < 15 || candidate.duration > 1800) return false;
+  // If duration is known, reject only if too short (<15s) or too long (>30 min)
+  if (candidate.duration > 0 && (candidate.duration < 15 || candidate.duration > 1800)) return false;
 
   const titleText = normalizeText(candidate.title || '');
   if (isBulkyOrUnsuitableProduct(titleText)) return false;

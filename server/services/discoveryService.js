@@ -514,17 +514,17 @@ export async function discoverYouTubeCandidatesForProduct({
   const productWords = normalizeText(coreTitle).split(' ').filter((word) => word.length >= 3);
   const compactTitle = productWords.slice(0, 5).join(' ');
 
-  // Varied search intent modifiers to find diverse video angles and avoid picking the same video repeatedly
+  // Targeted search modifiers to find high-production, experienced creator demonstration videos
   const searchModifiers = [
-    'review unboxing',
-    'cara pakai demo praktis',
-    'tes fungsi review jujur',
-    'spill racun shopee viral',
-    'review pemakaian unboxing',
-    'unboxing produk viral shopee',
-    'demonstrasi cara kerja produk',
-    'review barang unik praktis',
-    'spill barang berfaedah unik',
+    'review unboxing peragaan',
+    'demo cara pakai tes fungsi',
+    'unboxing review pemakaian',
+    'demonstrasi cara kerja praktis',
+    'review produk b-roll sinematik',
+    'hands on demo review unboxing',
+    'tes fungsi cara pakai review',
+    'spill barang unik peragaan',
+    'unboxing aesthetic peragaan produk',
   ];
 
   // Randomize modifier order slightly so distinct queries are attempted across multiple jobs
@@ -532,11 +532,11 @@ export async function discoverYouTubeCandidatesForProduct({
 
   const queryCandidates = [
     `${compactTitle} ${shuffledModifiers[0]}`,
-    `unboxing ${compactTitle}`,
+    `${compactTitle} demo cara pakai peragaan`,
     `${compactTitle} ${shuffledModifiers[1]}`,
-    `racun shopee ${compactTitle}`,
-    `${compactTitle} review`,
-    `spill ${compactTitle}`,
+    `unboxing ${compactTitle} review pemakaian`,
+    `${compactTitle} tes fungsi peragaan`,
+    `${compactTitle} b-roll review`,
     coreTitle,
   ].filter(Boolean);
 
@@ -843,6 +843,7 @@ function isLikelyCleanYouTubeCandidate(candidate) {
 
   const excludedTitleWords = [
     'podcast', 'reaction', 'kompilasi', 'compilation', 'full album', 'playlist',
+    'vlog', 'daily vlog', 'a day in my life', 'cerita', 'bincang', 'talkshow', 'ngobrol',
     'cara belanja', 'cara checkout', 'daftar akun', 'tutorial aplikasi', 'cara jualan', 'cara live',
     'shopee affiliate tutorial', 'aplikasi shopee'
   ];

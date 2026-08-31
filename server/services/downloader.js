@@ -336,10 +336,11 @@ async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress) {
       tags: []
     };
 
-    // Pick best combined audio+video format at <=1080p
+    // Pick best combined audio+video format prioritizing 1080p Full HD -> 720p HD -> best available
     let best = data.formats.find(f => f.qualityLabel === '1080p' && f.audioQuality) ||
+               data.formats.find(f => f.qualityLabel === '1080p') ||
                data.formats.find(f => f.qualityLabel === '720p' && f.audioQuality) ||
-               data.formats.find(f => f.qualityLabel === '360p' && f.audioQuality) ||
+               data.formats.find(f => f.qualityLabel === '720p') ||
                data.formats.find(f => f.audioQuality) || 
                data.formats[0];
 
@@ -347,7 +348,7 @@ async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress) {
       return null;
     }
 
-    onProgress({ step: 'download', message: `Downloading video via RapidAPI stream (${best.qualityLabel || '360p'})...`, progress: 18 });
+    onProgress({ step: 'download', message: `Downloading video via RapidAPI stream (${best.qualityLabel || 'HD'})...`, progress: 18 });
     console.log(`[Downloader] yt-api stream: ${best.qualityLabel}, hasAudio=${!!best.audioQuality}`);
 
     await downloadFileFromUrl(best.url, outputPath, { onProgress });
@@ -573,10 +574,10 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
 
     const dlBaseArgs = getDownloadArgs(clientType);
 
-    // Resilient format selector: tries 360p combined, pre-muxed mp4 format 18, and generic fallback
+    // Resilient format selector: tries 360p preview for AI analysis vs True 1080p Full HD+ for final rendering
     const formatSelector = isPreview
       ? '18/bestvideo[height<=360]+bestaudio/best[height<=360]/bestvideo[height<=480]+bestaudio/best[height<=480]/worstvideo+worstaudio/worst/best'
-      : 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best';
+      : 'bestvideo[height>=1080]+bestaudio/bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best';
 
     const dlArgs = [
       '--ffmpeg-location',

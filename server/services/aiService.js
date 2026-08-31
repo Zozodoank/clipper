@@ -78,34 +78,40 @@ export async function selectHighlightWithGeminiFlash({
   const effectiveTitle = productTitle || videoMetadata?.title || 'Product Showcase Video';
   const effectiveDesc = productDescription || videoMetadata?.description || '';
 
-  const systemPrompt = `You are a Strict Short-Form Video Editor & Vision OCR Inspector for Affiliate Product Ads.
-Your task: Inspect video frames and select ONLY 100% clean 5-second product shots.
+  const systemPrompt = `You are a Strict Senior Video Curator, Quality Control Director & Vision OCR Inspector for Affiliate Product Ads.
+Your mission: Inspect video timeline frames and approve ONLY high-quality product footage filmed by EXPERIENCED / PROFESSIONAL CREATORS.
 
-CRITICAL DISTINCTION (DO NOT CONFUSE THESE TWO CATEGORIES):
+FOUR MANDATORY QUALITY CRITERIA FOR EXPERIENCED CREATOR FOOTAGE:
 
-1. CATEGORY 1: UNWANTED FLOATING VIDEO OVERLAYS (STRICT ZERO TOLERANCE - REJECT/EXCLUDE):
-   - Floating video subtitles, translation text (e.g. Indonesian subtitles like "SANGAT BAGUS", lyrics, TikTok/CapCut captions).
-   - Floating watermarks, channel usernames (e.g. "@creator123", TikTok watermark logo, YouTube channel badge floating in corner).
-   - Video editing stickers, floating discount badges, or arrows overlaid on top of the video by an editor.
-   - RULE: If a frame contains ANY floating subtitle, video caption, watermark, or channel overlay, mark "hasFloatingOverlay": true and "isCleanProductShot": false. Discard this interval.
+1. PROPER PRODUCT FRAMING & CENTERING (TIDAK TERPOTONG & CENTER):
+   - The product must be properly framed in the center, clearly visible, and NOT cut off by poor amateur camera angles or bad framing.
+   - The camera shot must be steady, well-lit, and sharply focused on the product.
+   - If the creator filmed the product poorly (e.g. product cut off at edge of camera, missing from frame, shaky, blurry, or amateur composition), mark "isWellFramed": false and DO NOT select that interval.
 
-2. CATEGORY 2: PHYSICAL PRODUCT BRAND & LABELS (100% CLEAN & VALID - NEVER REJECT!):
-   - Brand name / logo physically printed ON THE PRODUCT ITSELF (e.g. "PHILIPS" on blender, "XIAOMI" on device, "BOLDe" on pan, "TUPPERWARE" on bottle, "SKINTIFIC" on cosmetic bottle, model numbers, buttons like "On/Off", "1200W", "Max").
-   - Text printed on the physical product packaging/box or product label.
-   - RULE: This is NATURAL PRODUCT FOOTAGE. Mark "hasPhysicalBrandText": true and "isCleanProductShot": true. DO NOT mark it as floating overlay!
-   - This physical brand text is 100% CLEAN and MUST BE SELECTED.
-   - It only informs the system: set "allowHflip": false (do not mirror the video so the brand text won't appear backwards).
+2. ACTIVE PRODUCT DEMONSTRATION (PERAGAAN NYATA):
+   - The footage MUST show ACTIVE DEMONSTRATION of the product in use:
+     * Hands unboxing, assembling, or preparing the product.
+     * Hands operating buttons, switches, knobs, or mechanisms.
+     * Practical real-life demonstration (e.g. cutting vegetables with chopper, cooking in pan, spraying, cleaning with mop, using gadget).
+     * Clear showcase of the practical results and benefits.
+   - Reject boring, static, motionless product shots where nothing is being demonstrated.
 
-3. NO FACES / TALKING HEADS:
-   - Only faceless product close-ups, hands demonstrating or testing the product.
+3. STRICT ZERO TOLERANCE ON FLOATING SUBTITLES & WATERMARKS (BEBAS SUBTITLE):
+   - UNWANTED FLOATING OVERLAYS (REJECT/EXCLUDE):
+     * Hardcoded subtitles, captions, or translation text (e.g. Indonesian subtitles like "SANGAT BAGUS", auto-captions, CapCut/TikTok floating text).
+     * Watermarks, channel handles (e.g. "@creator123", TikTok logo, YouTube channel badge floating in corner).
+     * Floating stickers, discount badges, or arrows overlaid by video editors.
+     * RULE: If a frame contains ANY floating subtitle, caption, watermark, or channel overlay, mark "hasFloatingOverlay": true, "isCleanProductShot": false. NEVER select this interval!
+   - PHYSICAL PRODUCT BRAND & LABELS (100% CLEAN & VALID - WELCOME!):
+     * Brand logo or text physically printed ON THE PRODUCT ITSELF (e.g. "PHILIPS", "XIAOMI", "BOLDe", buttons like "On/Off", "Max").
+     * Text printed on the physical product packaging/box or label.
+     * RULE: This is NATURAL physical product footage. Mark "hasPhysicalBrandText": true and "isCleanProductShot": true. This is 100% CLEAN. Set "allowHflip": false so the brand text won't appear backwards.
 
-4. CLIP SELECTION:
-   - Select 6 to 8 non-overlapping 5-second intervals.
-   - Valid intervals are where hasFloatingOverlay=false, hasFace=false, and isCleanProductShot=true (physical brand text on the product is 100% CLEAN and WELCOME!).
+4. FACELESS / HANDS-ONLY (NO TALKING HEADS):
+   - Only faceless close-ups and hands demonstrating the product. Strictly no human faces.
 
-5. REJECTION MANDATE:
-   - ONLY reject the video ("isUsableSourceVideo": false) if the entire video is contaminated with FLOATING SUBTITLES, WATERMARKS, or FACES.
-   - NEVER reject a video because the product has a brand name, logo, or physical text on it!`;
+REJECTION MANDATE:
+- If the video is from an amateur creator (product cut off/out of frame, no clear demonstration, blurry, or polluted with floating subtitles/watermarks), REJECT the video ("isUsableSourceVideo": false) with a clear rejectionReason so the system can switch to a better candidate video.`;
 
   const userPrompt = `Product Title: "${effectiveTitle}"
 ${effectiveDesc ? `Product Description / Key Features: "${effectiveDesc}"` : ''}
@@ -116,19 +122,23 @@ Product Link: ${shopeeLink || 'https://shope.ee/link'}
 Sampled Visual Frames (${frames.length} frames across timeline):
 ${frames.map((f, i) => `Frame #${i + 1} at timestamp ${f.timeFormatted} (${f.timestamp}s)`).join('\n')}
 
-INSPECTION STEPS:
-1. Identify any floating video subtitles / watermarks / channel names (Category 1: Reject) vs physical text on the product (Category 2: 100% Clean Product Shot).
-2. In "frameAudit", list every frame:
+INSPECTION & QUALITY CONTROL STEPS:
+1. Identify if the video is from an experienced creator with proper centering and active hands-on demonstration.
+2. Identify any floating video subtitles / watermarks / channel names (Category 1: Reject) vs physical text on the product (Category 2: 100% Clean Product Shot).
+3. In "frameAudit", list every frame:
+   - "isWellFramed": true if the product is properly centered and not cut off by the creator's camera angle.
+   - "hasActiveDemonstration": true if hands are actively demonstrating/operating/testing the product.
    - "hasFloatingOverlay": true ONLY if floating subtitles/watermarks/channel names exist.
    - "hasPhysicalBrandText": true if brand/text is printed on the physical product/box.
-   - "isCleanProductShot": true if free of floating subtitles/watermarks/faces (physical brand on product IS clean!).
-3. If the product has a visible brand/logo on it, set "hasProductBrand": true, "detectedBrand": "<BrandName>", "allowHflip": false.
-4. Select 6 to 8 clean 5-second intervals of product demonstration.
+   - "isCleanProductShot": true if well-framed, free of floating subtitles/watermarks/faces.
+4. If the product has a visible brand/logo on it, set "hasProductBrand": true, "detectedBrand": "<BrandName>", "allowHflip": false.
+5. Select 6 to 8 clean 5-second intervals of active product demonstration with centered framing.
 
 Return strict JSON in this format:
 {
   "isProductMatch": true,
   "isUsableSourceVideo": true,
+  "isExperiencedCreatorQuality": true,
   "rejectionReason": "",
   "hasProductBrand": false,
   "detectedBrand": "none",
@@ -137,6 +147,8 @@ Return strict JSON in this format:
     {
       "frameIndex": 1,
       "timestamp": "00:00",
+      "isWellFramed": true,
+      "hasActiveDemonstration": true,
       "hasFloatingOverlay": false,
       "detectedFloatingOverlay": "none",
       "hasPhysicalBrandText": false,
@@ -151,7 +163,7 @@ Return strict JSON in this format:
       "startTime": "00:05",
       "endTime": "00:10",
       "startSeconds": 5,
-      "reason": "Clean hands-only product demonstration without floating subtitles, watermarks, or face.",
+      "reason": "Clean hands-on demonstration with centered product framing, free of floating subtitles or faces.",
       "hasProductBrand": false,
       "allowHflip": true,
       "isCleanAffiliateShot": true,
@@ -166,7 +178,7 @@ Return strict JSON in this format:
         "avoidFaceZones": ["top_left"],
         "faceSafety": true,
         "allowHflip": true,
-        "notes": "Clean product demonstration."
+        "notes": "Centered hands-on product demonstration."
       }
     }
   ]
@@ -649,7 +661,7 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, fram
 
   console.log(`[normalizeClipPlan] totalDuration=${totalDuration}s, rawClips=${sourceClips.length}, frameAudit=${frameAudit.length}, hasProductBrand=${hasProductBrand}, allowHflip=${allowHflip}`);
 
-  // Build a set of timestamps containing detected floating text, subtitles, watermarks, or faces
+  // Build a set of timestamps containing detected floating text, subtitles, watermarks, faces, or amateur framing
   const dirtyTimestamps = [];
   if (Array.isArray(frameAudit)) {
     for (const audit of frameAudit) {
@@ -666,8 +678,9 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, fram
       const legacyText = (audit.detectedText || '').toLowerCase().trim();
       const isLegacySubtitle = !isPhysicalBrand && (audit.hasTextOrSubtitles === true || (legacyText && legacyText !== 'none' && legacyText !== 'null' && legacyText !== 'false'));
       const hasFace = audit.hasFace === true;
+      const isPoorlyFramed = audit.isWellFramed === false;
 
-      if (hasFloatingOverlay || isLegacySubtitle || hasFace) {
+      if (hasFloatingOverlay || isLegacySubtitle || hasFace || isPoorlyFramed) {
         const sec = Math.round(parseTimeToSeconds(audit.timestamp ?? audit.frameIndex));
         dirtyTimestamps.push(sec);
       }

@@ -87,7 +87,10 @@ export async function renderSilentAntiDetectionVideo({
       '-an', // Strictly NO AUDIO
       '-c:v', 'libx264',
       '-preset', 'fast',
-      '-crf', '22',
+      '-crf', '19',
+      '-b:v', '5500k',
+      '-maxrate', '7500k',
+      '-bufsize', '10000k',
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
       outputVideo
@@ -202,7 +205,10 @@ export async function mergeVoiceoverAndBurnSubtitles({
     args.push(
       '-c:v', 'libx264',
       '-preset', 'fast',
-      '-crf', '22',
+      '-crf', '19',
+      '-b:v', '5500k',
+      '-maxrate', '7500k',
+      '-bufsize', '10000k',
       '-c:a', 'aac',
       '-b:a', '192k',
       '-pix_fmt', 'yuv420p',

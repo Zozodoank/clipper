@@ -845,6 +845,14 @@ async function runAutoStage1Worker(run) {
           deletePersistedJob(autoJobId);
 
           run.failures.push({ productTitle: product.title, error: err.message, time: new Date().toISOString() });
+          
+          const msg = (err.message || '').toLowerCase();
+          const isCriticalApiError = msg.includes('401') || msg.includes('403') || msg.includes('api key') || msg.includes('unauthorized') || msg.includes('saldo') || msg.includes('kuota') || msg.includes('billing') || msg.includes('quota') || msg.includes('authenticationerror');
+          if (isCriticalApiError) {
+            console.error('[Auto] Critical API error detected. Stopping Auto-Run entirely.');
+            throw err;
+          }
+          
           // Try next YouTube candidate for this product
         }
       }

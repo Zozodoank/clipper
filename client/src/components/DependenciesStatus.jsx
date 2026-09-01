@@ -6,9 +6,8 @@ export default function DependenciesStatus({ status, onRefresh, loading }) {
 
   const ffmpegOk = status?.dependencies?.ffmpeg?.available || status?.ffmpeg?.available;
   const ytdlpOk = status?.dependencies?.ytdlp?.available || status?.ytdlp?.available;
-  const geminiOk = status?.geminiKeyConfigured;
-  const aiveneOk = status?.aiveneKeyConfigured;
-  const geminiModel = status?.geminiModel || 'gemini-3.6-flash';
+  const qwenOk = status?.qwenKeyConfigured;
+  const qwenModel = status?.qwenModel || 'qwen-vl-plus';
 
   return (
     <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -46,29 +45,18 @@ export default function DependenciesStatus({ status, onRefresh, loading }) {
 
         <span className="text-slate-500">|</span>
 
-        {/* Gemini API (Default) */}
+        {/* Qwen API */}
         <div className="flex items-center gap-1.5">
-          {geminiOk ? (
+          {qwenOk ? (
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
           ) : (
             <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
           )}
-          <span className="text-slate-300 font-mono font-medium">Gemini ({geminiModel})</span>
-          <span className={`px-1.5 py-0.5 rounded text-[10px] ${geminiOk ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
-            {geminiOk ? 'Terhubung (.env)' : 'Missing in .env'}
+          <span className="text-slate-300 font-mono font-medium">Qwen ({qwenModel})</span>
+          <span className={`px-1.5 py-0.5 rounded text-[10px] ${qwenOk ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
+            {qwenOk ? 'Terhubung (.env)' : 'Missing in .env'}
           </span>
         </div>
-
-        {/* Aivene API (Fallback) */}
-        {aiveneOk && (
-          <div className="hidden sm:flex items-center gap-1.5">
-            <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400" />
-            <span className="text-slate-300 font-mono">Aivene</span>
-            <span className="px-1.5 py-0.5 rounded text-[10px] bg-indigo-500/10 text-indigo-300">
-              Alternatif
-            </span>
-          </div>
-        )}
       </div>
 
       <button

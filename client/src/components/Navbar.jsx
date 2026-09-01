@@ -126,21 +126,12 @@ export default function Navbar({ onOpenSettings, engineStatus }) {
 
             {/* AI Model Badge */}
             <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs">
-              {engineStatus?.activeAiEngine === 'aivene' ? (
-                <>
-                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-                  <span className="text-slate-300">Aivene</span>
-                  <span className="text-slate-500">|</span>
-                  <span className="text-indigo-400 font-mono">{engineStatus?.aiveneModel || 'qwen3.8-flash'}</span>
-                </>
-              ) : (
                 <>
                   <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-slate-300 font-medium">Google Gemini</span>
+                  <span className="text-slate-300 font-medium">Alibaba Qwen</span>
                   <span className="text-slate-500">|</span>
-                  <span className="text-emerald-400 font-mono">{engineStatus?.geminiModel || 'gemini-3.6-flash'}</span>
+                  <span className="text-emerald-400 font-mono">{engineStatus?.qwenModel || 'qwen-vl-plus'}</span>
                 </>
-              )}
             </div>
 
             {/* Anti-detection badge */}

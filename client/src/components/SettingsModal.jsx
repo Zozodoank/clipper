@@ -51,69 +51,36 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+            <div className="grid grid-cols-1 gap-2.5 pt-1">
               
-              {/* Option 1: Google Gemini (Default) */}
+              {/* Option 1: Alibaba Qwen (Default & Only Option) */}
               <button
                 type="button"
-                onClick={() => setSettings({ ...settings, aiProvider: 'gemini' })}
-                className={`p-3 rounded-xl border text-left transition-all relative ${
-                  currentProvider === 'gemini'
-                    ? 'bg-emerald-950/40 border-emerald-500 text-white shadow-lg shadow-emerald-950/50 ring-1 ring-emerald-500/50'
-                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-850 hover:border-slate-700'
-                }`}
+                onClick={() => setSettings({ ...settings, aiProvider: 'qwen' })}
+                className={`p-3 rounded-xl border text-left transition-all relative bg-emerald-950/40 border-emerald-500 text-white shadow-lg shadow-emerald-950/50 ring-1 ring-emerald-500/50`}
               >
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-bold text-xs text-emerald-300 flex items-center gap-1">
                     <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                    Google Gemini
+                    Alibaba Qwen (DashScope)
                   </span>
                   <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                    DEFAULT (Gratis)
+                    DEFAULT (Gratis 1M Token)
                   </span>
                 </div>
                 <div className="text-[11px] font-mono text-slate-200 font-semibold mb-1">
-                  gemini-3.6-flash
+                  qwen-vl-plus
                 </div>
                 <p className="text-[10px] text-slate-400 leading-tight">
-                  100% Gratis via Google AI Studio. Kuota 1.500 video/hari, analisis visual 36 frame instan.
+                  Kekuatan AI dari Alibaba Cloud dengan kuota jutaan token gratis. Sangat optimal untuk membaca frame video.
                 </p>
-                {currentProvider === 'gemini' && (
-                  <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                )}
-              </button>
-
-              {/* Option 2: Aivene AI (Alternative) */}
-              <button
-                type="button"
-                onClick={() => setSettings({ ...settings, aiProvider: 'aivene' })}
-                className={`p-3 rounded-xl border text-left transition-all relative ${
-                  currentProvider === 'aivene'
-                    ? 'bg-indigo-950/40 border-indigo-500 text-white shadow-lg shadow-indigo-950/50 ring-1 ring-indigo-500/50'
-                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-850 hover:border-slate-700'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-bold text-xs text-indigo-300 flex items-center gap-1">
-                    <Bot className="w-3.5 h-3.5 text-indigo-400" />
-                    Aivene AI
-                  </span>
-                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                    ALTERNATIF
-                  </span>
-                </div>
-                <div className="text-[11px] font-mono text-slate-200 font-semibold mb-1">
-                  qwen3.8-flash
-                </div>
-                <p className="text-[10px] text-slate-400 leading-tight">
-                  Model alternatif berbasis Aivene API (Qwen 3.8 Flash). Memerlukan AIVENE_API_KEY di server/.env.
-                </p>
+                <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
               </button>
 
             </div>
 
             <p className="text-[11px] text-slate-400 pt-1">
-              💡 <em>Kunci API (<code className="text-slate-300">GEMINI_API_KEY</code> / <code className="text-slate-300">AIVENE_API_KEY</code>) tersimpan aman di berkas <code className="text-slate-300 font-mono">server/.env</code>.</em>
+              💡 <em>Kunci API (<code className="text-slate-300">QWEN_API_KEY</code>) tersimpan aman di berkas <code className="text-slate-300 font-mono">server/.env</code>.</em>
             </p>
           </div>
 

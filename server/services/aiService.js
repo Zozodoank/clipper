@@ -62,26 +62,16 @@ function loadEnvFromDisk() {
   }
 }
 
-function getEffectiveModel() {
+function getEffectiveQwenModel() {
   loadEnvFromDisk();
-  const envModel = cleanEnvKey(process.env.AIVENE_MODEL || process.env.AIVENE_GEMINI_MODEL);
-  if (!envModel || envModel.startsWith('gemini-')) {
-    return 'qwen3.8-flash';
+  const envModel = cleanEnvKey(process.env.QWEN_MODEL);
+  if (!envModel) {
+    return 'qwen-vl-plus';
   }
   return envModel;
 }
 
-function getEffectiveGeminiModel() {
-  loadEnvFromDisk();
-  const envModel = cleanEnvKey(process.env.GEMINI_MODEL);
-  // Auto-upgrade retired / deprecated model versions to gemini-3.6-flash
-  if (!envModel || envModel === 'gemini-2.5-flash' || envModel === 'gemini-2.0-flash' || envModel === 'gemini-1.5-flash') {
-    return 'gemini-3.6-flash';
-  }
-  return envModel;
-}
-
-function getGeminiKeys(apiKeyOverride) {
+function getQwenKeys(apiKeyOverride) {
   loadEnvFromDisk();
   const keys = [];
   if (apiKeyOverride) {
@@ -91,8 +81,8 @@ function getGeminiKeys(apiKeyOverride) {
     }
   }
   
-  // Collect all keys matching our patterns
-  const envKeys = Object.keys(process.env).filter(k => k.startsWith('GEMINI_API_KEY') || k.startsWith('GOOGLE_GEMINI_API_KEY') || k.startsWith('GEMINI_KEY') || k === 'GOOGLE_API_KEY').sort();
+  // Collect all keys matching QWEN or DASHSCOPE patterns
+  const envKeys = Object.keys(process.env).filter(k => k.startsWith('QWEN_API_KEY') || k.startsWith('DASHSCOPE_API_KEY')).sort();
   
   for (const k of envKeys) {
     const cleaned = cleanEnvKey(process.env[k]);
@@ -103,58 +93,34 @@ function getGeminiKeys(apiKeyOverride) {
   return keys;
 }
 
-let currentGeminiKeyIndex = 0;
+let currentQwenKeyIndex = 0;
 
-function getAiClientConfig({ apiKeyOverride, aiProvider = 'gemini' } = {}) {
+function getAiClientConfig({ apiKeyOverride } = {}) {
   loadEnvFromDisk();
   
-  const aiveneKey = cleanEnvKey(
-    apiKeyOverride ||
-    process.env.AIVENE_API_KEY ||
-    process.env.AIVENE_KEY
-  );
-
-  // If user explicitly selected Aivene in Settings:
-  if (aiProvider === 'aivene') {
-    if (aiveneKey && !aiveneKey.startsWith('your_') && !aiveneKey.endsWith('_here')) {
-      const model = getEffectiveModel();
-      return {
-        client: new OpenAI({
-          apiKey: aiveneKey,
-          baseURL: 'https://api.aivene.com/v1',
-          timeout: 120000,
-        }),
-        model,
-        provider: 'Aivene',
-        isGemini: false,
-      };
-    }
-    throw new Error('Aivene API Key belum disetel di server/.env (AIVENE_API_KEY). Silakan tambahkan AIVENE_API_KEY di file server/.env.');
-  }
-
-  // Default: Google Gemini (Strictly according to user choice / default)
-  const geminiKeys = getGeminiKeys(apiKeyOverride);
-  if (geminiKeys.length > 0) {
-    const safeIndex = currentGeminiKeyIndex % geminiKeys.length;
-    currentGeminiKeyIndex++; // Increment for the next request in round-robin fashion
+  const qwenKeys = getQwenKeys(apiKeyOverride);
+  if (qwenKeys.length > 0) {
+    const safeIndex = currentQwenKeyIndex % qwenKeys.length;
+    currentQwenKeyIndex++; // Increment for the next request in round-robin fashion
     
-    const geminiKey = geminiKeys[safeIndex];
-    const model = getEffectiveGeminiModel();
+    const qwenKey = qwenKeys[safeIndex];
+    const model = getEffectiveQwenModel();
     return {
       client: new OpenAI({
-        apiKey: geminiKey,
-        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+        apiKey: qwenKey,
+        baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
         timeout: 120000,
       }),
       model,
-      provider: 'Google Gemini',
-      isGemini: true,
+      provider: 'Alibaba Qwen',
+      isGemini: false,
+      isQwen: true,
       keyIndex: safeIndex,
-      totalKeys: geminiKeys.length
+      totalKeys: qwenKeys.length
     };
   }
 
-  throw new Error('Google Gemini API Key belum disetel di server/.env (GEMINI_API_KEY). Silakan tambahkan GEMINI_API_KEY dari Google AI Studio (aistudio.google.com) di file server/.env.');
+  throw new Error('Qwen/DashScope API Key belum disetel di server/.env (QWEN_API_KEY). Silakan tambahkan QWEN_API_KEY di file server/.env.');
 }
 
 const DEFAULT_REFRAME = {
@@ -190,12 +156,11 @@ function formatApiError(err, modelName = 'AI', provider = 'AI') {
 }
 
 /**
- * Stage 1, Step A: Calls AI Vision API (Google Gemini / Aivene)
+ * Stage 1, Step A: Calls AI Vision API (Alibaba Qwen)
  * to analyze the full video timeline and select a cut plan made of 5-second product shots.
  */
-export async function selectHighlightWithGeminiFlash({
+export async function selectHighlightWithQwen({
   apiKey,
-  aiProvider = 'gemini',
   frames,
   videoMetadata,
   productTitle,
@@ -204,7 +169,7 @@ export async function selectHighlightWithGeminiFlash({
   allowFallbackClips = false,
   onProgress = () => {}
 }) {
-  let { client, model: activeModel, provider } = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
+  let { client, model: activeModel, provider } = getAiClientConfig({ apiKeyOverride: apiKey });
 
   onProgress({
     step: 'gemini_vision',
@@ -438,8 +403,8 @@ Return strict JSON in this format:
 
       if (isOverloaded && attempt < MAX_RETRIES) {
         console.warn(`[AIService] AI overloaded (attempt ${attempt + 1}). Will retry...`);
-        if (provider === 'Google Gemini') {
-          const nextConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
+        if (provider === 'Alibaba Qwen') {
+          const nextConfig = getAiClientConfig({ apiKeyOverride: apiKey });
           client = nextConfig.client;
           console.log(`[AIService] API Key rotation: Switching to key #${nextConfig.keyIndex + 1} of ${nextConfig.totalKeys}`);
         }
@@ -457,7 +422,7 @@ Return strict JSON in this format:
 }
 
 /**
- * Stage 1, Step B: Calls Aivene API
+ * Stage 1, Step B: Calls Alibaba Qwen API
  * using explicit user provided Product Title and Product Description to generate:
  * - Kotak Scene (Scene Breakdown)
  * - Sample Context (USPs, Target Audience, Core Problem)
@@ -465,9 +430,8 @@ Return strict JSON in this format:
  * - Google AI Studio Prompt Template
  * - Reels Caption & Hashtags
  */
-export async function generateAdAdvisorScriptWithGemini({
+export async function generateAdAdvisorScriptWithQwen({
   apiKey,
-  aiProvider = 'gemini',
   trimmedFrames,
   videoMetadata,
   productTitle,
@@ -477,7 +441,7 @@ export async function generateAdAdvisorScriptWithGemini({
   segmentDuration = 45,
   onProgress = () => {}
 }) {
-  let { client, model: activeModel, provider } = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
+  let { client, model: activeModel, provider } = getAiClientConfig({ apiKeyOverride: apiKey });
 
   onProgress({
     step: 'gpt_scripting',
@@ -676,8 +640,8 @@ Return strict JSON in this format:
 
       if (isOverloaded && attempt < MAX_RETRIES) {
         console.warn(`[AIService Scripting] AI overloaded (attempt ${attempt + 1}). Will retry...`);
-        if (provider === 'Google Gemini') {
-          const nextConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
+        if (provider === 'Alibaba Qwen') {
+          const nextConfig = getAiClientConfig({ apiKeyOverride: apiKey });
           client = nextConfig.client;
           console.log(`[AIService Scripting] API Key rotation: Switching to key #${nextConfig.keyIndex + 1} of ${nextConfig.totalKeys}`);
         }

@@ -10,13 +10,9 @@ export default function InputCard({
   engineStatus,
   onOpenSettings
 }) {
-  const selectedProvider = settings?.aiProvider === 'aivene' ? 'aivene' : 'gemini';
-  const selectedProviderReady = selectedProvider === 'aivene'
-    ? Boolean(engineStatus?.aiveneKeyConfigured)
-    : Boolean(engineStatus?.geminiKeyConfigured);
-  const selectedProviderLabel = selectedProvider === 'aivene'
-    ? `Aivene API: ${selectedProviderReady ? '.env Active' : 'Missing in .env'}`
-    : `Gemini ${engineStatus?.geminiModel || '3.6 Flash'}: ${selectedProviderReady ? '.env Active' : 'Missing in .env'}`;
+  const selectedProvider = 'qwen';
+  const selectedProviderReady = Boolean(engineStatus?.qwenKeyConfigured);
+  const selectedProviderLabel = `Qwen ${engineStatus?.qwenModel || 'vl-plus'}: ${selectedProviderReady ? '.env Active' : 'Missing in .env'}`;
 
   const handleSubmit = (e) => {
     e.preventDefault();

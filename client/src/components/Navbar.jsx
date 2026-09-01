@@ -128,12 +128,9 @@ export default function Navbar({ onOpenSettings, engineStatus }) {
             <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs">
                 <>
                   <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-slate-300 font-medium">Qwen</span>
-                  {engineStatus?.geminiKeyConfigured && (
-                    <span className="text-indigo-400 font-medium hidden lg:inline"> + Gemini</span>
-                  )}
+                  <span className="text-slate-300 font-medium">Qwen | Gemini</span>
                   <span className="text-slate-500">|</span>
-                  <span className="text-emerald-400 font-mono">{engineStatus?.qwenModel || 'qwen-vl-plus'}</span>
+                  <span className="text-emerald-400 font-mono">Available</span>
                 </>
             </div>
 

@@ -119,6 +119,7 @@ export default function App() {
           shopeeLink: currentForm.shopeeLink,
           productTitle: currentForm.productTitle,
           productDescription: currentForm.productDescription,
+          aiProvider: settings.activeAiEngine || 'qwen',
           options: settings,
         }),
       });
@@ -279,10 +280,10 @@ export default function App() {
                 <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-shopee-500/20 via-orange-500/20 to-amber-500/20 border border-shopee-500/30 flex items-center justify-center text-shopee-500 mb-4 shadow-xl">
                   <Clapperboard className="w-8 h-8 stroke-[1.75]" />
                 </div>
-                <h3 className="text-lg font-bold text-white mb-2">Alur 2-Tahap: AI Auto-Fallback + FFmpeg</h3>
+                <h3 className="text-lg font-bold text-white mb-2">Alur 2-Tahap: AI Auto-Clip + FFmpeg</h3>
                 <p className="text-xs text-slate-400 max-w-md leading-relaxed mb-6">
                   1. Masukkan Judul Produk, Deskripsi, URL YouTube, & Link Shopee.<br />
-                  2. <strong className="text-emerald-400">Alibaba Qwen</strong> (atau <strong className="text-indigo-400">Gemini</strong> jika limit) menganalisis frame video panjang dan memilih potongan faceless 5 detik yang fokus produk.<br />
+                  2. <strong className="text-emerald-400">Alibaba Qwen</strong> (atau <strong className="text-indigo-400">Gemini</strong>) menganalisis frame video panjang dan memilih potongan faceless 5 detik yang fokus produk.<br />
                   3. <strong className="text-indigo-400">FFmpeg</strong> memotong sesuai instruksi AI, menjaga produk full body dalam frame 9:16, lalu AI membuat Kotak Scene & Naskah Ad Advisor.<br />
                   4. Upload audio voiceover dari AI Studio untuk menghasilkan <strong className="text-emerald-400">Video Final + Subtitle</strong>.
                 </p>
@@ -317,7 +318,7 @@ export default function App() {
       />
 
       <footer className="border-t border-slate-800/60 py-4 bg-slate-950/40 text-center text-xs text-slate-500">
-        <p>Local AI Affiliate Clipper &bull; React + Node.js + FFmpeg &bull; Alibaba Qwen (+ Gemini) &bull; 2-Stage Ad Advisor Pipeline</p>
+        <p>Local AI Affiliate Clipper &bull; React + Node.js + FFmpeg &bull; Qwen & Gemini (Manual Switch) &bull; 2-Stage Ad Advisor Pipeline</p>
       </footer>
     </div>
   );

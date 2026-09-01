@@ -126,10 +126,10 @@ function getGeminiKeys(apiKeyOverride) {
 let currentQwenKeyIndex = 0;
 let currentGeminiKeyIndex = 0;
 
-function getAiClientConfig({ apiKeyOverride, forceProvider } = {}) {
+function getAiClientConfig({ apiKeyOverride, aiProvider = 'qwen' } = {}) {
   loadEnvFromDisk();
   
-  if (forceProvider === 'gemini') {
+  if (aiProvider === 'gemini') {
     const geminiKeys = getGeminiKeys(apiKeyOverride);
     if (geminiKeys.length > 0) {
       const safeIndex = currentGeminiKeyIndex % geminiKeys.length;
@@ -149,7 +149,7 @@ function getAiClientConfig({ apiKeyOverride, forceProvider } = {}) {
         totalKeys: geminiKeys.length
       };
     }
-    throw new Error('Google Gemini API Key belum disetel di server/.env (GEMINI_API_KEY).');
+    throw new Error('Google Gemini API Key belum disetel di server/.env (GEMINI_API_KEY). Silakan tambahkan kunci atau ubah Mesin AI Utama ke Qwen di pengaturan.');
   }
 
   // Default: Qwen
@@ -173,13 +173,7 @@ function getAiClientConfig({ apiKeyOverride, forceProvider } = {}) {
     };
   }
 
-  // If Qwen is not configured, silently try Gemini as absolute fallback if keys exist
-  const geminiKeys = getGeminiKeys(apiKeyOverride);
-  if (geminiKeys.length > 0) {
-     return getAiClientConfig({ apiKeyOverride, forceProvider: 'gemini' });
-  }
-
-  throw new Error('API Key belum disetel. Tambahkan QWEN_API_KEY atau GEMINI_API_KEY di server/.env.');
+  throw new Error('Qwen/DashScope API Key belum disetel di server/.env (QWEN_API_KEY). Silakan tambahkan QWEN_API_KEY di file server/.env.');
 }
 
 const DEFAULT_REFRAME = {
@@ -215,11 +209,12 @@ function formatApiError(err, modelName = 'AI', provider = 'AI') {
 }
 
 /**
- * Stage 1, Step A: Calls AI Vision API (Alibaba Qwen / Google Gemini fallback)
+ * Stage 1, Step A: Calls AI Vision API (Alibaba Qwen / Google Gemini)
  * to analyze the full video timeline and select a cut plan made of 5-second product shots.
  */
 export async function selectHighlightWithAI({
   apiKey,
+  aiProvider = 'qwen',
   frames,
   videoMetadata,
   productTitle,
@@ -228,7 +223,7 @@ export async function selectHighlightWithAI({
   allowFallbackClips = false,
   onProgress = () => {}
 }) {
-  let activeConfig = getAiClientConfig({ apiKeyOverride: apiKey });
+  let activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
   let { client, model: activeModel, provider, isQwen } = activeConfig;
 
   onProgress({
@@ -463,20 +458,7 @@ Return strict JSON in this format:
 
       if (isOverloaded && attempt < MAX_RETRIES) {
         console.warn(`[AIService] AI overloaded (attempt ${attempt + 1}). Will retry...`);
-        if (provider === 'Alibaba Qwen') {
-          if (attempt >= activeConfig.totalKeys - 1) {
-             console.log(`[AIService] All Qwen keys exhausted or rate-limited. Falling back to Gemini...`);
-             try {
-                activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, forceProvider: 'gemini' });
-             } catch (e) {
-                activeConfig = getAiClientConfig({ apiKeyOverride: apiKey });
-             }
-          } else {
-             activeConfig = getAiClientConfig({ apiKeyOverride: apiKey });
-          }
-        } else {
-          activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, forceProvider: 'gemini' });
-        }
+        activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
         
         client = activeConfig.client;
         activeModel = activeConfig.model;
@@ -497,7 +479,7 @@ Return strict JSON in this format:
 }
 
 /**
- * Stage 1, Step B: Calls Alibaba Qwen API (or Google Gemini fallback)
+ * Stage 1, Step B: Calls Alibaba Qwen API (or Google Gemini)
  * using explicit user provided Product Title and Product Description to generate:
  * - Kotak Scene (Scene Breakdown)
  * - Sample Context (USPs, Target Audience, Core Problem)
@@ -506,6 +488,7 @@ Return strict JSON in this format:
  */
 export async function generateAdAdvisorScriptWithAI({
   apiKey,
+  aiProvider = 'qwen',
   trimmedFrames,
   videoMetadata,
   productTitle,
@@ -515,7 +498,7 @@ export async function generateAdAdvisorScriptWithAI({
   segmentDuration = 45,
   onProgress = () => {}
 }) {
-  let activeConfig = getAiClientConfig({ apiKeyOverride: apiKey });
+  let activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
   let { client, model: activeModel, provider, isQwen } = activeConfig;
 
   onProgress({
@@ -715,20 +698,7 @@ Return strict JSON in this format:
 
       if (isOverloaded && attempt < MAX_RETRIES) {
         console.warn(`[AIService Scripting] AI overloaded (attempt ${attempt + 1}). Will retry...`);
-        if (provider === 'Alibaba Qwen') {
-          if (attempt >= activeConfig.totalKeys - 1) {
-             console.log(`[AIService Scripting] All Qwen keys exhausted. Falling back to Gemini...`);
-             try {
-                activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, forceProvider: 'gemini' });
-             } catch (e) {
-                activeConfig = getAiClientConfig({ apiKeyOverride: apiKey });
-             }
-          } else {
-             activeConfig = getAiClientConfig({ apiKeyOverride: apiKey });
-          }
-        } else {
-          activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, forceProvider: 'gemini' });
-        }
+        activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
         
         client = activeConfig.client;
         activeModel = activeConfig.model;

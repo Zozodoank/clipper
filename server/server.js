@@ -504,10 +504,13 @@ export async function runStage1Pipeline({
       maxSampleFrames: 30,
     });
 
+    const aiProvider = req.body.aiProvider || 'qwen';
+
     console.log(`[Job ${jobId}] Sending to AI: videoMeta.duration=${videoMeta.duration}s, ${rawFrames.length} frames`);
     updateProgress({ step: 'gemini_vision', message: 'AI analyzing faceless product frames and crop focus...', progress: 48, status: 'running' });
     const highlight = await selectHighlightWithAI({
       apiKey,
+      aiProvider,
       frames: rawFrames,
       videoMetadata: videoMeta,
       productTitle, productDescription, shopeeLink,
@@ -565,6 +568,7 @@ export async function runStage1Pipeline({
     updateProgress({ step: 'gpt_scripting', message: 'AI generating Kotak Scene, Context, Naskah...', progress: 80, status: 'running' });
     const scriptData = await generateAdAdvisorScriptWithAI({
       apiKey,
+      aiProvider: req.body.aiProvider || 'qwen',
       trimmedFrames,
       videoMetadata: videoMeta,
       productTitle,
@@ -1258,9 +1262,9 @@ app.listen(PORT, '0.0.0.0', () => {
   const geminiModel = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
 
   const activeProvider = (qwenKey && qwenKey !== 'your_qwen_api_key_here')
-    ? `✨ Alibaba Qwen (Free Tier - 1M Tokens) [${qwenModel}]`
+    ? `✨ Alibaba Qwen (Primary/Default) [${qwenModel}]`
     : (geminiKey && geminiKey !== 'your_gemini_api_key_here')
-      ? `✨ Google Gemini (Fallback) [${geminiModel}]`
+      ? `✨ Google Gemini (Switch API) [${geminiModel}]`
       : '❌ None (Set QWEN_API_KEY or GEMINI_API_KEY in server/.env)';
 
   console.log(`\n======================================================`);
@@ -1274,7 +1278,7 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`🔑 Qwen Key: configured (${qwenKey.length} chars)`);
   }
   if (geminiKey && geminiKey !== 'your_gemini_api_key_here') {
-    console.log(`🔑 Gemini Key (Fallback): configured (${geminiKey.length} chars)`);
+    console.log(`🔑 Gemini Key: configured (${geminiKey.length} chars)`);
   }
   console.log(`======================================================\n`);
 });

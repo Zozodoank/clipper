@@ -9,6 +9,8 @@ export default function DependenciesStatus({ status, onRefresh, loading }) {
   const qwenOk = status?.qwenKeyConfigured;
   const qwenModel = status?.qwenModel || 'qwen-vl-plus';
   const geminiOk = status?.geminiKeyConfigured;
+  const isGemini = status?.activeAiEngine === 'gemini';
+  const engineOk = isGemini ? geminiOk : qwenOk;
 
   return (
     <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -46,29 +48,24 @@ export default function DependenciesStatus({ status, onRefresh, loading }) {
 
         <span className="text-slate-500">|</span>
 
-        {/* Qwen API */}
+        {/* Active Engine */}
         <div className="flex items-center gap-1.5">
-          {qwenOk ? (
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+          {engineOk ? (
+            <CheckCircle2 className={`w-3.5 h-3.5 ${isGemini ? 'text-indigo-400' : 'text-emerald-400'}`} />
           ) : (
             <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
           )}
-          <span className="text-slate-300 font-mono font-medium">Qwen ({qwenModel})</span>
-          <span className={`px-1.5 py-0.5 rounded text-[10px] ${qwenOk ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
-            {qwenOk ? 'Terhubung (.env)' : 'Missing in .env'}
+          <span className="text-slate-300 font-mono font-medium">
+            {isGemini ? `Gemini (${status?.geminiModel || 'flash'})` : `Qwen (${qwenModel})`}
+          </span>
+          <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+            engineOk 
+              ? (isGemini ? 'bg-indigo-500/10 text-indigo-400' : 'bg-emerald-500/10 text-emerald-400')
+              : 'bg-amber-500/10 text-amber-400'
+          }`}>
+            {engineOk ? 'Active' : 'Missing in .env'}
           </span>
         </div>
-
-        {/* Gemini API (Fallback) */}
-        {geminiOk && (
-          <div className="hidden sm:flex items-center gap-1.5">
-            <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400" />
-            <span className="text-slate-300 font-mono">Gemini</span>
-            <span className="px-1.5 py-0.5 rounded text-[10px] bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
-              Fallback Ready
-            </span>
-          </div>
-        )}
       </div>
 
       <button

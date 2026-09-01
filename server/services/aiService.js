@@ -159,11 +159,14 @@ function getAiClientConfig({ apiKeyOverride, aiProvider = 'qwen' } = {}) {
     currentQwenKeyIndex++; 
     
     const customBaseUrl = process.env.QWEN_BASE_URL || '';
+    const resolvedBaseUrl = customBaseUrl || 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1';
     
+    console.log(`[AIService] Initialize Qwen Client: BaseURL=${resolvedBaseUrl}, Key=${qwenKeys[safeIndex].substring(0, 10)}...`);
+
     return {
       client: new OpenAI({
         apiKey: qwenKeys[safeIndex],
-        baseURL: customBaseUrl || 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+        baseURL: resolvedBaseUrl,
         timeout: 120000,
       }),
       model: getEffectiveQwenModel(),
@@ -456,7 +459,7 @@ Return strict JSON in this format:
       lastError = err;
       const status = err.status || err.statusCode;
       const msg = (err.message || '').toLowerCase();
-      const isOverloaded = status === 429 || status === 503 || status === 529 || msg.includes('overload') || msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('429');
+      const isOverloaded = status === 401 || status === 403 || status === 429 || status === 503 || status === 529 || msg.includes('overload') || msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('429');
 
       if (isOverloaded && attempt < MAX_RETRIES) {
         console.warn(`[AIService] AI overloaded (attempt ${attempt + 1}). Will retry...`);
@@ -696,7 +699,7 @@ Return strict JSON in this format:
       lastError = err;
       const status = err.status || err.statusCode;
       const msg = (err.message || '').toLowerCase();
-      const isOverloaded = status === 429 || status === 503 || status === 529 || msg.includes('overload') || msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('429');
+      const isOverloaded = status === 401 || status === 403 || status === 429 || status === 503 || status === 529 || msg.includes('overload') || msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('429');
 
       if (isOverloaded && attempt < MAX_RETRIES) {
         console.warn(`[AIService Scripting] AI overloaded (attempt ${attempt + 1}). Will retry...`);

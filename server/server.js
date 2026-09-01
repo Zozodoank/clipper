@@ -504,7 +504,7 @@ export async function runStage1Pipeline({
       maxSampleFrames: 30,
     });
 
-    const aiProvider = req.body.aiProvider || 'qwen';
+    const aiProvider = options.aiProvider || 'qwen';
 
     console.log(`[Job ${jobId}] Sending to AI: videoMeta.duration=${videoMeta.duration}s, ${rawFrames.length} frames`);
     updateProgress({ step: 'gemini_vision', message: 'AI analyzing faceless product frames and crop focus...', progress: 48, status: 'running' });
@@ -568,7 +568,7 @@ export async function runStage1Pipeline({
     updateProgress({ step: 'gpt_scripting', message: 'AI generating Kotak Scene, Context, Naskah...', progress: 80, status: 'running' });
     const scriptData = await generateAdAdvisorScriptWithAI({
       apiKey,
-      aiProvider: req.body.aiProvider || 'qwen',
+      aiProvider: options.aiProvider || 'qwen',
       trimmedFrames,
       videoMetadata: videoMeta,
       productTitle,
@@ -674,8 +674,13 @@ app.post('/api/generate', async (req, res) => {
     productDescription,
     apiKey,
     options = {},
+    aiProvider,
     jobId: clientJobId,
   } = req.body;
+
+  if (aiProvider) {
+    options.aiProvider = aiProvider;
+  }
 
   if (!youtubeUrl) {
     return res.status(400).json({ error: 'YouTube Video URL is required.' });

@@ -93,25 +93,78 @@ function getQwenKeys(apiKeyOverride) {
   return keys;
 }
 
-let currentQwenKeyIndex = 0;
+function getEffectiveGeminiModel() {
+  loadEnvFromDisk();
+  const envModel = cleanEnvKey(process.env.GEMINI_MODEL);
+  if (!envModel || envModel === 'gemini-2.5-flash' || envModel === 'gemini-2.0-flash' || envModel === 'gemini-1.5-flash') {
+    return 'gemini-3.6-flash';
+  }
+  return envModel;
+}
 
-function getAiClientConfig({ apiKeyOverride } = {}) {
+function getGeminiKeys(apiKeyOverride) {
+  loadEnvFromDisk();
+  const keys = [];
+  if (apiKeyOverride) {
+    const cleaned = cleanEnvKey(apiKeyOverride);
+    if (cleaned && !cleaned.startsWith('your_') && !cleaned.endsWith('_here')) {
+      keys.push(cleaned);
+    }
+  }
+  
+  const envKeys = Object.keys(process.env).filter(k => k.startsWith('GEMINI_API_KEY') || k.startsWith('GOOGLE_GEMINI_API_KEY') || k.startsWith('GEMINI_KEY') || k === 'GOOGLE_API_KEY').sort();
+  
+  for (const k of envKeys) {
+    const cleaned = cleanEnvKey(process.env[k]);
+    if (cleaned && !cleaned.startsWith('your_') && !cleaned.endsWith('_here')) {
+      if (!keys.includes(cleaned)) keys.push(cleaned);
+    }
+  }
+  return keys;
+}
+
+let currentQwenKeyIndex = 0;
+let currentGeminiKeyIndex = 0;
+
+function getAiClientConfig({ apiKeyOverride, forceProvider } = {}) {
   loadEnvFromDisk();
   
+  if (forceProvider === 'gemini') {
+    const geminiKeys = getGeminiKeys(apiKeyOverride);
+    if (geminiKeys.length > 0) {
+      const safeIndex = currentGeminiKeyIndex % geminiKeys.length;
+      currentGeminiKeyIndex++; 
+      
+      return {
+        client: new OpenAI({
+          apiKey: geminiKeys[safeIndex],
+          baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+          timeout: 120000,
+        }),
+        model: getEffectiveGeminiModel(),
+        provider: 'Google Gemini',
+        isGemini: true,
+        isQwen: false,
+        keyIndex: safeIndex,
+        totalKeys: geminiKeys.length
+      };
+    }
+    throw new Error('Google Gemini API Key belum disetel di server/.env (GEMINI_API_KEY).');
+  }
+
+  // Default: Qwen
   const qwenKeys = getQwenKeys(apiKeyOverride);
   if (qwenKeys.length > 0) {
     const safeIndex = currentQwenKeyIndex % qwenKeys.length;
-    currentQwenKeyIndex++; // Increment for the next request in round-robin fashion
+    currentQwenKeyIndex++; 
     
-    const qwenKey = qwenKeys[safeIndex];
-    const model = getEffectiveQwenModel();
     return {
       client: new OpenAI({
-        apiKey: qwenKey,
+        apiKey: qwenKeys[safeIndex],
         baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
         timeout: 120000,
       }),
-      model,
+      model: getEffectiveQwenModel(),
       provider: 'Alibaba Qwen',
       isGemini: false,
       isQwen: true,
@@ -120,7 +173,13 @@ function getAiClientConfig({ apiKeyOverride } = {}) {
     };
   }
 
-  throw new Error('Qwen/DashScope API Key belum disetel di server/.env (QWEN_API_KEY). Silakan tambahkan QWEN_API_KEY di file server/.env.');
+  // If Qwen is not configured, silently try Gemini as absolute fallback if keys exist
+  const geminiKeys = getGeminiKeys(apiKeyOverride);
+  if (geminiKeys.length > 0) {
+     return getAiClientConfig({ apiKeyOverride, forceProvider: 'gemini' });
+  }
+
+  throw new Error('API Key belum disetel. Tambahkan QWEN_API_KEY atau GEMINI_API_KEY di server/.env.');
 }
 
 const DEFAULT_REFRAME = {
@@ -156,10 +215,10 @@ function formatApiError(err, modelName = 'AI', provider = 'AI') {
 }
 
 /**
- * Stage 1, Step A: Calls AI Vision API (Alibaba Qwen)
+ * Stage 1, Step A: Calls AI Vision API (Alibaba Qwen / Google Gemini fallback)
  * to analyze the full video timeline and select a cut plan made of 5-second product shots.
  */
-export async function selectHighlightWithQwen({
+export async function selectHighlightWithAI({
   apiKey,
   frames,
   videoMetadata,
@@ -169,7 +228,8 @@ export async function selectHighlightWithQwen({
   allowFallbackClips = false,
   onProgress = () => {}
 }) {
-  let { client, model: activeModel, provider } = getAiClientConfig({ apiKeyOverride: apiKey });
+  let activeConfig = getAiClientConfig({ apiKeyOverride: apiKey });
+  let { client, model: activeModel, provider, isQwen } = activeConfig;
 
   onProgress({
     step: 'gemini_vision',
@@ -404,10 +464,25 @@ Return strict JSON in this format:
       if (isOverloaded && attempt < MAX_RETRIES) {
         console.warn(`[AIService] AI overloaded (attempt ${attempt + 1}). Will retry...`);
         if (provider === 'Alibaba Qwen') {
-          const nextConfig = getAiClientConfig({ apiKeyOverride: apiKey });
-          client = nextConfig.client;
-          console.log(`[AIService] API Key rotation: Switching to key #${nextConfig.keyIndex + 1} of ${nextConfig.totalKeys}`);
+          if (attempt >= activeConfig.totalKeys - 1) {
+             console.log(`[AIService] All Qwen keys exhausted or rate-limited. Falling back to Gemini...`);
+             try {
+                activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, forceProvider: 'gemini' });
+             } catch (e) {
+                activeConfig = getAiClientConfig({ apiKeyOverride: apiKey });
+             }
+          } else {
+             activeConfig = getAiClientConfig({ apiKeyOverride: apiKey });
+          }
+        } else {
+          activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, forceProvider: 'gemini' });
         }
+        
+        client = activeConfig.client;
+        activeModel = activeConfig.model;
+        provider = activeConfig.provider;
+        isQwen = activeConfig.isQwen;
+        console.log(`[AIService] API Key rotation: Switching to ${provider} key #${activeConfig.keyIndex + 1} of ${activeConfig.totalKeys}`);
         continue;
       }
 
@@ -422,15 +497,14 @@ Return strict JSON in this format:
 }
 
 /**
- * Stage 1, Step B: Calls Alibaba Qwen API
+ * Stage 1, Step B: Calls Alibaba Qwen API (or Google Gemini fallback)
  * using explicit user provided Product Title and Product Description to generate:
  * - Kotak Scene (Scene Breakdown)
  * - Sample Context (USPs, Target Audience, Core Problem)
- * - Naskah Voiceover (Ad Advisor Standard in Indonesian)
  * - Google AI Studio Prompt Template
  * - Reels Caption & Hashtags
  */
-export async function generateAdAdvisorScriptWithQwen({
+export async function generateAdAdvisorScriptWithAI({
   apiKey,
   trimmedFrames,
   videoMetadata,
@@ -441,7 +515,8 @@ export async function generateAdAdvisorScriptWithQwen({
   segmentDuration = 45,
   onProgress = () => {}
 }) {
-  let { client, model: activeModel, provider } = getAiClientConfig({ apiKeyOverride: apiKey });
+  let activeConfig = getAiClientConfig({ apiKeyOverride: apiKey });
+  let { client, model: activeModel, provider, isQwen } = activeConfig;
 
   onProgress({
     step: 'gpt_scripting',
@@ -641,10 +716,25 @@ Return strict JSON in this format:
       if (isOverloaded && attempt < MAX_RETRIES) {
         console.warn(`[AIService Scripting] AI overloaded (attempt ${attempt + 1}). Will retry...`);
         if (provider === 'Alibaba Qwen') {
-          const nextConfig = getAiClientConfig({ apiKeyOverride: apiKey });
-          client = nextConfig.client;
-          console.log(`[AIService Scripting] API Key rotation: Switching to key #${nextConfig.keyIndex + 1} of ${nextConfig.totalKeys}`);
+          if (attempt >= activeConfig.totalKeys - 1) {
+             console.log(`[AIService Scripting] All Qwen keys exhausted. Falling back to Gemini...`);
+             try {
+                activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, forceProvider: 'gemini' });
+             } catch (e) {
+                activeConfig = getAiClientConfig({ apiKeyOverride: apiKey });
+             }
+          } else {
+             activeConfig = getAiClientConfig({ apiKeyOverride: apiKey });
+          }
+        } else {
+          activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, forceProvider: 'gemini' });
         }
+        
+        client = activeConfig.client;
+        activeModel = activeConfig.model;
+        provider = activeConfig.provider;
+        isQwen = activeConfig.isQwen;
+        console.log(`[AIService Scripting] API Key rotation: Switching to ${provider} key #${activeConfig.keyIndex + 1} of ${activeConfig.totalKeys}`);
         continue;
       }
 

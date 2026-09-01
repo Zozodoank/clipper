@@ -12,8 +12,8 @@ import { checkSystemDependencies } from './services/binaryChecker.js';
 import { downloadYouTubeVideo, extractVideoId } from './services/downloader.js';
 import { extractFrames } from './services/frameExtractor.js';
 import {
-  selectHighlightWithQwen,
-  generateAdAdvisorScriptWithQwen
+  selectHighlightWithAI,
+  generateAdAdvisorScriptWithAI
 } from './services/aiService.js';
 import { generateSrtSubtitles } from './services/subtitleService.js';
 import {
@@ -269,8 +269,18 @@ app.get('/api/health', async (req, res) => {
   ).trim().replace(/^["']|["']$/g, '');
   const qwenKeySet = Boolean(rawQwenKey && !rawQwenKey.startsWith('your_') && !rawQwenKey.endsWith('_here'));
 
-  const activeAiEngine = qwenKeySet ? 'qwen' : 'none';
+  const rawGeminiKey = (
+    process.env.GEMINI_API_KEY ||
+    process.env.GOOGLE_GEMINI_API_KEY ||
+    process.env.GOOGLE_API_KEY ||
+    process.env.GEMINI_KEY ||
+    ''
+  ).trim().replace(/^["']|["']$/g, '');
+  const geminiKeySet = Boolean(rawGeminiKey && !rawGeminiKey.startsWith('your_') && !rawGeminiKey.endsWith('_here'));
+
+  const activeAiEngine = qwenKeySet ? 'qwen' : (geminiKeySet ? 'gemini' : 'none');
   const activeQwenModel = (process.env.QWEN_MODEL || 'qwen-vl-plus').trim();
+  const activeGeminiModel = (process.env.GEMINI_MODEL || 'gemini-3.6-flash').trim();
 
   const binaryCheck = await checkSystemDependencies();
 
@@ -284,9 +294,11 @@ app.get('/api/health', async (req, res) => {
       ytdlp: binaryCheck.ytdlp,
     },
     qwenKeyConfigured: qwenKeySet,
+    geminiKeyConfigured: geminiKeySet,
     activeAiEngine,
     defaultAiProvider: 'qwen',
     qwenModel: activeQwenModel,
+    geminiModel: activeGeminiModel,
     envFilesLoaded: envFiles.map((envPath) => path.relative(path.resolve(__dirname, '..'), envPath).replace(/\\/g, '/')),
     ready: binaryCheck.ffmpeg.available && binaryCheck.ytdlp.available,
   });
@@ -494,7 +506,7 @@ export async function runStage1Pipeline({
 
     console.log(`[Job ${jobId}] Sending to AI: videoMeta.duration=${videoMeta.duration}s, ${rawFrames.length} frames`);
     updateProgress({ step: 'gemini_vision', message: 'AI analyzing faceless product frames and crop focus...', progress: 48, status: 'running' });
-    const highlight = await selectHighlightWithQwen({
+    const highlight = await selectHighlightWithAI({
       apiKey,
       frames: rawFrames,
       videoMetadata: videoMeta,
@@ -551,7 +563,7 @@ export async function runStage1Pipeline({
     });
 
     updateProgress({ step: 'gpt_scripting', message: 'AI generating Kotak Scene, Context, Naskah...', progress: 80, status: 'running' });
-    const scriptData = await generateAdAdvisorScriptWithQwen({
+    const scriptData = await generateAdAdvisorScriptWithAI({
       apiKey,
       trimmedFrames,
       videoMetadata: videoMeta,
@@ -1242,10 +1254,14 @@ app.listen(PORT, '0.0.0.0', () => {
   reloadEnvironment();
   const qwenKey = process.env.QWEN_API_KEY ? process.env.QWEN_API_KEY.trim() : '';
   const qwenModel = process.env.QWEN_MODEL || 'qwen-vl-plus';
+  const geminiKey = process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.trim() : '';
+  const geminiModel = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
 
   const activeProvider = (qwenKey && qwenKey !== 'your_qwen_api_key_here')
     ? `✨ Alibaba Qwen (Free Tier - 1M Tokens) [${qwenModel}]`
-    : '❌ None (Set QWEN_API_KEY in server/.env)';
+    : (geminiKey && geminiKey !== 'your_gemini_api_key_here')
+      ? `✨ Google Gemini (Fallback) [${geminiModel}]`
+      : '❌ None (Set QWEN_API_KEY or GEMINI_API_KEY in server/.env)';
 
   console.log(`\n======================================================`);
   console.log(`🎬 Local AI Affiliate Clipper Backend Server`);
@@ -1256,6 +1272,9 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`⚡ Active AI Engine: ${activeProvider}`);
   if (qwenKey && qwenKey !== 'your_qwen_api_key_here') {
     console.log(`🔑 Qwen Key: configured (${qwenKey.length} chars)`);
+  }
+  if (geminiKey && geminiKey !== 'your_gemini_api_key_here') {
+    console.log(`🔑 Gemini Key (Fallback): configured (${geminiKey.length} chars)`);
   }
   console.log(`======================================================\n`);
 });

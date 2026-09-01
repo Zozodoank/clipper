@@ -12,7 +12,8 @@ export default function InputCard({
 }) {
   const selectedProvider = 'qwen';
   const selectedProviderReady = Boolean(engineStatus?.qwenKeyConfigured);
-  const selectedProviderLabel = `Qwen ${engineStatus?.qwenModel || 'vl-plus'}: ${selectedProviderReady ? '.env Active' : 'Missing in .env'}`;
+  const geminiFallbackStr = engineStatus?.geminiKeyConfigured ? ' (+ Gemini Fallback)' : '';
+  const selectedProviderLabel = `Qwen ${engineStatus?.qwenModel || 'vl-plus'}${geminiFallbackStr}: ${selectedProviderReady ? '.env Active' : 'Missing in .env'}`;
 
   const handleSubmit = (e) => {
     e.preventDefault();

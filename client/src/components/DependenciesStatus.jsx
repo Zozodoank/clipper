@@ -8,6 +8,7 @@ export default function DependenciesStatus({ status, onRefresh, loading }) {
   const ytdlpOk = status?.dependencies?.ytdlp?.available || status?.ytdlp?.available;
   const qwenOk = status?.qwenKeyConfigured;
   const qwenModel = status?.qwenModel || 'qwen-vl-plus';
+  const geminiOk = status?.geminiKeyConfigured;
 
   return (
     <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -57,6 +58,17 @@ export default function DependenciesStatus({ status, onRefresh, loading }) {
             {qwenOk ? 'Terhubung (.env)' : 'Missing in .env'}
           </span>
         </div>
+
+        {/* Gemini API (Fallback) */}
+        {geminiOk && (
+          <div className="hidden sm:flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="text-slate-300 font-mono">Gemini</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+              Fallback Ready
+            </span>
+          </div>
+        )}
       </div>
 
       <button

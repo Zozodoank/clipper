@@ -4,11 +4,11 @@ import { X, Shield, Sliders, Volume2, Film, RefreshCw, Check, Bot, Sparkles } fr
 export default function SettingsModal({ isOpen, onClose, settings, setSettings }) {
   if (!isOpen) return null;
 
-  const currentProvider = settings.aiProvider || 'qwen';
+  const currentProvider = settings.aiProvider || 'openrouter';
 
   const resetDefaults = () => {
     setSettings({
-      aiProvider: 'qwen',
+      aiProvider: 'openrouter',
       hflip: false,
       speedMultiplier: 1,
       enableSubtitles: false,
@@ -47,84 +47,35 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
                 <span>Mesin AI Vision &amp; Scripting</span>
               </span>
               <span className="text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                Pilih Engine
+                Active Engine
               </span>
             </div>
 
             <div className="grid grid-cols-1 gap-2.5 pt-1">
               
-              {/* Option 1: Alibaba Qwen (Default) */}
-              <button
-                type="button"
-                onClick={() => setSettings({ ...settings, aiProvider: 'qwen' })}
-                className={`p-3 rounded-xl border text-left transition-all relative ${
-                  currentProvider === 'qwen'
-                    ? 'bg-emerald-950/40 border-emerald-500 text-white shadow-lg shadow-emerald-950/50 ring-1 ring-emerald-500/50'
-                    : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800 hover:border-slate-600'
-                }`}
-              >
+              <div className="p-3 rounded-xl border text-left transition-all relative bg-emerald-950/40 border-emerald-500 text-white shadow-lg shadow-emerald-950/50 ring-1 ring-emerald-500/50">
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-bold text-xs flex items-center gap-1">
-                    <Sparkles className={`w-3.5 h-3.5 ${currentProvider === 'qwen' ? 'text-emerald-400' : 'text-slate-500'}`} />
-                    Alibaba Qwen (DashScope)
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                    OpenRouter (Auto Fallback)
                   </span>
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
-                    currentProvider === 'qwen'
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                      : 'bg-slate-800 text-slate-500 border-slate-700'
-                  }`}>
-                    DEFAULT (Gratis 1M Token)
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-emerald-500/20 text-emerald-300 border-emerald-500/30">
+                    EXCLUSIVELY ACTIVE
                   </span>
                 </div>
-                <div className={`text-[11px] font-mono font-semibold mb-1 ${currentProvider === 'qwen' ? 'text-slate-200' : 'text-slate-500'}`}>
-                  qwen-vl-plus
+                <div className="text-[11px] font-mono font-semibold mb-1 text-slate-200">
+                  Multiple Models Fallback
                 </div>
                 <p className="text-[10px] leading-tight opacity-80">
-                  Kekuatan AI dari Alibaba Cloud. Sangat optimal untuk membaca frame video.
+                  Menggunakan OpenRouter secara eksklusif dengan sistem switch model otomatis jika terjadi error.
                 </p>
-                {currentProvider === 'qwen' && (
-                  <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                )}
-              </button>
-
-              {/* Option 2: Google Gemini */}
-              <button
-                type="button"
-                onClick={() => setSettings({ ...settings, aiProvider: 'gemini' })}
-                className={`p-3 rounded-xl border text-left transition-all relative ${
-                  currentProvider === 'gemini'
-                    ? 'bg-indigo-950/40 border-indigo-500 text-white shadow-lg shadow-indigo-950/50 ring-1 ring-indigo-500/50'
-                    : 'bg-slate-900 border-slate-700 text-slate-400 hover:bg-slate-800 hover:border-slate-600'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-bold text-xs flex items-center gap-1">
-                    <Sparkles className={`w-3.5 h-3.5 ${currentProvider === 'gemini' ? 'text-indigo-400' : 'text-slate-500'}`} />
-                    Google Gemini
-                  </span>
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
-                    currentProvider === 'gemini'
-                      ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
-                      : 'bg-slate-800 text-slate-500 border-slate-700'
-                  }`}>
-                    API SWITCH
-                  </span>
-                </div>
-                <div className={`text-[11px] font-mono font-semibold mb-1 ${currentProvider === 'gemini' ? 'text-slate-200' : 'text-slate-500'}`}>
-                  gemini-3.6-flash
-                </div>
-                <p className="text-[10px] leading-tight opacity-80">
-                  Cadangan AI yang cepat dari Google jika Qwen terkena limit.
-                </p>
-                {currentProvider === 'gemini' && (
-                  <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-indigo-400 animate-ping" />
-                )}
-              </button>
+                <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              </div>
 
             </div>
 
             <p className="text-[11px] text-slate-400 pt-1">
-              💡 <em>Pastikan kunci <code className="text-slate-300">QWEN_API_KEY</code> atau <code className="text-slate-300">GEMINI_API_KEY</code> telah disetel di berkas <code className="text-slate-300 font-mono">server/.env</code>.</em>
+              💡 <em>Pastikan kunci <code className="text-slate-300">OPENROUTER_API_KEY</code> telah disetel di berkas <code className="text-slate-300 font-mono">server/.env</code>.</em>
             </p>
           </div>
 

@@ -62,16 +62,16 @@ function loadEnvFromDisk() {
   }
 }
 
-function getEffectiveQwenModel() {
-  loadEnvFromDisk();
-  const envModel = cleanEnvKey(process.env.QWEN_MODEL);
-  if (!envModel) {
-    return 'qwen-vl-plus';
-  }
-  return envModel;
-}
+const openRouterVisionModels = [
+  "minimax/minimax-m3:free",                               // 1M Context, dukung gambar & video
+  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",    // Native Omnimodal (baca gambar)
+  "thinkingmachines/inkling:free",                         // Sangat cerdas, 1.05M Context
+  "google/gemma-4-31b-it:free",                            // Ringan, handal untuk Vision
+  "thinkingmachines/inkling-small:free",                   // Cadangan fallback ringan
+  "openrouter/free"                                        // Jaring pengaman (Auto-Router Vision)
+];
 
-function getQwenKeys(apiKeyOverride) {
+function getOpenRouterKeys(apiKeyOverride) {
   loadEnvFromDisk();
   const keys = [];
   if (apiKeyOverride) {
@@ -81,8 +81,7 @@ function getQwenKeys(apiKeyOverride) {
     }
   }
   
-  // Collect all keys matching QWEN or DASHSCOPE patterns
-  const envKeys = Object.keys(process.env).filter(k => k.startsWith('QWEN_API_KEY') || k.startsWith('DASHSCOPE_API_KEY')).sort();
+  const envKeys = Object.keys(process.env).filter(k => k.startsWith('OPENROUTER_API_KEY')).sort();
   
   for (const k of envKeys) {
     const cleaned = cleanEnvKey(process.env[k]);
@@ -93,92 +92,36 @@ function getQwenKeys(apiKeyOverride) {
   return keys;
 }
 
-function getEffectiveGeminiModel() {
-  loadEnvFromDisk();
-  const envModel = cleanEnvKey(process.env.GEMINI_MODEL);
-  if (!envModel || envModel === 'gemini-2.5-flash' || envModel === 'gemini-2.0-flash' || envModel === 'gemini-1.5-flash') {
-    return 'gemini-3.6-flash';
-  }
-  return envModel;
-}
+let currentOpenRouterKeyIndex = 0;
 
-function getGeminiKeys(apiKeyOverride) {
-  loadEnvFromDisk();
-  const keys = [];
-  if (apiKeyOverride) {
-    const cleaned = cleanEnvKey(apiKeyOverride);
-    if (cleaned && !cleaned.startsWith('your_') && !cleaned.endsWith('_here')) {
-      keys.push(cleaned);
-    }
-  }
-  
-  const envKeys = Object.keys(process.env).filter(k => k.startsWith('GEMINI_API_KEY') || k.startsWith('GOOGLE_GEMINI_API_KEY') || k.startsWith('GEMINI_KEY') || k === 'GOOGLE_API_KEY').sort();
-  
-  for (const k of envKeys) {
-    const cleaned = cleanEnvKey(process.env[k]);
-    if (cleaned && !cleaned.startsWith('your_') && !cleaned.endsWith('_here')) {
-      if (!keys.includes(cleaned)) keys.push(cleaned);
-    }
-  }
-  return keys;
-}
-
-let currentQwenKeyIndex = 0;
-let currentGeminiKeyIndex = 0;
-
-function getAiClientConfig({ apiKeyOverride, aiProvider = 'qwen' } = {}) {
+function getAiClientConfig({ apiKeyOverride } = {}) {
   loadEnvFromDisk();
   
-  if (aiProvider === 'gemini') {
-    const geminiKeys = getGeminiKeys(apiKeyOverride);
-    if (geminiKeys.length > 0) {
-      const safeIndex = currentGeminiKeyIndex % geminiKeys.length;
-      currentGeminiKeyIndex++; 
-      
-      return {
-        client: new OpenAI({
-          apiKey: geminiKeys[safeIndex],
-          baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-          timeout: 120000,
-        }),
-        model: getEffectiveGeminiModel(),
-        provider: 'Google Gemini',
-        isGemini: true,
-        isQwen: false,
-        keyIndex: safeIndex,
-        totalKeys: geminiKeys.length
-      };
-    }
-    throw new Error('Google Gemini API Key belum disetel di server/.env (GEMINI_API_KEY). Silakan tambahkan kunci atau ubah Mesin AI Utama ke Qwen di pengaturan.');
-  }
-
-  // Default: Qwen
-  const qwenKeys = getQwenKeys(apiKeyOverride);
-  if (qwenKeys.length > 0) {
-    const safeIndex = currentQwenKeyIndex % qwenKeys.length;
-    currentQwenKeyIndex++; 
+  const openRouterKeys = getOpenRouterKeys(apiKeyOverride);
+  if (openRouterKeys.length > 0) {
+    const safeIndex = currentOpenRouterKeyIndex % openRouterKeys.length;
+    currentOpenRouterKeyIndex++; 
     
-    const customBaseUrl = process.env.QWEN_BASE_URL || '';
-    const resolvedBaseUrl = customBaseUrl || 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1';
-    
-    console.log(`[AIService] Initialize Qwen Client: BaseURL=${resolvedBaseUrl}, Key=${qwenKeys[safeIndex].substring(0, 10)}...`);
+    console.log(`[AIService] Initialize OpenRouter Client: Key=${openRouterKeys[safeIndex].substring(0, 10)}...`);
 
     return {
       client: new OpenAI({
-        apiKey: qwenKeys[safeIndex],
-        baseURL: resolvedBaseUrl,
+        apiKey: openRouterKeys[safeIndex],
+        baseURL: 'https://openrouter.ai/api/v1',
         timeout: 120000,
+        defaultHeaders: {
+          "HTTP-Referer": "https://github.com/affiliate-clipper",
+          "X-Title": "AI Affiliate Clipper",
+        }
       }),
-      model: getEffectiveQwenModel(),
-      provider: 'Alibaba Qwen',
-      isGemini: false,
-      isQwen: true,
+      models: openRouterVisionModels,
+      provider: 'OpenRouter',
       keyIndex: safeIndex,
-      totalKeys: qwenKeys.length
+      totalKeys: openRouterKeys.length
     };
   }
 
-  throw new Error('Qwen/DashScope API Key belum disetel di server/.env (QWEN_API_KEY). Silakan tambahkan QWEN_API_KEY di file server/.env.');
+  throw new Error('OpenRouter API Key belum disetel di server/.env (OPENROUTER_API_KEY). Silakan tambahkan OPENROUTER_API_KEY di file server/.env.');
 }
 
 const DEFAULT_REFRAME = {
@@ -219,7 +162,6 @@ function formatApiError(err, modelName = 'AI', provider = 'AI') {
  */
 export async function selectHighlightWithAI({
   apiKey,
-  aiProvider = 'qwen',
   frames,
   videoMetadata,
   productTitle,
@@ -228,8 +170,9 @@ export async function selectHighlightWithAI({
   allowFallbackClips = false,
   onProgress = () => {}
 }) {
-  let activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
-  let { client, model: activeModel, provider, isQwen } = activeConfig;
+  let activeConfig = getAiClientConfig({ apiKeyOverride: apiKey });
+  let { client, models: modelFallbackList, provider } = activeConfig;
+  let activeModel = modelFallbackList[0];
 
   onProgress({
     step: 'gemini_vision',
@@ -368,18 +311,17 @@ Return strict JSON in this format:
     });
   }, 2000);
 
-  const MAX_RETRIES = 3;
-  const RETRY_DELAYS_MS = [12000, 20000, 30000];
+  const MAX_RETRIES = modelFallbackList.length;
 
   let lastError;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    activeModel = modelFallbackList[attempt];
     try {
       if (attempt > 0) {
-        const waitSec = RETRY_DELAYS_MS[attempt - 1] / 1000;
-        for (let t = waitSec; t > 0; t--) {
+        for (let t = 5; t > 0; t--) {
           onProgress({
             step: 'gemini_vision',
-            message: `API AI overloaded. Retry ke-${attempt}/${MAX_RETRIES} dalam ${t} detik...`,
+            message: `API overloaded/error. Switching to fallback model (${activeModel}) dalam ${t} detik...`,
             progress: 48,
           });
           await new Promise(r => setTimeout(r, 1000));
@@ -461,15 +403,8 @@ Return strict JSON in this format:
       const msg = (err.message || '').toLowerCase();
       const isOverloaded = status === 429 || status === 503 || status === 529 || msg.includes('overload') || msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('429');
 
-      if (isOverloaded && attempt < MAX_RETRIES) {
-        console.warn(`[AIService] AI overloaded (attempt ${attempt + 1}). Will retry...`);
-        activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
-        
-        client = activeConfig.client;
-        activeModel = activeConfig.model;
-        provider = activeConfig.provider;
-        isQwen = activeConfig.isQwen;
-        console.log(`[AIService] API Key rotation: Switching to ${provider} key #${activeConfig.keyIndex + 1} of ${activeConfig.totalKeys}`);
+      if (attempt < MAX_RETRIES - 1) {
+        console.warn(`[AIService] AI model ${activeModel} failed (attempt ${attempt + 1}). Trying next fallback model...`);
         continue;
       }
 
@@ -493,7 +428,6 @@ Return strict JSON in this format:
  */
 export async function generateAdAdvisorScriptWithAI({
   apiKey,
-  aiProvider = 'qwen',
   trimmedFrames,
   videoMetadata,
   productTitle,
@@ -503,8 +437,9 @@ export async function generateAdAdvisorScriptWithAI({
   segmentDuration = 45,
   onProgress = () => {}
 }) {
-  let activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
-  let { client, model: activeModel, provider, isQwen } = activeConfig;
+  let activeConfig = getAiClientConfig({ apiKeyOverride: apiKey });
+  let { client, models: modelFallbackList, provider } = activeConfig;
+  let activeModel = modelFallbackList[0];
 
   onProgress({
     step: 'gpt_scripting',
@@ -653,20 +588,19 @@ Return strict JSON in this format:
     });
   }, 2000);
 
-  const MAX_RETRIES = 3;
-  const RETRY_DELAYS_MS = [12000, 20000, 30000];
+  const MAX_RETRIES = modelFallbackList.length;
 
   let parsed = {};
   let lastError;
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    activeModel = modelFallbackList[attempt];
     try {
       if (attempt > 0) {
-        const waitSec = RETRY_DELAYS_MS[attempt - 1] / 1000;
-        for (let t = waitSec; t > 0; t--) {
+        for (let t = 5; t > 0; t--) {
           onProgress({
             step: 'gpt_scripting',
-            message: `API AI overloaded. Retry naskah ke-${attempt}/${MAX_RETRIES} dalam ${t} detik...`,
+            message: `API overloaded/error. Switching fallback model (${activeModel}) naskah dalam ${t} detik...`,
             progress: 78,
           });
           await new Promise(r => setTimeout(r, 1000));
@@ -701,15 +635,8 @@ Return strict JSON in this format:
       const msg = (err.message || '').toLowerCase();
       const isOverloaded = status === 429 || status === 503 || status === 529 || msg.includes('overload') || msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('429');
 
-      if (isOverloaded && attempt < MAX_RETRIES) {
-        console.warn(`[AIService Scripting] AI overloaded (attempt ${attempt + 1}). Will retry...`);
-        activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
-        
-        client = activeConfig.client;
-        activeModel = activeConfig.model;
-        provider = activeConfig.provider;
-        isQwen = activeConfig.isQwen;
-        console.log(`[AIService Scripting] API Key rotation: Switching to ${provider} key #${activeConfig.keyIndex + 1} of ${activeConfig.totalKeys}`);
+      if (attempt < MAX_RETRIES - 1) {
+        console.warn(`[AIService Scripting] AI model ${activeModel} failed (attempt ${attempt + 1}). Trying next fallback model...`);
         continue;
       }
 

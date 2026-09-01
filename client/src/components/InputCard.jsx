@@ -10,11 +10,8 @@ export default function InputCard({
   engineStatus,
   onOpenSettings
 }) {
-  const isGemini = settings?.aiProvider === 'gemini';
-  const selectedProviderReady = isGemini ? Boolean(engineStatus?.geminiKeyConfigured) : Boolean(engineStatus?.qwenKeyConfigured);
-  const selectedProviderLabel = isGemini 
-    ? `Gemini ${engineStatus?.geminiModel || 'flash'}: ${selectedProviderReady ? '.env Active' : 'Missing in .env'}`
-    : `Qwen ${engineStatus?.qwenModel || 'vl-plus'}: ${selectedProviderReady ? '.env Active' : 'Missing in .env'}`;
+  const selectedProviderReady = Boolean(engineStatus?.openRouterKeyConfigured);
+  const selectedProviderLabel = `OpenRouter: ${selectedProviderReady ? '.env Active' : 'Missing in .env'}`;
 
   const handleSubmit = (e) => {
     e.preventDefault();

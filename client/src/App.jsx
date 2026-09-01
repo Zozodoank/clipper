@@ -119,7 +119,7 @@ export default function App() {
           shopeeLink: currentForm.shopeeLink,
           productTitle: currentForm.productTitle,
           productDescription: currentForm.productDescription,
-          aiProvider: settings.activeAiEngine || 'qwen',
+          aiProvider: settings.activeAiEngine || 'openrouter',
           options: settings,
         }),
       });

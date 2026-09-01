@@ -158,10 +158,12 @@ function getAiClientConfig({ apiKeyOverride, aiProvider = 'qwen' } = {}) {
     const safeIndex = currentQwenKeyIndex % qwenKeys.length;
     currentQwenKeyIndex++; 
     
+    const customBaseUrl = process.env.QWEN_BASE_URL || '';
+    
     return {
       client: new OpenAI({
         apiKey: qwenKeys[safeIndex],
-        baseURL: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+        baseURL: customBaseUrl || 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
         timeout: 120000,
       }),
       model: getEffectiveQwenModel(),

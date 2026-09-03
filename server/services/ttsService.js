@@ -20,11 +20,17 @@ export function applyIndonesianPhoneticFixes(text) {
   if (!text || typeof text !== 'string') return '';
 
   return text
-    // 1. "banget" -> "bangét" (tanda aksen / garis miring kecil di atas e agar suara natural tanpa patahan glottal)
+    // 1. Vokal & Diakritik Khas Indonesia:
+    // "banget" -> "bangét" (tanda aksen / garis miring kecil di atas e agar suara natural tanpa patahan glottal)
     .replace(/\bbanget\b/gi, 'bangét')
     .replace(/\bbangett\b/gi, 'bangét')
     .replace(/\bbangnget\b/gi, 'bangét')
     .replace(/\bbangget\b/gi, 'bangét')
+    .replace(/\bkeren\b/gi, 'kerén')
+    .replace(/\bpengen\b/gi, 'péngin')
+    .replace(/\bengga\b/gi, 'enggak')
+    .replace(/\bngga\b/gi, 'nggak')
+
     // 2. User-specified affiliate phonetic rules:
     // worth it ➔ wortit
     .replace(/\bworth\s*it\b/gi, 'wortit')
@@ -41,14 +47,40 @@ export function applyIndonesianPhoneticFixes(text) {
     .replace(/\b3\s*in\s*1\b/gi, 'tri in wan')
     .replace(/\b4\s*in\s*1\b/gi, 'for in wan')
     .replace(/\b(\d+)\s*in\s*(\d+)\b/gi, '$1 in $2')
-    // 3. Additional online shopping terms
+
+    // 3. Kata Serapan & Marketing yang Rawan Terbaca Bule / Aksen Inggris:
+    .replace(/\bviral\b/gi, 'vi-ral')               // Mencegah dibaca "vay-ral"
+    .replace(/\bportable\b/gi, 'portabel')          // Mencegah dibaca "por-tuh-bl"
+    .replace(/\bdesign\b/gi, 'desain')              // Mencegah dibaca "di-zayn"
+    .replace(/\bcompact\b/gi, 'kompak')             // Mencegah dibaca "kuhm-pækt"
+    .replace(/\bready\s*stock\b/gi, 'redi stok')
+    .replace(/\breadystock\b/gi, 'redi stok')
+    .replace(/\breal\s*pict\b/gi, 'ril-pik')
+    .replace(/\brealpict\b/gi, 'ril-pik')
+    .replace(/\bbest\s*seller\b/gi, 'paling laris')
+    .replace(/\bfree\s*ongkir\b/gi, 'gratis ongkir')
+    .replace(/\bguys\b/gi, 'gais')
+    .replace(/\bexclusive\b/gi, 'eksklusif')
+    .replace(/\breview\b/gi, 'reviu')
+    .replace(/\bsimple\b/gi, 'simpel')
+    .replace(/\brecommended\b/gi, 'rekomended')
+
+    // 4. Singkatan & Akronim E-Commerce (Mencegah salah baca atau dieja huruf per huruf):
+    .replace(/\bCOD\b/gi, 'Ce O De')                // Mencegah dibaca "kod" (ikan kod)
+    .replace(/\bRp\.?\s*([0-9.,]+)/gi, '$1 rupiah') // "Rp 50.000" -> "50.000 rupiah" (mencegah dibaca "ar-pi")
+    .replace(/\b(\d+)\s*k\b/gi, '$1 ribu')          // "50k" -> "50 ribu"
+    .replace(/\bNo\.?\s*1\b/gi, 'Nomor satu')       // "No 1" -> "Nomor satu"
+    .replace(/\b(\d+)\s*(?:pcs|pc)\b/gi, '$1 buah') // "3 pcs" -> "3 buah"
     .replace(/\bShopee\b/gi, 'Syopi')
     .replace(/\bTikTok\b/gi, 'Tiktok')
     .replace(/\bvoucher\b/gi, 'vowcer')
-    .replace(/\bfree\s*ongkir\b/gi, 'fri ongkir')
-    .replace(/\breview\b/gi, 'reviu')
-    .replace(/\bsimple\b/gi, 'simpel')
-    .replace(/\brecommended\b/gi, 'rekomended');
+
+    // 5. Satuan Produk (Mencegah lafal huruf asing "see-em", "kay-gee"):
+    .replace(/\b(\d+)\s*cm\b/gi, '$1 senti')
+    .replace(/\b(\d+)\s*ml\b/gi, '$1 mili')
+    .replace(/\b(\d+)\s*kg\b/gi, '$1 kilo')
+    .replace(/\b(\d+)\s*gr\b/gi, '$1 gram')
+    .replace(/\b(\d+)\s*watt\b/gi, '$1 wat');
 }
 
 /**
@@ -137,9 +169,21 @@ export function cleanScriptForSubtitles(rawScript) {
 
   // Normalize phonetic spellings back to standard text for on-screen subtitles
   text = text.replace(/\bbangét\b/gi, 'banget');
+  text = text.replace(/\bkerén\b/gi, 'keren');
+  text = text.replace(/\bpéngin\b/gi, 'pengen');
   text = text.replace(/\btu\s*in\s*wan\b/gi, '2 in 1');
+  text = text.replace(/\btri\s*in\s*wan\b/gi, '3 in 1');
+  text = text.replace(/\bfor\s*in\s*wan\b/gi, '4 in 1');
   text = text.replace(/\bflas\s*sel\b/gi, 'flash sale');
   text = text.replace(/\bwortit\b/gi, 'worth it');
+  text = text.replace(/\bcekout\b/gi, 'checkout');
+  text = text.replace(/\bCe\s*O\s*De\b/gi, 'COD');
+  text = text.replace(/\bvi-ral\b/gi, 'viral');
+  text = text.replace(/\bredi\s*stok\b/gi, 'ready stock');
+  text = text.replace(/\bril-pik\b/gi, 'real pict');
+  text = text.replace(/\bgais\b/gi, 'guys');
+  text = text.replace(/\bSyopi\b/gi, 'Shopee');
+  text = text.replace(/\bvowcer\b/gi, 'voucher');
 
   const lines = text
     .split(/\r?\n/)

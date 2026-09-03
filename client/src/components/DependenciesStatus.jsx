@@ -62,6 +62,19 @@ export default function DependenciesStatus({ status, onRefresh, loading }) {
             {openRouterOk ? 'Active' : 'Missing in .env'}
           </span>
         </div>
+
+        <span className="text-slate-500">|</span>
+
+        {/* TTS Status */}
+        <div className="flex items-center gap-1.5">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+          <span className="text-slate-300 font-mono font-medium">
+            TTS AI
+          </span>
+          <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 font-medium">
+            Gadis Indonesia
+          </span>
+        </div>
       </div>
 
       <button

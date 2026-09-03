@@ -1,25 +1,43 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Music, Sparkles, CheckCircle2, ArrowRight, ExternalLink, Loader2, FileAudio, FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import {
+  Upload,
+  Music,
+  Sparkles,
+  CheckCircle2,
+  RefreshCw,
+  Loader2,
+  FileAudio,
+  FileText,
+  ChevronDown,
+  ChevronUp,
+  Volume2,
+  Check
+} from 'lucide-react';
 
 export default function VoiceoverUploader({
   jobId,
+  result,
   voiceoverScript,
   aiStudioPrompt,
   onUploadSuccess,
   isUploading,
-  setIsUploading
+  setIsUploading,
 }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [dragActive, setDragActive] = useState(false);
   const [editableScript, setEditableScript] = useState('');
-  const [showScriptEdit, setShowScriptEdit] = useState(false);
+  const [showManualUpload, setShowManualUpload] = useState(false);
+  const [isGeneratingTTS, setIsGeneratingTTS] = useState(false);
+  const [ttsSuccessMsg, setTtsSuccessMsg] = useState(false);
   const fileInputRef = useRef(null);
 
   // Initialize editable script with the exact Speaker 1 dialogue matching Kotak 3
   useEffect(() => {
     let initialText = '';
-    if (aiStudioPrompt && typeof aiStudioPrompt === 'string') {
-      const match = aiStudioPrompt.match(/(?:Speaker\s*\d*(?:\s*-\s*[A-Za-z0-9]+)?|SPEAKER\s*\d*)[\s\r\n:]+([\s\S]*)$/i);
+    if (result?.cleanScript) {
+      initialText = result.cleanScript;
+    } else if (aiStudioPrompt && typeof aiStudioPrompt === 'string') {
+      const match = aiStudioPrompt.match(/(?:Speaker\s*\d*(?:\s*-[^\n\r:]+)?|SPEAKER\s*\d*)[\s\r\n:]+([\s\S]*)$/i);
       if (match && match[1].trim()) {
         initialText = match[1].trim();
       }
@@ -30,8 +48,48 @@ export default function VoiceoverUploader({
     if (initialText) {
       setEditableScript(initialText);
     }
-  }, [aiStudioPrompt, voiceoverScript]);
+  }, [aiStudioPrompt, voiceoverScript, result]);
 
+  const hasAudioAlready = Boolean(result?.voiceoverAudioUrl || result?.hasFinalVideo || result?.stage === 'completed');
+
+  // 1. One-click Automatic Voiceover Generator (id-ID-GadisNeural / Fish Audio)
+  const handleAutoGenerateTTS = async () => {
+    if (!editableScript || !editableScript.trim()) {
+      alert('Naskah voiceover tidak boleh kosong.');
+      return;
+    }
+
+    setIsGeneratingTTS(true);
+    setTtsSuccessMsg(false);
+
+    try {
+      const response = await fetch('/api/regenerate-voiceover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobId,
+          customScript: editableScript.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Gagal menghasilkan voiceover otomatis.');
+      }
+
+      setTtsSuccessMsg(true);
+      setTimeout(() => setTtsSuccessMsg(false), 4000);
+      onUploadSuccess(data);
+    } catch (err) {
+      console.error('TTS Generation failed:', err);
+      alert(`Gagal membuat voiceover otomatis: ${err.message}`);
+    } finally {
+      setIsGeneratingTTS(false);
+    }
+  };
+
+  // 2. Manual Audio File Upload
   const handleDrag = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -51,7 +109,7 @@ export default function VoiceoverUploader({
       if (file.type.includes('audio') || file.name.match(/\.(mp3|wav|m4a|aac|ogg)$/i)) {
         setSelectedFile(file);
       } else {
-        alert('Please upload an audio file (.mp3, .wav, .m4a)');
+        alert('Format audio harus .mp3, .wav, atau .m4a');
       }
     }
   };
@@ -63,7 +121,7 @@ export default function VoiceoverUploader({
     }
   };
 
-  const handleUpload = async () => {
+  const handleManualUpload = async () => {
     if (!selectedFile) {
       alert('Silakan pilih file audio voiceover terlebih dahulu.');
       return;
@@ -100,156 +158,191 @@ export default function VoiceoverUploader({
   };
 
   return (
-    <div className="glass-panel-glow rounded-2xl p-6 shadow-xl border-amber-500/30 relative overflow-hidden">
-      
+    <div className="glass-panel-glow rounded-2xl p-6 shadow-xl border-emerald-500/30 relative overflow-hidden">
+      {/* Decorative Blur */}
+      <div className="absolute top-0 right-0 -mr-16 -mt-16 w-40 h-40 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+
       {/* Header */}
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
-            <Music className="w-4 h-4" />
+          <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+            <Volume2 className="w-4 h-4" />
           </div>
           <div>
             <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <span>Tahap 2: Upload Voiceover AI Studio</span>
-              <span className="text-[10px] uppercase font-bold bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full border border-amber-500/30">
-                Langkah Terakhir
+              <span>Voiceover AI Otomatis (Suara Gadis Indonesia)</span>
+              <span className="text-[10px] uppercase font-bold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                100% Otomatis
               </span>
             </h3>
             <p className="text-xs text-slate-400">
-              Gabungkan audio voiceover dan bakar subtitle sinkron otomatis ke video 9:16.
+              {hasAudioAlready
+                ? 'Suara wanita Indonesia paling realistis sudah otomatis terpasang & subtitle tersinkron.'
+                : 'Suara wanita Indonesia otomatis disintesis dan disinkronkan ke video 9:16.'}
             </p>
           </div>
         </div>
 
-        <a
-          href="https://aistudio.google.com"
-          target="_blank"
-          rel="noreferrer"
-          className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 font-semibold transition-colors bg-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-800"
-        >
-          <span>Buka Google AI Studio</span>
-          <ExternalLink className="w-3 h-3" />
-        </a>
-      </div>
-
-      {/* Workflow steps reminder */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4 text-[11px] text-slate-300">
-        <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 flex items-center gap-2">
-          <span className="w-4 h-4 rounded-full bg-indigo-500/20 text-indigo-400 font-bold flex items-center justify-center text-[10px]">1</span>
-          <span>Copy Naskah / Prompt</span>
-        </div>
-        <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 flex items-center gap-2">
-          <span className="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-[10px]">2</span>
-          <span>Generate TTS di AI Studio</span>
-        </div>
-        <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 flex items-center gap-2">
-          <span className="w-4 h-4 rounded-full bg-amber-500/20 text-amber-400 font-bold flex items-center justify-center text-[10px]">3</span>
-          <span>Upload .mp3 di bawah ini</span>
-        </div>
-      </div>
-
-      {/* Optional: Subtitle Text Verification / Edit Section */}
-      <div className="mb-4 rounded-xl bg-slate-950/70 border border-slate-800 p-3">
-        <button
-          type="button"
-          onClick={() => setShowScriptEdit(!showScriptEdit)}
-          className="w-full flex items-center justify-between text-xs font-semibold text-slate-300 hover:text-white transition-colors"
-        >
-          <span className="flex items-center gap-2">
-            <FileText className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Naskah Subtitle (Pastikan Sama Persis dengan Suara):</span>
-          </span>
-          <span className="text-[11px] text-indigo-400 flex items-center gap-1 font-mono">
-            <span>{showScriptEdit ? 'Tutup Edit' : 'Lihat / Edit Naskah Subtitle'}</span>
-            {showScriptEdit ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </span>
-        </button>
-
-        {showScriptEdit && (
-          <div className="mt-2.5 pt-2.5 border-t border-slate-800/80 space-y-1.5">
-            <p className="text-[11px] text-slate-400">
-              Jika Anda mengubah kata-kata saat generate di AI Studio, sesuaikan teks di bawah ini agar subtitle yang dibakar sama persis 100% kata-per-kata:
-            </p>
-            <textarea
-              value={editableScript}
-              onChange={(e) => setEditableScript(e.target.value)}
-              rows={4}
-              placeholder="[00:00] Masih repot marut keju..."
-              className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 font-mono leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500/50 resize-y"
-            />
+        {hasAudioAlready && (
+          <div className="flex items-center gap-1 text-xs font-semibold text-emerald-400 bg-emerald-950/40 px-3 py-1.5 rounded-lg border border-emerald-800/60">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>Voiceover Aktif</span>
           </div>
         )}
       </div>
 
-      {/* Drag and Drop Zone */}
-      <div
-        onDragEnter={handleDrag}
-        onDragLeave={handleDrag}
-        onDragOver={handleDrag}
-        onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
-        className={`p-6 rounded-xl border-2 border-dashed cursor-pointer transition-all text-center flex flex-col items-center justify-center ${
-          dragActive
-            ? 'border-amber-500 bg-amber-500/10'
-            : selectedFile
-            ? 'border-emerald-500/60 bg-emerald-950/20'
-            : 'border-slate-700 hover:border-slate-600 bg-slate-950/60'
-        }`}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="audio/*,.mp3,.wav,.m4a"
-          onChange={handleChange}
-          className="hidden"
+      {/* Audio Player Preview if Audio Exists */}
+      {result?.voiceoverAudioUrl && (
+        <div className="mb-4 p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-semibold text-slate-300 flex items-center gap-1.5">
+              <Music className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Preview Suara: <strong className="text-emerald-300">{result.ttsVoice || 'Gadis Indonesia (Neural)'}</strong></span>
+            </span>
+            <span className="text-[11px] text-slate-500 font-mono">Audio Sinkron 9:16</span>
+          </div>
+          <audio
+            controls
+            src={result.voiceoverAudioUrl}
+            className="w-full h-8 rounded-lg outline-none"
+          />
+        </div>
+      )}
+
+      {/* Editable Naskah Section */}
+      <div className="mb-4 rounded-xl bg-slate-950/80 border border-slate-800 p-3.5 space-y-2">
+        <label className="block text-xs font-semibold text-slate-300 flex items-center justify-between">
+          <span className="flex items-center gap-1.5">
+            <FileText className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Naskah Narasi Suara (Speaker 1):</span>
+          </span>
+          <span className="text-[11px] font-normal text-slate-400">
+            Edit kata-kata jika ingin penyesuaian
+          </span>
+        </label>
+        <textarea
+          value={editableScript}
+          onChange={(e) => setEditableScript(e.target.value)}
+          rows={3}
+          placeholder="Naskah narasi Indonesia..."
+          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs text-slate-100 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-emerald-500/50 resize-y"
         />
 
-        {selectedFile ? (
-          <div className="flex items-center gap-3 text-emerald-300">
-            <FileAudio className="w-8 h-8 text-emerald-400 flex-shrink-0" />
-            <div className="text-left">
-              <p className="font-bold text-xs text-white">{selectedFile.name}</p>
-              <p className="text-[10px] text-slate-400">
-                {(selectedFile.size / 1024 / 1024).toFixed(2)} MB &bull; Siap digabungkan
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div>
-            <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-            <p className="text-xs font-semibold text-slate-200">
-              Klik untuk memilih atau drag & drop file voiceover (.mp3, .wav)
-            </p>
-            <p className="text-[10px] text-slate-500 mt-0.5">
-              Audio hasil generate dari Google AI Studio TTS
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* Action Button */}
-      <div className="mt-4">
+        {/* Action Button: Regenerate / Generate TTS */}
         <button
-          onClick={handleUpload}
-          disabled={!selectedFile || isUploading}
-          className={`w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-lg ${
-            !selectedFile || isUploading
+          type="button"
+          onClick={handleAutoGenerateTTS}
+          disabled={isGeneratingTTS || isUploading}
+          className={`w-full py-3 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-lg ${
+            isGeneratingTTS || isUploading
               ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
-              : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 text-white shadow-emerald-500/25 hover:scale-[1.01] active:scale-[0.99]'
+              : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 text-white shadow-emerald-500/20 hover:scale-[1.01] active:scale-[0.99]'
           }`}
         >
-          {isUploading ? (
+          {isGeneratingTTS ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Menggabungkan Audio & Membakar Subtitle...</span>
+              <span>Menghasilkan Voiceover Suara Gadis Indonesia & Render Ulang...</span>
             </>
           ) : (
             <>
-              <Sparkles className="w-4 h-4" />
-              <span>Gabungkan Voiceover & Bakar Subtitle (Final Video)</span>
+              <RefreshCw className="w-4 h-4" />
+              <span>{hasAudioAlready ? 'Generate Ulang Suara & Render Video' : 'Generate Voiceover Gadis Indonesia Sekarang'}</span>
             </>
           )}
         </button>
+
+        {ttsSuccessMsg && (
+          <div className="flex items-center justify-center gap-1.5 text-xs text-emerald-400 font-medium py-1">
+            <Check className="w-3.5 h-3.5" />
+            <span>Voiceover & Subtitle berhasil diperbarui otomatis!</span>
+          </div>
+        )}
+      </div>
+
+      {/* Accordion: Optional Manual Audio Upload */}
+      <div className="pt-1 border-t border-slate-800/80">
+        <button
+          type="button"
+          onClick={() => setShowManualUpload(!showManualUpload)}
+          className="w-full flex items-center justify-between text-xs text-slate-400 hover:text-slate-300 py-1 transition-colors"
+        >
+          <span className="flex items-center gap-1.5">
+            <Upload className="w-3.5 h-3.5" />
+            <span>Opsi Tambahan: Upload File Audio Sendiri (.mp3/.wav)</span>
+          </span>
+          {showManualUpload ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        </button>
+
+        {showManualUpload && (
+          <div className="mt-3 space-y-3">
+            <div
+              onDragEnter={handleDrag}
+              onDragLeave={handleDrag}
+              onDragOver={handleDrag}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`p-5 rounded-xl border-2 border-dashed cursor-pointer transition-all text-center flex flex-col items-center justify-center ${
+                dragActive
+                  ? 'border-emerald-500 bg-emerald-500/10'
+                  : selectedFile
+                  ? 'border-emerald-500/60 bg-emerald-950/20'
+                  : 'border-slate-800 hover:border-slate-700 bg-slate-950/60'
+              }`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="audio/*,.mp3,.wav,.m4a"
+                onChange={handleChange}
+                className="hidden"
+              />
+
+              {selectedFile ? (
+                <div className="flex items-center gap-3 text-emerald-300">
+                  <FileAudio className="w-7 h-7 text-emerald-400 flex-shrink-0" />
+                  <div className="text-left">
+                    <p className="font-bold text-xs text-white">{selectedFile.name}</p>
+                    <p className="text-[10px] text-slate-400">
+                      {(selectedFile.size / 1024 / 1024).toFixed(2)} MB &bull; Siap digabungkan
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <Upload className="w-6 h-6 text-slate-500 mx-auto mb-1.5" />
+                  <p className="text-xs font-medium text-slate-300">
+                    Klik atau drag & drop audio custom Anda
+                  </p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    Hanya gunakan jika Anda tidak ingin menggunakan suara AI bawaan
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {selectedFile && (
+              <button
+                type="button"
+                onClick={handleManualUpload}
+                disabled={isUploading}
+                className="w-full py-2.5 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition-all flex items-center justify-center gap-2"
+              >
+                {isUploading ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Membakar Audio Manual...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Gunakan Audio Manual Ini</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
     </div>

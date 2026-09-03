@@ -63,12 +63,7 @@ function loadEnvFromDisk() {
 }
 
 const openRouterVisionModels = [
-  "minimax/minimax-m3:free",                               // 1M Context, dukung gambar & video
-  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",    // Native Omnimodal (baca gambar)
-  "thinkingmachines/inkling:free",                         // Sangat cerdas, 1.05M Context
-  "google/gemma-4-31b-it:free",                            // Ringan, handal untuk Vision
-  "thinkingmachines/inkling-small:free",                   // Cadangan fallback ringan
-  "openrouter/free"                                        // Jaring pengaman (Auto-Router Vision)
+  "openrouter/free" // Model gratis eksklusif dari OpenRouter (Auto-Router Vision & Scripting)
 ];
 
 function getOpenRouterKeys(apiKeyOverride) {

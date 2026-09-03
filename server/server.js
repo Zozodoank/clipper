@@ -21,6 +21,7 @@ import {
   mergeVoiceoverAndBurnSubtitles,
   getMediaDurationSec
 } from './services/videoRenderer.js';
+import { generateVoiceoverTTS, cleanScriptForTTS } from './services/ttsService.js';
 import {
   cleanupTempFiles,
   deleteJobTempDirectory,
@@ -283,6 +284,12 @@ app.get('/api/health', async (req, res) => {
     openRouterKeyConfigured: openRouterKeySet,
     activeAiEngine,
     defaultAiProvider: 'openrouter',
+    tts: {
+      available: true,
+      defaultVoice: 'id-ID-GadisNeural (Suara Gadis Indonesia)',
+      provider: process.env.TTS_PROVIDER || 'edge_neural',
+      fishAudioConfigured: Boolean(process.env.FISH_AUDIO_API_KEY && !process.env.FISH_AUDIO_API_KEY.startsWith('your_')),
+    },
     envFilesLoaded: envFiles.map((envPath) => path.relative(path.resolve(__dirname, '..'), envPath).replace(/\\/g, '/')),
     ready: binaryCheck.ffmpeg.available && binaryCheck.ytdlp.available,
   });
@@ -313,6 +320,9 @@ app.get('/api/jobs', (req, res) => {
       scenes: job.scenes || [],
       voiceoverScript: job.voiceoverScript || '',
       aiStudioPrompt: job.aiStudioPrompt || '',
+      cleanScript: job.cleanScript || '',
+      ttsVoice: job.ttsVoice || 'Gadis Indonesia (Neural)',
+      voiceoverAudioUrl: job.voiceoverAudioUrl || null,
       sampleContext: job.sampleContext || null,
       caption: job.caption || '',
       highlight: job.highlight || null,
@@ -565,6 +575,142 @@ export async function runStage1Pipeline({
 
     cleanupTempFiles([], [rawFramesDir, trimmedFramesDir]);
 
+    // ─── TAHAP OTOMATIS: Voiceover TTS & Subtitle Burning ───────────────────────
+    const rawVoiceScript = scriptData.aiStudioPrompt || scriptData.voiceoverScript || '';
+    const voiceoverFileName = `voiceover_${jobId}.mp3`;
+    const autoVoiceoverPath = path.join(uploadsDir, voiceoverFileName);
+
+    updateProgress({
+      step: 'tts_generating',
+      message: '🎙️ Menghasilkan voiceover AI otomatis (Suara Gadis Indonesia)...',
+      progress: 84,
+      status: 'running',
+    });
+
+    let ttsSucceeded = false;
+    let ttsResult = null;
+    try {
+      ttsResult = await generateVoiceoverTTS({
+        script: rawVoiceScript,
+        outputPath: autoVoiceoverPath,
+        onProgress: (msg) => updateProgress({ step: 'tts_generating', message: `🎙️ ${msg}`, progress: 86, status: 'running' }),
+        jobId,
+      });
+      ttsSucceeded = true;
+    } catch (ttsErr) {
+      console.warn(`[Job ${jobId}] Auto TTS warning:`, ttsErr.message);
+    }
+
+    if (ttsSucceeded && fs.existsSync(autoVoiceoverPath)) {
+      try {
+        updateProgress({
+          step: 'merge_start',
+          message: 'Menggabungkan Voiceover AI & membakar subtitle ke video final 9:16...',
+          progress: 90,
+          status: 'running',
+        });
+
+        const finalFileName = `final_clip_${jobId}.mp4`;
+        const finalOutputPath = path.join(outputDir, finalFileName);
+        const srtPath = path.join(uploadsDir, `subtitles_${jobId}.ass`);
+
+        const silentDurationSec = (await getMediaDurationSec(silentOutputPath)) || highlight.duration || 45;
+        const audioDurationSec = await getMediaDurationSec(autoVoiceoverPath);
+        const narrationDurationSec = (audioDurationSec && audioDurationSec > 0)
+          ? Math.min(silentDurationSec, audioDurationSec)
+          : silentDurationSec;
+
+        updateProgress({
+          step: 'subtitles',
+          message: `Menyinkronkan subtitle narasi (${narrationDurationSec.toFixed(1)}s)...`,
+          progress: 93,
+          status: 'running',
+        });
+        generateSrtSubtitles(ttsResult.cleanScript || rawVoiceScript, narrationDurationSec, srtPath);
+
+        updateProgress({
+          step: 'render_final',
+          message: 'Rendering video final 9:16 dengan Voiceover & Subtitles...',
+          progress: 95,
+          status: 'running',
+        });
+        await mergeVoiceoverAndBurnSubtitles({
+          silentVideoPath: silentOutputPath,
+          voiceoverAudioPath: autoVoiceoverPath,
+          srtPath,
+          outputVideoPath: finalOutputPath,
+          targetDurationSec: silentDurationSec,
+          onProgress: updateProgress,
+        });
+
+        cleanupTempFiles([srtPath]);
+        deleteJobTempDirectory(jobId, tempDir);
+
+        const cacheBuster = Date.now();
+        const completedResult = {
+          ...extraJobMeta,
+          jobId,
+          stage: 'completed',
+          createdAt: jobMeta.createdAt,
+          silentFileName,
+          silentVideoUrl: `/api/video/${silentFileName}`,
+          silentLocalPath: silentOutputPath,
+          finalFileName,
+          videoUrl: `/api/video/${finalFileName}?t=${cacheBuster}`,
+          downloadUrl: `/api/download/${finalFileName}?t=${cacheBuster}`,
+          finalLocalPath: finalOutputPath,
+          voiceoverAudioUrl: `/api/audio/${voiceoverFileName}?t=${cacheBuster}`,
+          ttsVoice: ttsResult.voice || 'Gadis Indonesia (Neural)',
+          ttsProvider: ttsResult.provider || 'edge_neural',
+          cleanScript: ttsResult.cleanScript,
+          downloadedVideoPath: null,
+          hasDownloadedVideo: false,
+          hasFinalVideo: true,
+          hasSilentVideo: true,
+          productTitle: productTitle || videoMeta.title,
+          productDescription: productDescription || '',
+          youtubeUrl,
+          shopeeLink: shopeeLink || '',
+          highlight: {
+            startTime: highlight.startTime,
+            endTime: highlight.endTime,
+            duration: highlight.duration,
+            hasProductBrand: isBrandDetected,
+            detectedBrand: highlight.detectedBrand || 'none',
+            allowHflip: !isBrandDetected,
+            reframe: highlight.reframe,
+            clips: highlight.clips,
+          },
+          hasProductBrand: isBrandDetected,
+          detectedBrand: highlight.detectedBrand || 'none',
+          productHook: highlight.productHook,
+          sampleContext: scriptData.sampleContext,
+          scenes: scriptData.scenes,
+          voiceoverScript: scriptData.voiceoverScript,
+          aiStudioPrompt: scriptData.aiStudioPrompt,
+          caption: scriptData.caption,
+          videoTitle: videoMeta.title,
+          isOrphan: false,
+        };
+
+        activeJobs.set(jobId, completedResult);
+        persistJob(jobId, completedResult);
+
+        updateProgress({
+          step: 'completed',
+          message: '🎉 Video Final 9:16 + Voiceover Gadis Indonesia & Subtitle Selesai!',
+          progress: 100,
+          status: 'completed',
+          result: completedResult,
+        });
+
+        return completedResult;
+      } catch (mergeErr) {
+        console.warn(`[Job ${jobId}] Auto merge error, falling back to awaiting_voiceover:`, mergeErr.message);
+      }
+    }
+
+    // Fallback: If TTS or auto merge fails, pause at awaiting_voiceover so user can still continue
     const stage1Result = {
       ...extraJobMeta,
       jobId,
@@ -574,6 +720,8 @@ export async function runStage1Pipeline({
       silentVideoUrl: `/api/video/${silentFileName}`,
       silentLocalPath: silentOutputPath,
       downloadedVideoPath: rawVideoPath,
+      hasSilentVideo: true,
+      hasFinalVideo: false,
       productTitle: productTitle || videoMeta.title,
       productDescription: productDescription || '',
       youtubeUrl,
@@ -595,6 +743,7 @@ export async function runStage1Pipeline({
       scenes: scriptData.scenes,
       voiceoverScript: scriptData.voiceoverScript,
       aiStudioPrompt: scriptData.aiStudioPrompt,
+      cleanScript: cleanScriptForTTS(rawVoiceScript),
       caption: scriptData.caption,
       videoTitle: videoMeta.title,
       isOrphan: false,
@@ -1026,6 +1175,125 @@ app.post('/api/upload-voiceover', upload.single('audio'), async (req, res) => {
     updateProgress({ step: 'error', message: error.message, progress: 0, status: 'error', error: error.message });
     res.status(500).json({ success: false, error: error.message, jobId });
   }
+});
+
+// 6b. Regenerate Voiceover automatically via TTS & Re-render Final Video
+app.post('/api/regenerate-voiceover', async (req, res) => {
+  reloadEnvironment();
+  const { jobId, customScript, voice } = req.body;
+
+  if (!jobId) return res.status(400).json({ error: 'Job ID is required.' });
+
+  const job = activeJobs.get(jobId);
+  const silentPath = job?.silentLocalPath || path.join(outputDir, `silent_clip_${jobId}.mp4`);
+
+  if (!job || !fs.existsSync(silentPath)) {
+    return res.status(404).json({ error: 'Job session expired or silent video not found.' });
+  }
+
+  const scriptToUse = (customScript && customScript.trim())
+    ? customScript.trim()
+    : (job.aiStudioPrompt || job.voiceoverScript || '');
+
+  if (!scriptToUse) {
+    return res.status(400).json({ error: 'Naskah voiceover tidak boleh kosong.' });
+  }
+
+  const voiceoverFileName = `voiceover_${jobId}_${Date.now()}.mp3`;
+  const voiceoverAudioPath = path.join(uploadsDir, voiceoverFileName);
+  const finalFileName = `final_clip_${jobId}.mp4`;
+  const finalOutputPath = path.join(outputDir, finalFileName);
+  const srtPath = path.join(uploadsDir, `subtitles_${jobId}.ass`);
+
+  const updateProgress = (data) => {
+    const payload = typeof data === 'string'
+      ? { step: 'processing', message: data, progress: 50, jobId }
+      : { ...data, jobId };
+    jobProgress.set(jobId, payload);
+    console.log(`[Job ${jobId}] [${payload.progress || 0}%] ${payload.message}`);
+  };
+
+  try {
+    updateProgress({ step: 'tts_generating', message: '🎙️ Menghasilkan voiceover otomatis (Gadis Indonesia)...', progress: 20, status: 'running' });
+
+    const ttsResult = await generateVoiceoverTTS({
+      script: scriptToUse,
+      outputPath: voiceoverAudioPath,
+      voice: voice || 'id-ID-GadisNeural',
+      onProgress: (msg) => updateProgress({ step: 'tts_generating', message: `🎙️ ${msg}`, progress: 35, status: 'running' }),
+      jobId,
+    });
+
+    const silentDurationSec = (await getMediaDurationSec(silentPath)) || job.highlight?.duration || 45;
+    const audioDurationSec = await getMediaDurationSec(voiceoverAudioPath);
+    const narrationDurationSec = (audioDurationSec && audioDurationSec > 0)
+      ? Math.min(silentDurationSec, audioDurationSec)
+      : silentDurationSec;
+
+    updateProgress({ step: 'subtitles', message: `Menyinkronkan subtitle narasi (${narrationDurationSec.toFixed(1)}s)...`, progress: 55, status: 'running' });
+    generateSrtSubtitles(ttsResult.cleanScript || scriptToUse, narrationDurationSec, srtPath);
+
+    updateProgress({ step: 'render_final', message: 'Rendering video final 9:16 dengan Voiceover & Subtitles...', progress: 75, status: 'running' });
+    await mergeVoiceoverAndBurnSubtitles({
+      silentVideoPath: silentPath,
+      voiceoverAudioPath,
+      srtPath,
+      outputVideoPath: finalOutputPath,
+      targetDurationSec: silentDurationSec,
+      onProgress: updateProgress,
+    });
+
+    cleanupTempFiles([srtPath]);
+
+    const cacheBuster = Date.now();
+    const updatedJob = {
+      ...job,
+      stage: 'completed',
+      finalFileName,
+      videoUrl: `/api/video/${finalFileName}?t=${cacheBuster}`,
+      downloadUrl: `/api/download/${finalFileName}?t=${cacheBuster}`,
+      finalLocalPath: finalOutputPath,
+      voiceoverAudioUrl: `/api/audio/${voiceoverFileName}?t=${cacheBuster}`,
+      ttsVoice: ttsResult.voice || 'Gadis Indonesia (Neural)',
+      ttsProvider: ttsResult.provider || 'edge_neural',
+      cleanScript: ttsResult.cleanScript,
+      hasFinalVideo: true,
+      hasSilentVideo: true,
+    };
+
+    activeJobs.set(jobId, updatedJob);
+    persistJob(jobId, updatedJob);
+
+    updateProgress({ step: 'completed', message: 'Final 9:16 Video Ready!', progress: 100, status: 'completed', result: updatedJob });
+
+    res.json({ success: true, ...updatedJob });
+  } catch (error) {
+    console.error(`[Job ${jobId}] Regenerate Voiceover Error:`, error);
+    cleanupTempFiles([voiceoverAudioPath, srtPath]);
+    updateProgress({ step: 'error', message: error.message, progress: 0, status: 'error', error: error.message });
+    res.status(500).json({ success: false, error: error.message, jobId });
+  }
+});
+
+// 6c. Stream generated audio files
+app.get('/api/audio/:filename', (req, res) => {
+  const safeName = path.basename(req.params.filename || '');
+  if (!safeName.endsWith('.mp3') && !safeName.endsWith('.wav') && !safeName.endsWith('.m4a')) {
+    return res.status(400).send('Invalid audio filename.');
+  }
+
+  const audioPath = path.resolve(uploadsDir, safeName);
+  if (!audioPath.startsWith(path.resolve(uploadsDir)) || !fs.existsSync(audioPath)) {
+    return res.status(404).send('Audio file not found.');
+  }
+
+  const stat = fs.statSync(audioPath);
+  res.writeHead(200, {
+    'Content-Type': 'audio/mpeg',
+    'Content-Length': stat.size,
+    'Accept-Ranges': 'bytes',
+  });
+  fs.createReadStream(audioPath).pipe(res);
 });
 
 // 7. Stream output video

@@ -57,17 +57,17 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-bold text-xs flex items-center gap-1">
                     <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                    OpenRouter (Auto Fallback)
+                    OpenRouter Free Tier
                   </span>
                   <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-emerald-500/20 text-emerald-300 border-emerald-500/30">
                     EXCLUSIVELY ACTIVE
                   </span>
                 </div>
-                <div className="text-[11px] font-mono font-semibold mb-1 text-slate-200">
-                  Multiple Models Fallback
+                <div className="text-[11px] font-mono font-semibold mb-1 text-emerald-300">
+                  openrouter/free
                 </div>
                 <p className="text-[10px] leading-tight opacity-80">
-                  Menggunakan OpenRouter secara eksklusif dengan sistem switch model otomatis jika terjadi error.
+                  Menggunakan model gratis resmi <code className="text-emerald-400">openrouter/free</code> untuk seluruh proses potong video (vision OCR) &amp; susun naskah narasi.
                 </p>
                 <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
               </div>
@@ -76,6 +76,25 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
 
             <p className="text-[11px] text-slate-400 pt-1">
               💡 <em>Pastikan kunci <code className="text-slate-300">OPENROUTER_API_KEY</code> telah disetel di berkas <code className="text-slate-300 font-mono">server/.env</code>.</em>
+            </p>
+          </div>
+
+          {/* Voiceover TTS Engine Information */}
+          <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-slate-200 flex items-center gap-1.5 text-sm">
+                <Volume2 className="w-4 h-4 text-emerald-400" />
+                <span>Mesin Voiceover TTS Otomatis</span>
+              </span>
+              <span className="text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                Default: Gadis Indonesia
+              </span>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Menggunakan suara wanita Indonesia paling realistis (<strong className="text-emerald-300">Gadis Neural</strong>) secara bawaan. 100% gratis, tanpa antrean, dan otomatis memproses naskah tanpa timestamp/tag.
+            </p>
+            <p className="text-[11px] text-slate-400">
+              💡 <em>Mendukung Fish Audio API jika <code className="text-slate-300">FISH_AUDIO_API_KEY</code> diisi di <code className="text-slate-300 font-mono">server/.env</code>.</em>
             </p>
           </div>
 

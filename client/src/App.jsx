@@ -73,7 +73,7 @@ export default function App() {
       step: 'start',
       message: isRetrying
         ? `Mencoba ulang dari tahap yang terhenti (Retry)...`
-        : `Memulai Tahap 1: Analisis AI (Alibaba Qwen)...`,
+        : `Memulai Tahap 1: Analisis AI (openrouter/free)...`,
       progress: 5, status: 'running', error: null, isQuotaError: false, canRetry: false,
     });
 
@@ -259,6 +259,7 @@ export default function App() {
             {result && result.jobId && (
               <VoiceoverUploader
                 jobId={result.jobId}
+                result={result}
                 voiceoverScript={result.voiceoverScript}
                 aiStudioPrompt={result.aiStudioPrompt}
                 onUploadSuccess={handleVoiceoverUploadSuccess}
@@ -283,17 +284,17 @@ export default function App() {
                 <h3 className="text-lg font-bold text-white mb-2">Alur 2-Tahap: AI Auto-Clip + FFmpeg</h3>
                 <p className="text-xs text-slate-400 max-w-md leading-relaxed mb-6">
                   1. Masukkan Judul Produk, Deskripsi, URL YouTube, & Link Shopee.<br />
-                  2. <strong className="text-emerald-400">Alibaba Qwen</strong> (atau <strong className="text-indigo-400">Gemini</strong>) menganalisis frame video panjang dan memilih potongan faceless 5 detik yang fokus produk.<br />
-                  3. <strong className="text-indigo-400">FFmpeg</strong> memotong sesuai instruksi AI, menjaga produk full body dalam frame 9:16, lalu AI membuat Kotak Scene & Naskah Ad Advisor.<br />
-                  4. Upload audio voiceover dari AI Studio untuk menghasilkan <strong className="text-emerald-400">Video Final + Subtitle</strong>.
+                  2. <strong className="text-emerald-400">OpenRouter Free</strong> menganalisis frame video panjang dan memilih potongan faceless 5 detik yang fokus produk.<br />
+                  3. <strong className="text-indigo-400">FFmpeg</strong> memotong sesuai instruksi AI, menjaga produk full body dalam frame 9:16, lalu AI membuat Kotak Scene &amp; Naskah Ad Advisor.<br />
+                  4. Sistem otomatis membuat <strong className="text-emerald-400">Voiceover Suara Gadis Indonesia &amp; Subtitle</strong> untuk menghasilkan <strong className="text-emerald-400">Video Final</strong>.
                 </p>
                 <div className="grid grid-cols-2 gap-3 w-full max-w-sm text-left">
                   <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
                     <div className="font-bold text-slate-200 flex items-center gap-1.5 mb-1">
                       <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Alibaba Qwen</span>
+                      <span>openrouter/free</span>
                     </div>
-                    <p className="text-[11px] text-slate-400">Analisis visual frame (1M token gratis)</p>
+                    <p className="text-[11px] text-slate-400">Vision OCR &amp; Naskah (100% Gratis)</p>
                   </div>
                   <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
                     <div className="font-bold text-slate-200 flex items-center gap-1.5 mb-1">

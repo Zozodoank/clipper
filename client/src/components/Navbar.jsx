@@ -92,7 +92,7 @@ export default function Navbar({ onOpenSettings, engineStatus }) {
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden sm:block">
-                Auto-generate viral Shopee Affiliate clips via Qwen 3.8 Flash & FFmpeg
+                Auto-generate viral Shopee Affiliate clips via openrouter/free &amp; FFmpeg
               </p>
             </div>
           </div>
@@ -128,9 +128,9 @@ export default function Navbar({ onOpenSettings, engineStatus }) {
             <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs">
                 <>
                   <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-slate-300 font-medium">Qwen | Gemini</span>
+                  <span className="text-slate-300 font-medium font-mono text-[11px]">openrouter/free</span>
                   <span className="text-slate-500">|</span>
-                  <span className="text-emerald-400 font-mono">Available</span>
+                  <span className="text-emerald-400 font-mono text-[10px]">Free Tier</span>
                 </>
             </div>
 

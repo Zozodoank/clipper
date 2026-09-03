@@ -1180,13 +1180,8 @@ app.post('/api/upload-voiceover', upload.single('audio'), async (req, res) => {
   }
 });
 
-// 6b. Regenerate Voiceover automatically via TTS & Re-render Final Video
-app.post('/api/regenerate-voiceover', async (req, res) => {
-  reloadEnvironment();
-  const { jobId, customScript } = req.body;
-
-  if (!jobId) return res.status(400).json({ error: 'Job ID is required.' });
-
+/** Helper function to process voiceover & final video merge for a single job */
+async function processJobVoiceover(jobId, customScript = null) {
   let job = activeJobs.get(jobId);
   if (!job && fs.existsSync(jobsFilePath)) {
     try {
@@ -1201,7 +1196,9 @@ app.post('/api/regenerate-voiceover', async (req, res) => {
   const silentPath = job?.silentLocalPath || path.join(outputDir, `silent_clip_${jobId}.mp4`);
 
   if (!job || !fs.existsSync(silentPath)) {
-    return res.status(404).json({ error: `File video 9:16 untuk job ${jobId} tidak ditemukan di folder output.` });
+    const notFoundErr = new Error(`File video 9:16 untuk job ${jobId} tidak ditemukan di folder output.`);
+    notFoundErr.statusCode = 404;
+    throw notFoundErr;
   }
 
   let scriptToUse = (customScript && customScript.trim())
@@ -1217,7 +1214,9 @@ app.post('/api/regenerate-voiceover', async (req, res) => {
   }
 
   if (!scriptToUse) {
-    return res.status(400).json({ error: 'Naskah voiceover tidak boleh kosong.' });
+    const emptyErr = new Error('Naskah voiceover tidak boleh kosong.');
+    emptyErr.statusCode = 400;
+    throw emptyErr;
   }
 
   const voiceoverFileName = `voiceover_${jobId}_${Date.now()}.mp3`;
@@ -1286,15 +1285,162 @@ app.post('/api/regenerate-voiceover', async (req, res) => {
     persistJob(jobId, updatedJob);
 
     updateProgress({ step: 'completed', message: 'Final 9:16 Video Ready!', progress: 100, status: 'completed', result: updatedJob });
+    return updatedJob;
+  } catch (error) {
+    console.error(`[Job ${jobId}] Voiceover Process Error:`, error.message);
+    cleanupTempFiles([voiceoverAudioPath, srtPath]);
+    const isQuota = error.isQuotaError || isQuotaErrorMessage(error.message);
+    error.isQuotaError = isQuota;
+    updateProgress({ step: 'error', message: error.message, progress: 0, status: 'error', error: error.message, isQuotaError: isQuota, canRetry: true });
+    throw error;
+  }
+}
 
+// 6b. Regenerate Voiceover automatically via TTS & Re-render Final Video (Single Job)
+app.post('/api/regenerate-voiceover', async (req, res) => {
+  reloadEnvironment();
+  const { jobId, customScript } = req.body;
+
+  if (!jobId) return res.status(400).json({ error: 'Job ID is required.' });
+
+  try {
+    const updatedJob = await processJobVoiceover(jobId, customScript);
     res.json({ success: true, ...updatedJob });
   } catch (error) {
-    console.error(`[Job ${jobId}] Regenerate Voiceover Error:`, error);
-    cleanupTempFiles([voiceoverAudioPath, srtPath]);
-    const isQuotaError = error.isQuotaError || isQuotaErrorMessage(error.message);
-    updateProgress({ step: 'error', message: error.message, progress: 0, status: 'error', error: error.message, isQuotaError, canRetry: true });
-    res.status(isQuotaError ? 402 : 500).json({ success: false, error: error.message, isQuotaError, jobId });
+    const isQuota = error.isQuotaError || isQuotaErrorMessage(error.message);
+    const status = error.statusCode || (isQuota ? 402 : 500);
+    res.status(status).json({ success: false, error: error.message, isQuotaError: isQuota, jobId });
   }
+});
+
+// State tracker for server-side Batch TTS Queue
+let currentBatchTTS = {
+  isRunning: false,
+  isStopping: false,
+  totalJobs: 0,
+  currentIndex: 0,
+  currentJobId: null,
+  currentProductTitle: '',
+  successfulJobs: 0,
+  failedJobs: 0,
+  lastError: null,
+  isQuotaExhausted: false,
+  startedAt: null,
+  completedAt: null,
+};
+
+// 6c. Start Server-Side Batch TTS Queue
+app.post('/api/batch-tts/start', async (req, res) => {
+  reloadEnvironment();
+
+  if (currentBatchTTS.isRunning) {
+    return res.json({ success: true, batch: currentBatchTTS, message: 'Batch TTS sudah berjalan di server.' });
+  }
+
+  // Reload disk jobs to make sure we don't miss any jobs
+  loadJobsFromDisk();
+
+  // Find all candidate jobs that have a 9:16 silent video ready on disk but do not have a completed final video yet
+  const candidateJobs = [];
+  for (const [jobId, job] of activeJobs.entries()) {
+    const silentPath = job.silentLocalPath || path.join(outputDir, `silent_clip_${jobId}.mp4`);
+    const finalPath = job.finalLocalPath || path.join(outputDir, `final_clip_${jobId}.mp4`);
+
+    const hasSilent = fs.existsSync(silentPath);
+    const hasFinal = fs.existsSync(finalPath);
+
+    if (hasSilent && !hasFinal) {
+      candidateJobs.push({ jobId, job });
+    }
+  }
+
+  if (candidateJobs.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: 'Tidak ada job yang siap untuk TTS (semua video sudah selesai atau belum ada klip 9:16 tersimpan).',
+    });
+  }
+
+  // Sort candidate jobs: oldest first so we complete earlier jobs in sequence
+  candidateJobs.sort((a, b) => {
+    const dateA = a.job.createdAt ? new Date(a.job.createdAt).getTime() : 0;
+    const dateB = b.job.createdAt ? new Date(b.job.createdAt).getTime() : 0;
+    return dateA - dateB;
+  });
+
+  currentBatchTTS = {
+    isRunning: true,
+    isStopping: false,
+    totalJobs: candidateJobs.length,
+    currentIndex: 0,
+    currentJobId: candidateJobs[0]?.jobId || null,
+    currentProductTitle: candidateJobs[0]?.job?.productTitle || '',
+    successfulJobs: 0,
+    failedJobs: 0,
+    lastError: null,
+    isQuotaExhausted: false,
+    startedAt: new Date().toISOString(),
+    completedAt: null,
+  };
+
+  res.json({ success: true, batch: currentBatchTTS });
+
+  // Run the batch asynchronously in the background on the server!
+  (async () => {
+    console.log(`[Batch TTS] 🚀 Starting server-side sequential queue for ${candidateJobs.length} jobs...`);
+
+    for (let i = 0; i < candidateJobs.length; i++) {
+      if (currentBatchTTS.isStopping) {
+        console.log('[Batch TTS] ⏹️ Queue stopped by user request.');
+        break;
+      }
+
+      const { jobId, job } = candidateJobs[i];
+      currentBatchTTS.currentIndex = i;
+      currentBatchTTS.currentJobId = jobId;
+      currentBatchTTS.currentProductTitle = job.productTitle || `Job ${jobId}`;
+
+      console.log(`[Batch TTS] (${i + 1}/${candidateJobs.length}) Processing: "${currentBatchTTS.currentProductTitle}" [${jobId}]`);
+
+      try {
+        await processJobVoiceover(jobId);
+        currentBatchTTS.successfulJobs++;
+        console.log(`[Batch TTS] ✅ Success (${currentBatchTTS.successfulJobs}/${candidateJobs.length}) on Job [${jobId}]`);
+      } catch (err) {
+        console.error(`[Batch TTS] ❌ Failed Job [${jobId}]:`, err.message);
+        currentBatchTTS.failedJobs++;
+        currentBatchTTS.lastError = err.message;
+
+        if (err.isQuotaError || isQuotaErrorMessage(err.message)) {
+          currentBatchTTS.isQuotaExhausted = true;
+          console.warn('[Batch TTS] ⚠️ Fish Audio quota exhausted. Pausing batch queue.');
+          break;
+        }
+        // Non-quota error: DO NOT STOP! Keep processing the remaining jobs!
+      }
+    }
+
+    currentBatchTTS.isRunning = false;
+    currentBatchTTS.isStopping = false;
+    currentBatchTTS.completedAt = new Date().toISOString();
+    console.log(`[Batch TTS] 🏁 Finished queue: ${currentBatchTTS.successfulJobs} success, ${currentBatchTTS.failedJobs} failed.`);
+  })().catch(fatalErr => {
+    console.error('[Batch TTS] Fatal queue failure:', fatalErr);
+    currentBatchTTS.isRunning = false;
+  });
+});
+
+// 6d. Get Batch TTS Status
+app.get('/api/batch-tts/status', (req, res) => {
+  res.json({ batch: currentBatchTTS });
+});
+
+// 6e. Stop Batch TTS
+app.post('/api/batch-tts/stop', (req, res) => {
+  if (currentBatchTTS.isRunning) {
+    currentBatchTTS.isStopping = true;
+  }
+  res.json({ success: true, batch: currentBatchTTS });
 });
 
 // 6c. Stream generated audio files

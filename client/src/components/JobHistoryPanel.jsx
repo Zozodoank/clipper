@@ -34,10 +34,17 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId, refreshSign
 
   // TTS processing state
   const [processingTtsId, setProcessingTtsId] = useState(null);
-  const [batchProcessing, setBatchProcessing] = useState(false);
-  const [batchIndex, setBatchIndex] = useState(0);
-  const [batchTotal, setBatchTotal] = useState(0);
-  const cancelBatchRef = useRef(false);
+  const [batchStatus, setBatchStatus] = useState({
+    isRunning: false,
+    isStopping: false,
+    totalJobs: 0,
+    currentIndex: 0,
+    currentJobId: null,
+    currentProductTitle: '',
+    successfulJobs: 0,
+    failedJobs: 0,
+    isQuotaExhausted: false,
+  });
 
   const fetchJobs = async () => {
     setLoading(true);
@@ -54,9 +61,62 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId, refreshSign
     }
   };
 
+  // Poll server-side Batch TTS queue status
+  const pollBatchStatus = async () => {
+    try {
+      const res = await fetch('/api/batch-tts/status');
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.batch) {
+          setBatchStatus(data.batch);
+          if (data.batch.isRunning) {
+            setProcessingTtsId(data.batch.currentJobId);
+          } else if (!processingTtsId) {
+            setProcessingTtsId(null);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Could not poll batch TTS status:', err.message);
+    }
+  };
+
   useEffect(() => {
     fetchJobs();
+    pollBatchStatus();
   }, [refreshSignal]);
+
+  // Active polling while server is running batch TTS
+  useEffect(() => {
+    if (!batchStatus.isRunning) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/batch-tts/status');
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.batch) {
+            setBatchStatus(data.batch);
+            if (data.batch.isRunning) {
+              setProcessingTtsId(data.batch.currentJobId);
+            } else {
+              setProcessingTtsId(null);
+              fetchJobs();
+              if (data.batch.isQuotaExhausted) {
+                alert(`⚠️ Kuota Fish Audio S2.1 Pro telah habis setelah menyelesaikan ${data.batch.successfulJobs} job. Sisanya dapat dilanjutkan besok ketika kuota direset.`);
+              } else if (data.batch.successfulJobs > 0) {
+                alert(`✨ Selesai! Berhasil menyatukan ${data.batch.successfulJobs} video dengan suara ANGELICA & subtitle.`);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Error polling batch status:', err);
+      }
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [batchStatus.isRunning]);
 
   const handleOpenFolder = async (e, filename) => {
     e.stopPropagation();
@@ -88,7 +148,7 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId, refreshSign
   // 1. Single-Job Generate TTS & Merge Video via Fish Audio
   const handleGenerateTTSForJob = async (e, job) => {
     e.stopPropagation();
-    if (processingTtsId || batchProcessing) return;
+    if (processingTtsId || batchStatus.isRunning) return;
 
     setProcessingTtsId(job.jobId);
     try {
@@ -123,62 +183,53 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId, refreshSign
     }
   };
 
-  // 2. Batch Generate TTS for ALL awaiting jobs
-  const handleCancelBatch = (e) => {
+  // 2. Server-Side Batch Generate TTS for ALL awaiting jobs
+  const handleCancelBatch = async (e) => {
     e.stopPropagation();
-    cancelBatchRef.current = true;
+    try {
+      await fetch('/api/batch-tts/stop', { method: 'POST' });
+      setBatchStatus(prev => ({ ...prev, isStopping: true }));
+    } catch (err) {
+      console.warn('Could not stop batch queue:', err);
+    }
   };
 
   const handleBatchGenerateTTS = async (e) => {
     e.stopPropagation();
-    const awaitingJobs = jobs.filter(j => j.stage === 'awaiting_voiceover');
-    if (awaitingJobs.length === 0) return;
+    if (awaitingVoiceoverJobs.length === 0) return;
 
-    if (!confirm(`Generate TTS otomatis untuk ${awaitingJobs.length} job yang menunggu dengan Fish Audio (ANGELICA)?\n\nSistem akan membuat suara dan menyatukan video satu per satu secara berurutan.`)) {
+    if (!confirm(`Generate TTS otomatis untuk ${awaitingVoiceoverJobs.length} job yang menunggu dengan Fish Audio (ANGELICA)?\n\nSistem di server akan memproses seluruh video satu per satu secara berurutan tanpa terputus.`)) {
       return;
     }
 
-    setBatchProcessing(true);
-    setBatchTotal(awaitingJobs.length);
-    cancelBatchRef.current = false;
-    let successCount = 0;
+    try {
+      const res = await fetch('/api/batch-tts/start', { method: 'POST' });
+      const data = await res.json();
 
-    for (let i = 0; i < awaitingJobs.length; i++) {
-      if (cancelBatchRef.current) {
-        break;
+      if (!res.ok || !data.success) {
+        alert(`Gagal memulai batch TTS: ${data.error || 'Terjadi kesalahan pada server.'}`);
+        return;
       }
-      const job = awaitingJobs[i];
-      setBatchIndex(i);
-      setProcessingTtsId(job.jobId);
 
-      try {
-        const res = await fetch('/api/regenerate-voiceover', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ jobId: job.jobId }),
-        });
-        const data = await res.json();
-
-        if (data.success) {
-          successCount++;
-          setJobs(prev => prev.map(j => j.jobId === job.jobId ? { ...j, ...data, stage: 'completed', hasFinalVideo: true } : j));
-        } else if (data.isQuotaError || res.status === 402) {
-          alert(`⚠️ Kuota Fish Audio S2.1 Pro telah habis setelah menyelesaikan ${successCount} job. Sisanya dapat dilanjutkan besok ketika kuota direset.`);
-          break;
-        }
-      } catch (err) {
-        console.error(`Error processing job ${job.jobId}:`, err);
+      if (data.batch) {
+        setBatchStatus(data.batch);
+        setProcessingTtsId(data.batch.currentJobId);
       }
+    } catch (err) {
+      console.error('Error starting batch TTS:', err);
+      alert(`Gagal: ${err.message}`);
     }
-
-    setBatchProcessing(false);
-    setProcessingTtsId(null);
-    fetchJobs();
   };
 
   const retryableStages = ['error', 'interrupted', 'downloaded'];
   const retryableJobs = jobs.filter(j => retryableStages.includes(j.stage));
-  const awaitingVoiceoverJobs = jobs.filter(j => j.stage === 'awaiting_voiceover');
+
+  // Eligible for TTS: job has 9:16 silent video ready (or marked awaiting_voiceover) and no final video yet
+  const isJobReadyForTTS = (j) => {
+    if (j.hasFinalVideo || j.stage === 'completed') return false;
+    return j.stage === 'awaiting_voiceover' || j.hasSilentVideo;
+  };
+  const awaitingVoiceoverJobs = jobs.filter(isJobReadyForTTS);
   const hasNewItems = retryableJobs.length > 0 || awaitingVoiceoverJobs.length > 0;
 
   if (!isOpen) {
@@ -254,48 +305,64 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId, refreshSign
       </div>
 
       {/* Banner 1: Awaiting Voiceover Batch Action */}
-      {awaitingVoiceoverJobs.length > 0 && (
-        <div className="mx-4 mt-3 p-3 rounded-xl bg-gradient-to-r from-emerald-950/60 via-slate-900/80 to-teal-950/60 border border-emerald-500/40 text-xs flex items-center justify-between flex-wrap gap-2 shadow-lg shadow-emerald-950/20 animate-in fade-in">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400 flex-shrink-0">
-              <Volume2 className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="font-bold text-white flex items-center gap-1.5">
-                <span>{awaitingVoiceoverJobs.length} Job Menunggu Voiceover</span>
-                <span className="text-[10px] font-mono px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30">
-                  Fish Audio ANGELICA
-                </span>
+      {(awaitingVoiceoverJobs.length > 0 || batchStatus.isRunning) && (
+        <div className="mx-4 mt-3 p-3.5 rounded-xl bg-gradient-to-r from-emerald-950/70 via-slate-900/90 to-teal-950/70 border border-emerald-500/40 text-xs shadow-lg shadow-emerald-950/25 animate-in fade-in">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400 flex-shrink-0">
+                <Volume2 className={`w-4 h-4 ${batchStatus.isRunning ? 'animate-pulse' : ''}`} />
               </div>
-              <p className="text-[11px] text-slate-300 mt-0.5">
-                {batchProcessing
-                  ? `Sedang memproses ${batchIndex + 1} dari ${batchTotal} job...`
-                  : 'Video 9:16 sudah selesai dipotong. Siap digabungkan dengan suara AI & subtitle.'}
-              </p>
+              <div className="min-w-0">
+                <div className="font-bold text-white flex items-center gap-1.5 flex-wrap">
+                  <span>
+                    {batchStatus.isRunning
+                      ? `Memproses Antrean TTS Server (${batchStatus.currentIndex + 1}/${batchStatus.totalJobs})`
+                      : `${awaitingVoiceoverJobs.length} Job Menunggu Voiceover`}
+                  </span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30">
+                    Fish Audio ANGELICA
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-300 mt-0.5 truncate max-w-[340px] sm:max-w-[480px]">
+                  {batchStatus.isRunning
+                    ? `Sedang memproses: "${batchStatus.currentProductTitle || 'Menyiapkan video...'}" · (${batchStatus.successfulJobs} Berhasil, ${batchStatus.failedJobs} Gagal)`
+                    : 'Video 9:16 sudah selesai dipotong. Siap digabungkan dengan suara AI & subtitle satu per satu secara berurutan.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {batchStatus.isRunning ? (
+                <button
+                  type="button"
+                  onClick={handleCancelBatch}
+                  disabled={batchStatus.isStopping}
+                  className="px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-300 text-xs font-bold transition-all disabled:opacity-50"
+                >
+                  {batchStatus.isStopping ? 'Menghentikan...' : 'Hentikan Antrean'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleBatchGenerateTTS}
+                  disabled={loading || awaitingVoiceoverJobs.length === 0}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-400 hover:from-emerald-400 hover:to-teal-300 text-white text-xs font-bold shadow-md shadow-emerald-500/25 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Proses Semua ({awaitingVoiceoverJobs.length} Job)</span>
+                </button>
+              )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {batchProcessing ? (
-              <button
-                type="button"
-                onClick={handleCancelBatch}
-                className="px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-300 text-xs font-bold transition-all"
-              >
-                Hentikan Proses
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleBatchGenerateTTS}
-                disabled={loading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-400 hover:from-emerald-400 hover:to-teal-300 text-white text-xs font-bold shadow-md shadow-emerald-500/25 transition-all hover:scale-[1.02] active:scale-[0.98]"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Proses Semua ({awaitingVoiceoverJobs.length} Job)</span>
-              </button>
-            )}
-          </div>
+          {batchStatus.isRunning && batchStatus.totalJobs > 0 && (
+            <div className="w-full bg-slate-800/80 rounded-full h-1.5 mt-2.5 overflow-hidden border border-emerald-500/20">
+              <div
+                className="bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-300 h-full transition-all duration-500"
+                style={{ width: `${Math.min(100, Math.round(((batchStatus.currentIndex + 1) / batchStatus.totalJobs) * 100))}%` }}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -325,8 +392,8 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId, refreshSign
           jobs.map((job) => {
             const isRetryable = retryableStages.includes(job.stage);
             const isCurrent = job.jobId === currentJobId;
-            const isAwaitingVoiceover = job.stage === 'awaiting_voiceover';
-            const isProcessingThis = processingTtsId === job.jobId;
+            const isAwaitingVoiceover = !job.hasFinalVideo && (job.stage === 'awaiting_voiceover' || job.hasSilentVideo);
+            const isProcessingThis = processingTtsId === job.jobId || (batchStatus.isRunning && batchStatus.currentJobId === job.jobId);
 
             // Determine button label and style
             const actionConfig = (() => {
@@ -371,7 +438,7 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId, refreshSign
                           📥 Video Tersimpan
                         </span>
                       )}
-                      {job.hasSilentClip && (
+                      {job.hasSilentVideo && (
                         <span className="text-[10px] text-purple-400 font-semibold bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20">
                           🎬 9:16 Clip Ready
                         </span>
@@ -391,7 +458,7 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId, refreshSign
                         <div className="flex items-center gap-1.5">
                           <button
                             type="button"
-                            disabled={isProcessingThis || batchProcessing}
+                            disabled={isProcessingThis || batchStatus.isRunning}
                             onClick={(e) => handleGenerateTTSForJob(e, job)}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-md ${
                               isProcessingThis

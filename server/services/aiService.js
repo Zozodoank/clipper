@@ -180,24 +180,30 @@ export async function selectHighlightWithAI({
   const effectiveDesc = productDescription || videoMetadata?.description || '';
 
   const systemPrompt = `You are a Strict Senior Video Curator, Quality Control Director & Vision OCR Inspector for Affiliate Product Ads.
-Your mission: Inspect video timeline frames and approve ONLY high-quality product footage filmed by EXPERIENCED / PROFESSIONAL CREATORS.
+Your mission: Inspect video timeline frames and approve ONLY high-quality product footage filmed by EXPERIENCED / PROFESSIONAL AFFILIATE CREATORS.
 
-FOUR MANDATORY QUALITY CRITERIA FOR EXPERIENCED CREATOR FOOTAGE:
+FIVE MANDATORY QUALITY CRITERIA FOR PRO AFFILIATE FOOTAGE:
 
-1. PROPER PRODUCT FRAMING & CENTERING (TIDAK TERPOTONG & CENTER):
+1. STRICT ZERO TOLERANCE ON UNBOXING & PACKAGING (DILARANG KERAS UNBOXING):
+   - NEVER select unboxing, parcel opening, or packaging shots:
+     * Cardboard shipping boxes, courier plastic bags, bubble wrap, styrofoam, cutter/scissors slicing tape.
+     * Hands pulling items out of boxes, unwrapping protective plastic, displaying instruction manuals, or assembling initial loose parts.
+   - Pro affiliate creators NEVER waste viewer attention on unboxing. Unboxing drops retention immediately!
+   - RULE: If a frame contains ANY unboxing, parcel box, packaging, or unboxing process, mark "isUnboxing": true and "isCleanProductShot": false. NEVER select this interval!
+
+2. ACTIVE PRODUCT DEMONSTRATION ONLY (PERAGAAN NYATA & FUNGSI SEPERTI AFFILIATOR PRO):
+   - The footage MUST show the FULLY ASSEMBLED, READY-TO-USE product IN ACTIVE ACTION:
+     * Hands operating buttons, switches, dials, pumps, triggers, or practical mechanisms.
+     * Real-life demonstration of the product solving problems (e.g. cutting vegetables with chopper, frying/cooking in pan, cleaning surfaces with mop/brush, applying beauty product, operating electronic gadget, displaying light modes).
+     * Clear showcase of the practical results, benefits, and before-after transformation.
+   - Reject boring, static, motionless product shots where nothing is being demonstrated.
+
+3. PROPER PRODUCT FRAMING & CENTERING (TIDAK TERPOTONG & CENTER):
    - The product must be properly framed in the center, clearly visible, and NOT cut off by poor amateur camera angles or bad framing.
    - The camera shot must be steady, well-lit, and sharply focused on the product.
    - If the creator filmed the product poorly (e.g. product cut off at edge of camera, missing from frame, shaky, blurry, or amateur composition), mark "isWellFramed": false and DO NOT select that interval.
 
-2. ACTIVE PRODUCT DEMONSTRATION (PERAGAAN NYATA):
-   - The footage MUST show ACTIVE DEMONSTRATION of the product in use:
-     * Hands unboxing, assembling, or preparing the product.
-     * Hands operating buttons, switches, knobs, or mechanisms.
-     * Practical real-life demonstration (e.g. cutting vegetables with chopper, cooking in pan, spraying, cleaning with mop, using gadget).
-     * Clear showcase of the practical results and benefits.
-   - Reject boring, static, motionless product shots where nothing is being demonstrated.
-
-3. STRICT ZERO TOLERANCE ON FLOATING SUBTITLES & WATERMARKS (BEBAS SUBTITLE):
+4. STRICT ZERO TOLERANCE ON FLOATING SUBTITLES & WATERMARKS (BEBAS SUBTITLE):
    - UNWANTED FLOATING OVERLAYS (REJECT/EXCLUDE):
      * Hardcoded subtitles, captions, or translation text (e.g. Indonesian subtitles like "SANGAT BAGUS", auto-captions, CapCut/TikTok floating text).
      * Watermarks, channel handles (e.g. "@creator123", TikTok logo, YouTube channel badge floating in corner).
@@ -205,14 +211,13 @@ FOUR MANDATORY QUALITY CRITERIA FOR EXPERIENCED CREATOR FOOTAGE:
      * RULE: If a frame contains ANY floating subtitle, caption, watermark, or channel overlay, mark "hasFloatingOverlay": true, "isCleanProductShot": false. NEVER select this interval!
    - PHYSICAL PRODUCT BRAND & LABELS (100% CLEAN & VALID - WELCOME!):
      * Brand logo or text physically printed ON THE PRODUCT ITSELF (e.g. "PHILIPS", "XIAOMI", "BOLDe", buttons like "On/Off", "Max").
-     * Text printed on the physical product packaging/box or label.
      * RULE: This is NATURAL physical product footage. Mark "hasPhysicalBrandText": true and "isCleanProductShot": true. This is 100% CLEAN. Set "allowHflip": false so the brand text won't appear backwards.
 
-4. FACELESS / HANDS-ONLY (NO TALKING HEADS):
+5. FACELESS / HANDS-ONLY (NO TALKING HEADS):
    - Only faceless close-ups and hands demonstrating the product. Strictly no human faces.
 
 REJECTION MANDATE:
-- If the video is from an amateur creator (product cut off/out of frame, no clear demonstration, blurry, or polluted with floating subtitles/watermarks), REJECT the video ("isUsableSourceVideo": false) with a clear rejectionReason so the system can switch to a better candidate video.`;
+- If the video is purely an unboxing video or from an amateur creator (product cut off/out of frame, no active demonstration, blurry, or polluted with floating subtitles/watermarks), REJECT the video ("isUsableSourceVideo": false) with a clear rejectionReason so the system can switch to a better candidate video.`;
 
   const userPrompt = `Product Title: "${effectiveTitle}"
 ${effectiveDesc ? `Product Description / Key Features: "${effectiveDesc}"` : ''}
@@ -224,16 +229,19 @@ Sampled Visual Frames (${frames.length} frames across timeline):
 ${frames.map((f, i) => `Frame #${i + 1} at timestamp ${f.timeFormatted} (${f.timestamp}s)`).join('\n')}
 
 INSPECTION & QUALITY CONTROL STEPS:
-1. Identify if the video is from an experienced creator with proper centering and active hands-on demonstration.
-2. Identify any floating video subtitles / watermarks / channel names (Category 1: Reject) vs physical text on the product (Category 2: 100% Clean Product Shot).
-3. In "frameAudit", list every frame:
+1. Detect and STRICTLY EXCLUDE all unboxing and packaging intervals (cardboard box, bubble wrap, plastic wrapper, unboxing tape).
+2. Approve ONLY active demonstrations of the ready-to-use product in action (hands operating, demonstrating functions and instant results like a pro affiliator).
+3. Identify any floating video subtitles / watermarks / channel names (Category 1: Reject) vs physical text on the product (Category 2: 100% Clean Product Shot).
+4. In "frameAudit", list every frame:
    - "isWellFramed": true if the product is properly centered and not cut off by the creator's camera angle.
+   - "isUnboxing": true if package, parcel, box opening, or unboxing process is visible (must set isCleanProductShot: false).
    - "hasActiveDemonstration": true if hands are actively demonstrating/operating/testing the product.
    - "hasFloatingOverlay": true ONLY if floating subtitles/watermarks/channel names exist.
-   - "hasPhysicalBrandText": true if brand/text is printed on the physical product/box.
-   - "isCleanProductShot": true if well-framed, free of floating subtitles/watermarks/faces.
-4. If the product has a visible brand/logo on it, set "hasProductBrand": true, "detectedBrand": "<BrandName>", "allowHflip": false.
-5. Select 4 to 7 clean 5-second intervals of active product demonstration with centered framing (Total duration: 20 to 35 seconds, strictly 5 seconds per scene/clip).
+   - "hasPhysicalBrandText": true if brand/text is printed on the physical product itself.
+   - "hasFace": true if human face is visible.
+   - "isCleanProductShot": true ONLY if well-framed, NOT unboxing, free of floating subtitles/watermarks/faces.
+5. If the product has a visible brand/logo on it, set "hasProductBrand": true, "detectedBrand": "<BrandName>", "allowHflip": false.
+6. Select 4 to 7 clean 5-second intervals of active product demonstration with centered framing (Total duration: 20 to 35 seconds, strictly 5 seconds per scene/clip, NEVER select unboxing).
 
 Return strict JSON in this format:
 {
@@ -249,6 +257,7 @@ Return strict JSON in this format:
       "frameIndex": 1,
       "timestamp": "00:00",
       "isWellFramed": true,
+      "isUnboxing": false,
       "hasActiveDemonstration": true,
       "hasFloatingOverlay": false,
       "detectedFloatingOverlay": "none",
@@ -264,7 +273,8 @@ Return strict JSON in this format:
       "startTime": "00:05",
       "endTime": "00:10",
       "startSeconds": 5,
-      "reason": "Clean hands-on demonstration with centered product framing, free of floating subtitles or faces.",
+      "reason": "Clean active product demonstration in use, strictly no unboxing, centered framing, free of subtitles/faces.",
+      "isUnboxing": false,
       "hasProductBrand": false,
       "allowHflip": true,
       "isCleanAffiliateShot": true,
@@ -488,6 +498,7 @@ CRITICAL DURATION & WORD-COUNT TIMING RULES (MANDATORY):
      [${formatSeconds(targetDuration - 5)}] Cek produk di bawah sekarang sebelum kehabisan promo spesialnya!
 
 STRICT RULES FOR VOICE OVER & CALL TO ACTION:
+- NEVER mention unboxing, opening packaging, bubble wrap, or cardboard boxes in the narration. Focus 100% on the product's practical features, active demonstration, and problem-solving benefits like a top pro affiliate creator.
 - NEVER use the word "Shopee" in the voiceover script or scene spoken lines.
 - NEVER say "link di bio" or "klik link di bio".
 - ALWAYS use direct calls like "Cek produk di bawah sekarang", "Klik produk di bawah", "Checkout produk di bawah mumpung promo", or "Cek selengkapnya di bawah".
@@ -770,8 +781,10 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, fram
       const isLegacySubtitle = !isPhysicalBrand && (audit.hasTextOrSubtitles === true || (legacyText && legacyText !== 'none' && legacyText !== 'null' && legacyText !== 'false'));
       const hasFace = audit.hasFace === true;
       const isPoorlyFramed = audit.isWellFramed === false;
+      const isUnboxing = audit.isUnboxing === true ||
+        (audit.detectedAction && /unbox|kardus|paket|buka paket|kemasan|packaging|bubble wrap/i.test(audit.detectedAction));
 
-      if (hasFloatingOverlay || isLegacySubtitle || hasFace || isPoorlyFramed) {
+      if (hasFloatingOverlay || isLegacySubtitle || hasFace || isPoorlyFramed || isUnboxing) {
         const sec = Math.round(parseTimeToSeconds(audit.timestamp ?? audit.frameIndex));
         dirtyTimestamps.push(sec);
       }
@@ -797,12 +810,20 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, fram
       continue;
     }
 
+    // Strictly discard any clip that is flagged as unboxing or packaging
+    const isUnboxingClip = rawClip?.isUnboxing === true ||
+      /unbox|kardus|paket|kemasan|packaging|bubble wrap|buka paket/i.test(String(rawClip?.reason || ''));
+    if (isUnboxingClip) {
+      console.log(`[normalizeClipPlan] Skip clip at ${startSeconds}s: unboxing activity rejected (pro-affiliate mode)`);
+      continue;
+    }
+
     const endSeconds = startSeconds + clipLength;
 
-    // Discard any clip interval that covers dirty frames containing floating text/subtitles/watermarks
+    // Discard any clip interval that covers dirty frames containing floating text/subtitles/watermarks/unboxing
     const overlapsDirtyFrame = dirtyTimestamps.some(ts => ts >= startSeconds && ts <= endSeconds);
     if (overlapsDirtyFrame) {
-      console.log(`[normalizeClipPlan] Skip clip at ${startSeconds}-${endSeconds}s: overlaps frame with detected subtitle/watermark`);
+      console.log(`[normalizeClipPlan] Skip clip at ${startSeconds}-${endSeconds}s: overlaps frame with detected subtitle/watermark/unboxing`);
       continue;
     }
 
@@ -834,7 +855,7 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, fram
   }
 
   if (!allowFallback) {
-    throw new Error('AI menolak video ini: tidak ditemukan minimal 4 potongan video bersih (20 detik) dari watermark, subtitle terjemahan, nama channel mengambang, atau wajah/talking head.');
+    throw new Error('AI menolak video ini: tidak ditemukan minimal 4 potongan video bersih (20 detik) dari watermark, subtitle terjemahan, nama channel mengambang, wajah, atau proses unboxing.');
   }
 
   // Fallback: build 4 to 7 evenly spaced clips (20 to 35 seconds total, exactly 5s per clip)
@@ -842,9 +863,10 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, fram
   const fallbackClips = [];
   const fallbackTargetClips = Math.min(7, Math.max(4, Math.floor(totalDuration / clipLength)));
   const maxStart = Math.max(0, Math.floor(totalDuration - clipLength));
-  const fallbackStart = totalDuration > 25
-    ? Math.min(maxStart, Math.max(0, Math.floor(totalDuration * 0.05)))
-    : 0;
+  // Avoid first 15-18% of video in fallback to bypass intro unboxing segments on YouTube
+  const fallbackStart = totalDuration > 30
+    ? Math.min(maxStart, Math.max(0, Math.floor(totalDuration * 0.18)))
+    : (totalDuration > 20 ? Math.min(maxStart, Math.max(0, Math.floor(totalDuration * 0.10))) : 0);
   const fallbackLastStart = totalDuration > 30
     ? Math.max(fallbackStart, Math.min(maxStart, Math.floor(totalDuration * 0.95) - clipLength))
     : maxStart;

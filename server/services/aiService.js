@@ -201,121 +201,32 @@ export async function selectHighlightWithAI({
   const effectiveTitle = productTitle || videoMetadata?.title || 'Product Showcase Video';
   const effectiveDesc = productDescription || videoMetadata?.description || '';
 
-  const systemPrompt = `You are a Strict Senior Video Curator, Quality Control Director & Vision OCR Inspector for Affiliate Product Ads.
-Your mission: Inspect video timeline frames and approve ONLY high-quality product footage filmed by EXPERIENCED / PROFESSIONAL AFFILIATE CREATORS.
+  const systemPrompt = `You are an expert Short-Form Affiliate Video QC Director.
+Evaluate the ${frames.length} sampled frames of the source video for the product: "${effectiveTitle}".
 
-FIVE MANDATORY QUALITY CRITERIA FOR PRO AFFILIATE FOOTAGE:
+CRITERIA:
+1. REJECT if:
+   - Pure unboxing / parcel opening / bubble wrap with no actual product in action.
+   - Talking heads / person just talking with no hands-on product demonstration.
+   - Irrelevant video / wrong product / poor amateur quality.
+   Output strict JSON:
+   {"status": "reject", "reason": "<alasan penolakan singkat dalam bahasa Indonesia>"}
 
-1. STRICT ZERO TOLERANCE ON UNBOXING & PACKAGING (DILARANG KERAS UNBOXING):
-   - NEVER select unboxing, parcel opening, or packaging shots:
-     * Cardboard shipping boxes, courier plastic bags, bubble wrap, styrofoam, cutter/scissors slicing tape.
-     * Hands pulling items out of boxes, unwrapping protective plastic, displaying instruction manuals, or assembling initial loose parts.
-   - Pro affiliate creators NEVER waste viewer attention on unboxing. Unboxing drops retention immediately!
-   - RULE: If a frame contains ANY unboxing, parcel box, packaging, or unboxing process, mark "isUnboxing": true and "isCleanProductShot": false. NEVER select this interval!
-
-2. ACTIVE PRODUCT DEMONSTRATION ONLY (PERAGAAN NYATA & FUNGSI SEPERTI AFFILIATOR PRO):
-   - The footage MUST show the FULLY ASSEMBLED, READY-TO-USE product IN ACTIVE ACTION:
-     * Hands operating buttons, switches, dials, pumps, triggers, or practical mechanisms.
-     * Real-life demonstration of the product solving problems (e.g. cutting vegetables with chopper, frying/cooking in pan, cleaning surfaces with mop/brush, applying beauty product, operating electronic gadget, displaying light modes).
-     * Clear showcase of the practical results, benefits, and before-after transformation.
-   - Reject boring, static, motionless product shots where nothing is being demonstrated.
-
-3. PROPER PRODUCT FRAMING & CENTERING (TIDAK TERPOTONG & CENTER):
-   - The product must be properly framed in the center, clearly visible, and NOT cut off by poor amateur camera angles or bad framing.
-   - The camera shot must be steady, well-lit, and sharply focused on the product.
-   - If the creator filmed the product poorly (e.g. product cut off at edge of camera, missing from frame, shaky, blurry, or amateur composition), mark "isWellFramed": false and DO NOT select that interval.
-
-4. STRICT ZERO TOLERANCE ON FLOATING SUBTITLES & WATERMARKS (BEBAS SUBTITLE):
-   - UNWANTED FLOATING OVERLAYS (REJECT/EXCLUDE):
-     * Hardcoded subtitles, captions, or translation text (e.g. Indonesian subtitles like "SANGAT BAGUS", auto-captions, CapCut/TikTok floating text).
-     * Watermarks, channel handles (e.g. "@creator123", TikTok logo, YouTube channel badge floating in corner).
-     * Floating stickers, discount badges, or arrows overlaid by video editors.
-     * RULE: If a frame contains ANY floating subtitle, caption, watermark, or channel overlay, mark "hasFloatingOverlay": true, "isCleanProductShot": false. NEVER select this interval!
-   - PHYSICAL PRODUCT BRAND & LABELS (100% CLEAN & VALID - WELCOME!):
-     * Brand logo or text physically printed ON THE PRODUCT ITSELF (e.g. "PHILIPS", "XIAOMI", "BOLDe", buttons like "On/Off", "Max").
-     * RULE: This is NATURAL physical product footage. Mark "hasPhysicalBrandText": true and "isCleanProductShot": true. This is 100% CLEAN. Set "allowHflip": false so the brand text won't appear backwards.
-
-5. FACELESS / HANDS-ONLY (NO TALKING HEADS):
-   - Only faceless close-ups and hands demonstrating the product. Strictly no human faces.
-
-REJECTION MANDATE:
-- If the video is purely an unboxing video or from an amateur creator (product cut off/out of frame, no active demonstration, blurry, or polluted with floating subtitles/watermarks), REJECT the video ("isUsableSourceVideo": false) with a clear rejectionReason so the system can switch to a better candidate video.`;
+2. ACCEPT if:
+   - There are active, clean product demonstrations (hands using the product, showing features/results, faceless/product-focused).
+   - Select 4 to 7 frame indices (numbers 1 to ${frames.length}) showing the best distinct product demonstration moments (spaced at least 5 seconds apart).
+   - Output strict minimal JSON:
+   {"status": "accept", "frames": [4, 8, 12, 16, 20, 24], "productHook": "<hook pendek menarik dalam bahasa Indonesia>", "hasProductBrand": false}`;
 
   const userPrompt = `Product Title: "${effectiveTitle}"
-${effectiveDesc ? `Product Description / Key Features: "${effectiveDesc}"` : ''}
-Video Title: "${videoMetadata?.title || effectiveTitle}"
-Total Video Duration: ${totalDuration} seconds (${formatSeconds(totalDuration)})
-Product Link: ${shopeeLink || 'https://shope.ee/link'}
+${effectiveDesc ? `Product Description: "${effectiveDesc}"` : ''}
+Total Duration: ${totalDuration}s
+Sampled Frames:
+${frames.map((f, i) => `#${i + 1} (${f.timeFormatted})`).join(', ')}
 
-Sampled Visual Frames (${frames.length} frames across timeline):
-${frames.map((f, i) => `Frame #${i + 1} at timestamp ${f.timeFormatted} (${f.timestamp}s)`).join('\n')}
-
-INSPECTION & QUALITY CONTROL STEPS:
-1. Detect and STRICTLY EXCLUDE all unboxing and packaging intervals (cardboard box, bubble wrap, plastic wrapper, unboxing tape).
-2. Approve ONLY active demonstrations of the ready-to-use product in action (hands operating, demonstrating functions and instant results like a pro affiliator).
-3. Identify any floating video subtitles / watermarks / channel names (Category 1: Reject) vs physical text on the product (Category 2: 100% Clean Product Shot).
-4. In "frameAudit", list every frame:
-   - "isWellFramed": true if the product is properly centered and not cut off by the creator's camera angle.
-   - "isUnboxing": true if package, parcel, box opening, or unboxing process is visible (must set isCleanProductShot: false).
-   - "hasActiveDemonstration": true if hands are actively demonstrating/operating/testing the product.
-   - "hasFloatingOverlay": true ONLY if floating subtitles/watermarks/channel names exist.
-   - "hasPhysicalBrandText": true if brand/text is printed on the physical product itself.
-   - "hasFace": true if human face is visible.
-   - "isCleanProductShot": true ONLY if well-framed, NOT unboxing, free of floating subtitles/watermarks/faces.
-5. If the product has a visible brand/logo on it, set "hasProductBrand": true, "detectedBrand": "<BrandName>", "allowHflip": false.
-6. Select 4 to 7 clean 5-second intervals of active product demonstration with centered framing (Total duration: 20 to 35 seconds, strictly 5 seconds per scene/clip, NEVER select unboxing).
-
-Return strict JSON in this format:
-{
-  "isProductMatch": true,
-  "isUsableSourceVideo": true,
-  "isExperiencedCreatorQuality": true,
-  "rejectionReason": "",
-  "hasProductBrand": false,
-  "detectedBrand": "none",
-  "allowHflip": true,
-  "frameAudit": [
-    {
-      "frameIndex": 1,
-      "timestamp": "00:00",
-      "isWellFramed": true,
-      "isUnboxing": false,
-      "hasActiveDemonstration": true,
-      "hasFloatingOverlay": false,
-      "detectedFloatingOverlay": "none",
-      "hasPhysicalBrandText": false,
-      "detectedPhysicalBrand": "none",
-      "hasFace": false,
-      "isCleanProductShot": true
-    }
-  ],
-  "productHook": "Racun Shopee Viral Wajib Punya!",
-  "clips": [
-    {
-      "startTime": "00:05",
-      "endTime": "00:10",
-      "startSeconds": 5,
-      "reason": "Clean active product demonstration in use, strictly no unboxing, centered framing, free of subtitles/faces.",
-      "isUnboxing": false,
-      "hasProductBrand": false,
-      "allowHflip": true,
-      "isCleanAffiliateShot": true,
-      "sourceOwnerIdentityVisible": false,
-      "sourceIdentityRisk": "none",
-      "reframe": {
-        "focusX": 0.5,
-        "focusY": 0.55,
-        "renderMode": "preserve_full_product",
-        "cropStrategy": "keep_full_product_no_floating_text_no_face",
-        "avoidTextZones": [],
-        "avoidFaceZones": ["top_left"],
-        "faceSafety": true,
-        "allowHflip": true,
-        "notes": "Centered hands-on product demonstration."
-      }
-    }
-  ]
-}`;
+Review visual frames. Output strict minimal JSON:
+If reject: {"status": "reject", "reason": "..."}
+If accept: {"status": "accept", "frames": [indices], "productHook": "...", "hasProductBrand": false}`;
 
   const messageContent = [
     { type: 'text', text: userPrompt },
@@ -363,7 +274,7 @@ Return strict JSON in this format:
         ],
         response_format: { type: 'json_object' },
         temperature: 0.3,
-        max_tokens: 1500,
+        max_tokens: 500,
       });
 
       clearInterval(heartbeat);
@@ -378,27 +289,45 @@ Return strict JSON in this format:
         parsed = JSON.parse(cleaned);
       }
 
-      const hasProductBrand = parsed.hasProductBrand === true ||
-        (Boolean(parsed.detectedBrand) && parsed.detectedBrand.toLowerCase() !== 'none' && parsed.detectedBrand.toLowerCase() !== 'null' && parsed.detectedBrand.toLowerCase() !== 'false') ||
-        (Array.isArray(parsed.clips) && parsed.clips.some(c => c.hasProductBrand === true || c.hasPhysicalBrandText === true)) ||
-        (Array.isArray(parsed.frameAudit) && parsed.frameAudit.some(f => f.hasPhysicalBrandText === true || (f.detectedPhysicalBrand && f.detectedPhysicalBrand.toLowerCase() !== 'none')));
-      const detectedBrand = (parsed.detectedBrand || parsed.detectedBrandName || '').trim() || (hasProductBrand ? 'Brand Terdeteksi' : 'none');
-      const allowHflip = hasProductBrand ? false : (parsed.allowHflip !== false);
-
-      if (parsed.isProductMatch === false || parsed.isUsableSourceVideo === false) {
-        const rejectionMsg = (parsed.rejectionReason || '').toLowerCase();
-        // If AI mistakenly rejected because of physical brand/product text, do not fail
-        const isFalseBrandRejection = rejectionMsg.includes('brand') || rejectionMsg.includes('merk') || rejectionMsg.includes('merek') || rejectionMsg.includes('tulisan produk') || rejectionMsg.includes('label produk');
-        if (!allowFallbackClips && !isFalseBrandRejection) {
-          throw new Error(parsed.rejectionReason || 'Video YouTube ditolak oleh AI: Mengandung teks subtitle terjemahan, watermark, atau wajah yang tidak dapat dihilangkan.');
+      if (parsed.status === 'reject' || parsed.isProductMatch === false || parsed.isUsableSourceVideo === false) {
+        const rejectionMsg = parsed.reason || parsed.rejectionReason || 'Video ditolak oleh AI: Tidak ada peragaan produk yang sesuai.';
+        if (!allowFallbackClips) {
+          throw new Error(rejectionMsg);
         }
-        console.warn(`[AIService] AI flagged video: "${parsed.rejectionReason}". Applying fallback clip plan...`);
-        parsed.clips = [];
+        console.warn(`[AIService] AI flagged video: "${rejectionMsg}". Applying fallback clip plan...`);
       }
 
-      const clips = normalizeClipPlan(parsed.clips, totalDuration, {
+      const selectedIndices = Array.isArray(parsed.frames) ? parsed.frames : [];
+      let candidateClips = [];
+
+      if (selectedIndices.length > 0) {
+        for (const rawIdx of selectedIndices) {
+          const idx = parseInt(rawIdx, 10);
+          if (isNaN(idx) || idx < 1 || idx > frames.length) continue;
+          const frameObj = frames[idx - 1];
+          const ts = frameObj ? frameObj.timestamp : (idx * (totalDuration / frames.length));
+          const startSec = Math.max(0, Math.min(totalDuration - 5, Math.round(ts)));
+          candidateClips.push({
+            startSeconds: startSec,
+            endSeconds: startSec + 5,
+            startTime: formatSeconds(startSec),
+            endTime: formatSeconds(startSec + 5),
+            reason: `Frame #${idx} peragaan produk di detik ${formatSeconds(startSec)}`,
+            isCleanAffiliateShot: true,
+            hasProductBrand: Boolean(parsed.hasProductBrand),
+            reframe: DEFAULT_REFRAME
+          });
+        }
+      } else if (Array.isArray(parsed.clips) && parsed.clips.length > 0) {
+        candidateClips = parsed.clips;
+      }
+
+      const hasProductBrand = Boolean(parsed.hasProductBrand);
+      const detectedBrand = (parsed.detectedBrand || '').trim() || (hasProductBrand ? 'Brand Terdeteksi' : 'none');
+      const allowHflip = hasProductBrand ? false : (parsed.allowHflip !== false);
+
+      const clips = normalizeClipPlan(candidateClips, totalDuration, {
         allowFallback: allowFallbackClips,
-        frameAudit: parsed.frameAudit || [],
         hasProductBrand,
         allowHflip,
       });

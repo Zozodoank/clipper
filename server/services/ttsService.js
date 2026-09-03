@@ -29,6 +29,7 @@ export function applyIndonesianPhoneticFixes(text) {
     // "banget" -> "bangét" (tanda aksen / garis miring kecil di atas e agar suara natural tanpa patahan glottal)
     .replace(/\b(?:banget|bangett|bangnget|bangget)\b/gi, 'bangét')
     .replace(/\bpengen\b/gi, 'péngin')
+    .replace(/\bkece\b/gi, 'kécé')
     .replace(/\byuk\b/gi, 'yu')
     .replace(/\b(?:enggak|engga|nggak|ngga)\b/gi, 'énggak')
 

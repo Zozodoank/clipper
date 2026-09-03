@@ -140,8 +140,9 @@ function getAiClientConfig({ apiKeyOverride } = {}) {
 
 const DEFAULT_REFRAME = {
   focusX: 0.5,
-  focusY: 0.62,
+  focusY: 0.5,
   cropStrategy: 'faceless_product_hands_avoid_creator_text',
+  renderMode: 'vertical_crop',
   avoidTextZones: [],
   avoidFaceZones: ['top', 'upper_middle'],
   faceSafety: true,
@@ -209,12 +210,14 @@ CRITERIA:
    - Pure unboxing / parcel opening / bubble wrap with no actual product in action.
    - Talking heads / person just talking with no hands-on product demonstration.
    - Irrelevant video / wrong product / poor amateur quality.
+   - The video is dominated by channel watermarks, channel logos, creator handles (@username), or floating subtitles that cannot be avoided.
    Output strict JSON:
    {"status": "reject", "reason": "<alasan penolakan singkat dalam bahasa Indonesia>"}
 
 2. ACCEPT if:
    - There are active, clean product demonstrations (hands using the product, showing features/results, faceless/product-focused).
-   - Select 4 to 7 frame indices (numbers 1 to ${frames.length}) showing the best distinct product demonstration moments (spaced at least 5 seconds apart).
+   - STRICT ZERO WATERMARK/IDENTITY: NEVER select frames with channel watermarks, channel logos/badges, creator handles (@username), or floating subtitles! ONLY choose 100% clean product demonstration frames!
+   - Select 4 to 7 frame indices (numbers 1 to ${frames.length}) showing the best distinct, watermark-free product demonstration moments (spaced at least 5 seconds apart).
    - Output strict minimal JSON:
    {"status": "accept", "frames": [4, 8, 12, 16, 20, 24], "productHook": "<hook pendek menarik dalam bahasa Indonesia>", "hasProductBrand": false}`;
 
@@ -224,9 +227,11 @@ Total Duration: ${totalDuration}s
 Sampled Frames:
 ${frames.map((f, i) => `#${i + 1} (${f.timeFormatted})`).join(', ')}
 
-Review visual frames. Output strict minimal JSON:
-If reject: {"status": "reject", "reason": "..."}
-If accept: {"status": "accept", "frames": [indices], "productHook": "...", "hasProductBrand": false}`;
+Review visual frames. STRICTLY AVOID any frames with channel watermark, channel logo, @username, or floating subtitles.
+If the entire video is dirty/watermarked or has creator identity, reject:
+{"status": "reject", "reason": "Terdapat watermark/identitas channel pembuat"}
+If clean product shots exist, select 4 to 7 clean frame indices:
+{"status": "accept", "frames": [indices], "productHook": "...", "hasProductBrand": false}`;
 
   const messageContent = [
     { type: 'text', text: userPrompt },
@@ -309,7 +314,10 @@ If accept: {"status": "accept", "frames": [indices], "productHook": "...", "hasP
             reason: `Frame #${idx} peragaan produk di detik ${formatSeconds(startSec)}`,
             isCleanAffiliateShot: true,
             hasProductBrand: Boolean(parsed.hasProductBrand),
-            reframe: DEFAULT_REFRAME
+            reframe: {
+              ...DEFAULT_REFRAME,
+              renderMode: 'vertical_crop',
+            }
           });
         }
       } else if (Array.isArray(parsed.clips) && parsed.clips.length > 0) {
@@ -455,9 +463,7 @@ STRICT RULES FOR VOICE OVER & CALL TO ACTION:
 - NEVER use the word "Shopee" in the voiceover script or scene spoken lines.
 - NEVER say "link di bio" or "klik link di bio".
 - ALWAYS use direct calls like "Cek produk di bawah sekarang", "Klik produk di bawah", "Checkout produk di bawah mumpung promo", or "Cek selengkapnya di bawah".
-- INDONESIAN PHONETIC RULES FOR TTS ACCURACY:
-  * For 'voiceoverScript', write accented 'é' on words with the 'e' taling sound (/e/ or /ɛ/) to ensure accurate TTS pronunciation: kéren, capék, cékout, lélé, soré, bésok, céwék, modél, désain.
-  * Keep standard 'e' for pepet (/ə/) sounds, prefixes, and common words: pegel, meja, beres, segar, besar, tenang, beli, ke-, se-, me-, te-, pe-.
+- Gunakan ejaan bahasa Indonesia baku yang wajar dan bersih (contoh: kece, keren, capek, lezat) tanpa menggunakan tanda aksen é/è.
 
 4. 'aiStudioPrompt':
    - A copy-paste ready text block formatted EXACTLY for Google AI Studio TTS Playground (Composer view).
@@ -505,7 +511,7 @@ PENTING - ATURAN DURASI, TIMESTAMP & TEMPO NASKAH:
 5. JANGAN PERNAH gunakan kata "Shopee" dalam naskah voiceover maupun Kotak Scene.
 6. JANGAN PERNAH gunakan kata "link di bio".
 7. Selalu gunakan ajakan seperti "Cek produk di bawah sekarang", "Klik produk di bawah", atau "Checkout produk di bawah sebelum kehabisan".
-8. ATURAN FONETIK TTS: Tuliskan huruf 'é' pada kata yang berbunyi taling (/e/ atau /ɛ/) seperti kéren, capék, cékout, bésok, soré, modél. Kata berbunyi pepet atau yang sudah fasih (/ə/) seperti pegel, meja, beres, segar, besar, ke- TETAP gunakan e biasa.
+8. Gunakan ejaan bahasa Indonesia baku yang wajar (misal: kece, keren, capek) tanpa menambahkan tanda aksen é.
 
 Return strict JSON in this format:
 {

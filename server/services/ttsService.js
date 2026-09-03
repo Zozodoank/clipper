@@ -26,7 +26,7 @@ export function applyIndonesianPhoneticFixes(text) {
     .replace(/\bbangett\b/gi, 'bangét')
     .replace(/\bbangnget\b/gi, 'bangét')
     .replace(/\bbangget\b/gi, 'bangét')
-    .replace(/\bkeren\b/gi, 'kerén')
+    .replace(/\bkeren\b/gi, 'kéren')
     .replace(/\bpengen\b/gi, 'péngin')
     .replace(/\bengga\b/gi, 'enggak')
     .replace(/\bngga\b/gi, 'nggak')
@@ -169,7 +169,7 @@ export function cleanScriptForSubtitles(rawScript) {
 
   // Normalize phonetic spellings back to standard text for on-screen subtitles
   text = text.replace(/\bbangét\b/gi, 'banget');
-  text = text.replace(/\bkerén\b/gi, 'keren');
+  text = text.replace(/\b(kerén|kéren)\b/gi, 'keren');
   text = text.replace(/\bpéngin\b/gi, 'pengen');
   text = text.replace(/\btu\s*in\s*wan\b/gi, '2 in 1');
   text = text.replace(/\btri\s*in\s*wan\b/gi, '3 in 1');

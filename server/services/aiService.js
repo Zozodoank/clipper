@@ -63,8 +63,8 @@ function loadEnvFromDisk() {
 }
 
 const defaultOpenRouterModels = [
+  "minimax/minimax-m3:free",
   "openrouter/auto",
-  "openrouter/free",
   "google/gemini-2.0-pro-exp-02-05:free",
   "google/gemini-2.5-flash-free",
   "google/lyria-3-clip-preview",

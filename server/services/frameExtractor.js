@@ -20,7 +20,7 @@ export async function extractFrames(videoPath, framesDir, onProgress = () => {},
   }
 
   const ffmpegPath = getFFmpegPath();
-  const outputPattern = path.join(framesDir, 'frame_%04d.jpg');
+  const outputPattern = path.join(framesDir, 'frame_%04d.png');
 
   // Guard against audio-only input path
   let targetVideoPath = videoPath;
@@ -44,12 +44,11 @@ export async function extractFrames(videoPath, framesDir, onProgress = () => {},
   onProgress({ step: 'frames', message: `Extracting source timeline frames (1 frame every ${safeInterval}s)...`, progress: 40 });
 
   return new Promise((resolve, reject) => {
-    // 360p height JPEG (~15-20 KB/frame) with detail: 'low' keeps API request payload & data quota strictly minimal
+    // 360p height PNG keeps API payload minimal while ensuring 100% decoder compatibility across all AI providers (e.g. Minimax, Nemotron)
     const args = [
       '-y',
       '-i', targetVideoPath,
       '-vf', `fps=1/${safeInterval},scale=-2:360`,
-      '-q:v', '7',
       outputPattern
     ];
 
@@ -70,7 +69,7 @@ export async function extractFrames(videoPath, framesDir, onProgress = () => {},
 
       // Read extracted frame files
       const frameFiles = fs.readdirSync(framesDir)
-        .filter(f => f.endsWith('.jpg'))
+        .filter(f => f.endsWith('.png') || f.endsWith('.jpg'))
         .sort();
 
       if (frameFiles.length === 0) {
@@ -99,7 +98,7 @@ export async function extractFrames(videoPath, framesDir, onProgress = () => {},
         const filePath = path.join(framesDir, filename);
 
         // Frame index in 1-based order. The filename maps back to the source timeline.
-        const frameNumber = parseInt(filename.replace('frame_', '').replace('.jpg', ''), 10);
+        const frameNumber = parseInt(filename.replace('frame_', '').replace('.png', '').replace('.jpg', ''), 10);
         const timestampInSeconds = Math.max(0, (frameNumber - 1) * safeInterval);
 
         const mins = Math.floor(timestampInSeconds / 60).toString().padStart(2, '0');
@@ -108,7 +107,8 @@ export async function extractFrames(videoPath, framesDir, onProgress = () => {},
 
         const fileBuffer = fs.readFileSync(filePath);
         const base64Data = fileBuffer.toString('base64');
-        const dataUrl = `data:image/jpeg;base64,${base64Data}`;
+        const mimeType = filename.endsWith('.png') ? 'image/png' : 'image/jpeg';
+        const dataUrl = `data:${mimeType};base64,${base64Data}`;
 
         frames.push({
           index: i + 1,

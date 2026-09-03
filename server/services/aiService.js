@@ -489,16 +489,23 @@ CRITICAL DURATION & WORD-COUNT TIMING RULES (MANDATORY):
      * 'voiceover': The exact spoken narration line for this scene (around 12-14 words per 5-second scene).
      * 'adAdvisorNotes': Director notes for sound effects (SFX), visual text overlays, or emotional pacing.
 
-3. 'voiceoverScript' (Naskah Voiceover Lengkap dengan Penanda Waktu):
+3. 'voiceoverScript' (Naskah Voiceover Lengkap dengan Penanda Waktu & Tag Emosi):
    - A complete Indonesian spoken narration (${minWords} - ${maxWords} words total).
-   - Each line MUST start with an exact timestamp corresponding to each 5-second scene (e.g. [00:00], [00:05], [00:10], up to [${formatSeconds(targetDuration - 5)}]), followed by the spoken line, e.g.:
-     [00:00] Masih repot marut keju atau kelapa pakai alat lama?
-     [00:05] Kenalin, Parutan Serbaguna Stainless super praktis ini!
+   - Use dynamic emotional tone & pacing tags so the AI voiceover (Fish Audio S2.1 Pro) sounds lively, expressive, and NEVER monotone:
+     * [excited] for energetic hooks, surprise moments, and closing Call To Action.
+     * [emphasis] to place strong vocal stress on key product features and instant benefits.
+     * [soft] for empathetic problem statements.
+     * [pause] for natural human breathing pauses between sentences.
+   - Each line MUST start with an exact timestamp corresponding to each 5-second scene (e.g. [00:00], [00:05], [00:10], up to [${formatSeconds(targetDuration - 5)}]), followed by the emotion tag and spoken line, e.g.:
+     [00:00] [excited] Wah, racun yang satu ini wajib banget kamu punya! [pause]
+     [00:05] [soft] Masih sering capek marut kelapa atau keju pakai alat lama?
+     [00:10] [emphasis] Pakai parutan serbaguna ini, [pause] hasilnya rapi dan praktis banget!
      ...
-     [${formatSeconds(targetDuration - 5)}] Cek produk di bawah sekarang sebelum kehabisan promo spesialnya!
+     [${formatSeconds(targetDuration - 5)}] [excited] Yuk, langsung checkout produk di bawah sekarang sebelum promo habis!
 
 STRICT RULES FOR VOICE OVER & CALL TO ACTION:
 - NEVER mention unboxing, opening packaging, bubble wrap, or cardboard boxes in the narration. Focus 100% on the product's practical features, active demonstration, and problem-solving benefits like a top pro affiliate creator.
+- Write in natural, engaging conversational Indonesian.
 - NEVER use the word "Shopee" in the voiceover script or scene spoken lines.
 - NEVER say "link di bio" or "klik link di bio".
 - ALWAYS use direct calls like "Cek produk di bawah sekarang", "Klik produk di bawah", "Checkout produk di bawah mumpung promo", or "Cek selengkapnya di bawah".
@@ -514,11 +521,12 @@ Sample Context
 [One or two sentences describing tone, pacing, style of the ad, and voice over duration. ALWAYS start with the voice over duration matching the timestamp of the last spoken line, e.g. "Durasi voice over 30 detik. Iklan affiliate viral. Dimulai dengan hook yang menarik perhatian, membangun ke demonstrasi produk, diakhiri CTA yang meyakinkan. Nada suara hangat, antusias, dan persuasif."]
 
 Speaker 1
-[voiceover script with timestamps and emotion tags inline. Use ONLY these emotion tags: [intrigue] [desire] [information] [excited] [inspiration] [confident]. Every line starts with timestamp and emotion tag, e.g.
-[00:00] [intrigue] Masih repot marut keju atau kelapa pakai alat lama?
-[00:05] [excited] Kenalin, Parutan Serbaguna Stainless super praktis ini!
+[voiceover script with timestamps and emotion tags inline. Use emotional tone tags: [excited], [emphasis], [soft], [pause]. Every line starts with timestamp and emotion tag, e.g.
+[00:00] [excited] Wah, racun yang satu ini wajib banget kamu punya! [pause]
+[00:05] [soft] Masih sering capek marut kelapa atau keju pakai alat lama?
+[00:10] [emphasis] Pakai parutan serbaguna ini, [pause] hasilnya rapi dan praktis banget!
 ...
-[00:30] [excited] Cek produk di bawah sekarang sebelum kehabisan!]
+[${formatSeconds(targetDuration - 5)}] [excited] Cek produk di bawah sekarang sebelum kehabisan!]
 
    - IMPORTANT: The output of 'aiStudioPrompt' must be a plain string (not JSON) ready to paste directly into AI Studio. Do NOT add any JSON object inside it.
 

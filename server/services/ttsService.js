@@ -5,50 +5,129 @@ import path from 'path';
 export const DEFAULT_FISH_MODEL_ID = 'c95eaba077c7436aab953b1b1327d9c5';
 export const DEFAULT_FISH_VOICE_NAME = 'ANGELICA';
 
+// Supported emotional tone and audio effect tags in Fish Audio S2.1 Pro
+export const VALID_FISH_TAGS = new Set([
+  'excited', 'emphasis', 'soft', 'whispering', 'breathy',
+  'angry', 'sad', 'embarrassed',
+  'pause', 'long pause', 'sighing', 'laughing', 'chuckling'
+]);
+
 /**
- * Strips timestamps, emotion tags, speaker markers, and markdown from AI script
- * to ensure pristine, natural speech reading without reciting metadata.
- *
- * Example input:
- *   [00:00] [intrigue] Wastafel dapurmu berantakan dan sabunnya cepat habis terus? Capek banget kan?
- *   [00:05] [excited] Kenalin, Dispenser Sabun 2in1 ini solusi paling praktis buat area wastafelmu!
- *
- * Output:
- *   Wastafel dapurmu berantakan dan sabunnya cepat habis terus? Capek banget kan?
- *   Kenalin, Dispenser Sabun 2 in 1 ini solusi paling praktis buat area wastafelmu!
+ * Phonetic adaptations for Indonesian words on multilingual TTS models.
+ * Solves common mispronunciation issues (such as "banget" sounding like "ban" + "et").
  */
-export function cleanScriptForTTS(rawScript) {
+export function applyIndonesianPhoneticFixes(text) {
+  if (!text || typeof text !== 'string') return '';
+
+  return text
+    // 1. "banget" -> "bangnget" (smooths the nasal /ŋ/ phoneme so it doesn't split into "ban" and "et")
+    .replace(/\bbanget\b/gi, 'bangnget')
+    .replace(/\bbangett\b/gi, 'bangnget')
+    // 2. Slang & loanwords common in affiliate product reviews
+    .replace(/\bworth\s*it\b/gi, 'wortit')
+    .replace(/\baesthetic\b/gi, 'estetik')
+    .replace(/\bcheck\s*out\b/gi, 'cekout')
+    .replace(/\bcheckout\b/gi, 'cekout')
+    .replace(/\bShopee\b/gi, 'Syopi')
+    .replace(/\bTikTok\b/gi, 'Tiktok')
+    .replace(/\bvoucher\b/gi, 'vowcer')
+    .replace(/\bfree\s*ongkir\b/gi, 'fri ongkir')
+    .replace(/\bflash\s*sale\b/gi, 'fles sel')
+    .replace(/\breview\b/gi, 'reviu')
+    .replace(/\bsimple\b/gi, 'simpel')
+    .replace(/\brecommended\b/gi, 'rekomended')
+    // 3. Multi-in-one product names
+    .replace(/\b1\s*in\s*1\b/gi, 'wan in wan')
+    .replace(/\b2\s*in\s*1\b/gi, 'dua in wan')
+    .replace(/\b3\s*in\s*1\b/gi, 'tiga in wan')
+    .replace(/\b4\s*in\s*1\b/gi, 'empat in wan')
+    .replace(/\b(\d+)\s*in\s*(\d+)\b/gi, '$1 in $2');
+}
+
+/**
+ * Prepares the script for Fish Audio S2.1 Pro TTS:
+ * - Preserves supported emotion & pacing tags: [excited], [emphasis], [soft], [pause], etc.
+ * - Strips timestamps, speaker markers, and unsupported brackets.
+ * - Applies phonetic Indonesian corrections.
+ */
+export function prepareScriptForFishTTS(rawScript) {
   if (!rawScript || typeof rawScript !== 'string') return '';
 
   let text = rawScript;
 
-  // 1. If script contains Speaker section, extract text after Speaker 1
+  // Extract text after Speaker 1 if script has section headers
   const speakerMatch = text.match(/(?:Speaker\s*\d*(?:\s*-[^\n\r:]+)?|SPEAKER\s*\d*)[\s\r\n:]+([\s\S]*)$/i);
   if (speakerMatch && speakerMatch[1].trim()) {
     text = speakerMatch[1].trim();
   }
 
-  // 2. Remove all timestamp markers like [00:00], [00:05], [01:23:45], (00:00)
+  // Remove timestamp markers like [00:00], [00:05], (00:00)
   text = text.replace(/\[\s*\d{1,2}:\d{2}(?::\d{2})?\s*\]/g, ' ');
   text = text.replace(/\(\s*\d{1,2}:\d{2}(?::\d{2})?\s*\)/g, ' ');
 
-  // 3. Remove emotion, cue, and direction tags like [intrigue], [excited], [desire], [cta], [hook], etc.
-  text = text.replace(/\[\s*[a-zA-Z\s_-]{2,30}\s*\]/g, ' ');
-  text = text.replace(/\(\s*(?:hook|cta|problem|solution|intrigue|excited|desire|urgency|information|pause|senyum|tunjuk|close-up|cut to)[^)]*\)/gi, ' ');
+  // Filter brackets: Keep ONLY valid Fish Audio emotion/effect tags, strip unsupported ones
+  text = text.replace(/\[\s*([a-zA-Z\s_-]{2,30})\s*\]/g, (match, tag) => {
+    const normalizedTag = tag.trim().toLowerCase();
+    if (VALID_FISH_TAGS.has(normalizedTag)) {
+      return ` [${normalizedTag}] `;
+    }
+    return ' ';
+  });
 
-  // 4. Remove leftover markdown headers, bold/italics, bullet points, asterisks, hashtags
+  // Remove parenthesized directions like (hook), (cta), (senyum), etc.
+  text = text.replace(/\(\s*(?:hook|cta|problem|solution|intrigue|desire|urgency|information|senyum|tunjuk|close-up|cut to)[^)]*\)/gi, ' ');
+
+  // Remove leftover markdown headers, bold/italics, bullet points, asterisks, hashtags
   text = text.replace(/^#+\s+/gm, '');
   text = text.replace(/[*_~`]/g, '');
   text = text.replace(/^[-•*]\s+/gm, '');
-  text = text.replace(/#\w+/g, ''); // remove hashtags
+  text = text.replace(/#\w+/g, '');
 
-  // 5. Expand common symbols for natural Indonesian pronunciation
-  text = text.replace(/\b(\d+)\s*in\s*(\d+)\b/gi, '$1 in $2');
+  // Expand common symbols
   text = text.replace(/%/g, ' persen ');
   text = text.replace(/&/g, ' dan ');
   text = text.replace(/\+/g, ' plus ');
 
-  // 6. Clean whitespace and normalize lines
+  // Clean whitespace and normalize lines
+  const lines = text
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line.length > 0 && !/^Speaker\s*\d/i.test(line));
+
+  const consolidated = lines.join(' ').replace(/\s{2,}/g, ' ').trim();
+
+  // Apply phonetic fixes for Indonesian voiceover
+  return applyIndonesianPhoneticFixes(consolidated);
+}
+
+/**
+ * Produces clean standard Indonesian text for video subtitles:
+ * Strips ALL tags and metadata, retaining proper standard Indonesian spelling.
+ */
+export function cleanScriptForSubtitles(rawScript) {
+  if (!rawScript || typeof rawScript !== 'string') return '';
+
+  let text = rawScript;
+
+  const speakerMatch = text.match(/(?:Speaker\s*\d*(?:\s*-[^\n\r:]+)?|SPEAKER\s*\d*)[\s\r\n:]+([\s\S]*)$/i);
+  if (speakerMatch && speakerMatch[1].trim()) {
+    text = speakerMatch[1].trim();
+  }
+
+  // Remove all timestamp markers
+  text = text.replace(/\[\s*\d{1,2}:\d{2}(?::\d{2})?\s*\]/g, ' ');
+  text = text.replace(/\(\s*\d{1,2}:\d{2}(?::\d{2})?\s*\)/g, ' ');
+
+  // Remove ALL bracket tags completely (both emotion tags and metadata)
+  text = text.replace(/\[\s*[^\]]+\s*\]/g, ' ');
+  text = text.replace(/\([^)]+\)/g, ' ');
+
+  // Remove markdown formatting
+  text = text.replace(/^#+\s+/gm, '');
+  text = text.replace(/[*_~`]/g, '');
+  text = text.replace(/^[-•*]\s+/gm, '');
+  text = text.replace(/#\w+/g, '');
+
   const lines = text
     .split(/\r?\n/)
     .map(line => line.trim())
@@ -56,6 +135,11 @@ export function cleanScriptForTTS(rawScript) {
 
   return lines.join(' ').replace(/\s{2,}/g, ' ').trim();
 }
+
+/**
+ * Backwards-compatibility alias
+ */
+export const cleanScriptForTTS = prepareScriptForFishTTS;
 
 /**
  * Helper to test whether an error is due to Fish Audio quota exhaustion
@@ -85,8 +169,10 @@ export async function generateVoiceoverTTS({
   onProgress = null,
   jobId = '',
 }) {
-  const cleanText = cleanScriptForTTS(script);
-  if (!cleanText || cleanText.length < 3) {
+  const ttsText = prepareScriptForFishTTS(script);
+  const subtitleText = cleanScriptForSubtitles(script);
+
+  if (!ttsText || ttsText.length < 3) {
     throw new Error('Naskah suara kosong setelah dibersihkan dari tag/timestamp.');
   }
 
@@ -108,7 +194,7 @@ export async function generateVoiceoverTTS({
     DEFAULT_FISH_MODEL_ID
   ).trim();
 
-  log(`Menghasilkan voice over ANGELICA (${cleanText.length} karakter): "${cleanText.slice(0, 50)}..."`);
+  log(`Menghasilkan voice over ANGELICA (${ttsText.length} karakter): "${ttsText.slice(0, 60)}..."`);
 
   const outDir = path.dirname(outputPath);
   if (!fs.existsSync(outDir)) {
@@ -125,7 +211,7 @@ export async function generateVoiceoverTTS({
         'model': 's2.1-pro-free',
       },
       body: JSON.stringify({
-        text: cleanText,
+        text: ttsText,
         reference_id: referenceId,
         format: 'mp3',
       }),
@@ -167,6 +253,7 @@ export async function generateVoiceoverTTS({
     voice: 'ANGELICA',
     modelId: referenceId,
     sizeBytes: buffer.length,
-    cleanScript: cleanText,
+    cleanScript: subtitleText,
+    spokenScript: ttsText,
   };
 }

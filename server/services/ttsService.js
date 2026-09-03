@@ -22,14 +22,10 @@ export function applyIndonesianPhoneticFixes(text) {
   return text
     // 1. Vokal & Diakritik Khas Indonesia:
     // "banget" -> "bangét" (tanda aksen / garis miring kecil di atas e agar suara natural tanpa patahan glottal)
-    .replace(/\bbanget\b/gi, 'bangét')
-    .replace(/\bbangett\b/gi, 'bangét')
-    .replace(/\bbangnget\b/gi, 'bangét')
-    .replace(/\bbangget\b/gi, 'bangét')
+    .replace(/\b(?:banget|bangett|bangnget|bangget)\b/gi, 'bangét')
     .replace(/\bkeren\b/gi, 'kéren')
     .replace(/\bpengen\b/gi, 'péngin')
-    .replace(/\bengga\b/gi, 'enggak')
-    .replace(/\bngga\b/gi, 'nggak')
+    .replace(/\b(?:enggak|engga|nggak|ngga|gak)\b/gi, 'énggak')
 
     // 2. User-specified affiliate phonetic rules:
     // worth it ➔ wortit
@@ -171,6 +167,7 @@ export function cleanScriptForSubtitles(rawScript) {
   text = text.replace(/\bbangét\b/gi, 'banget');
   text = text.replace(/\b(kerén|kéren)\b/gi, 'keren');
   text = text.replace(/\bpéngin\b/gi, 'pengen');
+  text = text.replace(/\bénggak\b/gi, 'enggak');
   text = text.replace(/\btu\s*in\s*wan\b/gi, '2 in 1');
   text = text.replace(/\btri\s*in\s*wan\b/gi, '3 in 1');
   text = text.replace(/\bfor\s*in\s*wan\b/gi, '4 in 1');

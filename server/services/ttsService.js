@@ -26,6 +26,8 @@ export function applyIndonesianPhoneticFixes(text) {
     .replace(/\bkeren\b/gi, 'kéren')
     .replace(/\bpengen\b/gi, 'péngin')
     .replace(/\bnyesel\b/gi, 'nyésél')
+    .replace(/\bribet\b/gi, 'ribét')
+    .replace(/\byuk\b/gi, 'yu')
     .replace(/\b(?:enggak|engga|nggak|ngga)\b/gi, 'énggak')
 
     // 2. User-specified affiliate phonetic rules:
@@ -169,6 +171,7 @@ export function cleanScriptForSubtitles(rawScript) {
   text = text.replace(/\b(kerén|kéren)\b/gi, 'keren');
   text = text.replace(/\bpéngin\b/gi, 'pengen');
   text = text.replace(/\bnyésél\b/gi, 'nyesel');
+  text = text.replace(/\bribét\b/gi, 'ribet');
   text = text.replace(/\bénggak\b/gi, 'enggak');
   text = text.replace(/\btu\s*in\s*wan\b/gi, '2 in 1');
   text = text.replace(/\btri\s*in\s*wan\b/gi, '3 in 1');

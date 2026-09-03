@@ -2,9 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import { applyTalingPhonetics } from './phoneticData.js';
 
-// Default Model ID: ANGELICA (Indonesian female advertisement voice on Fish Audio)
-export const DEFAULT_FISH_MODEL_ID = 'c95eaba077c7436aab953b1b1327d9c5';
-export const DEFAULT_FISH_VOICE_NAME = 'ANGELICA';
+// Default Model ID: RINDI (Indonesian female advertisement voice on Fish Audio)
+export const DEFAULT_FISH_MODEL_ID = '9c94fb1d0504466898beb87481df9fa1';
+export const DEFAULT_FISH_VOICE_NAME = 'RINDI';
 
 // Supported emotional tone and audio effect tags in Fish Audio S2.1 Pro
 export const VALID_FISH_TAGS = new Set([
@@ -240,7 +240,7 @@ export function isFishAudioQuotaError(statusCode, responseText = '') {
 
 /**
  * Generate Voiceover Audio directly via Fish Audio API (S2.1 Pro)
- * Uses Voice Model ANGELICA (c95eaba077c7436aab953b1b1327d9c5).
+ * Uses Voice Model RINDI (9c94fb1d0504466898beb87481df9fa1).
  * If quota runs out, stops the job and marks it as retryable tomorrow.
  */
 export async function generateVoiceoverTTS({
@@ -275,7 +275,7 @@ export async function generateVoiceoverTTS({
     DEFAULT_FISH_MODEL_ID
   ).trim();
 
-  log(`Menghasilkan voice over ANGELICA (${ttsText.length} karakter): "${ttsText.slice(0, 60)}..."`);
+  log(`Menghasilkan voice over RINDI (${ttsText.length} karakter): "${ttsText.slice(0, 60)}..."`);
 
   const outDir = path.dirname(outputPath);
   if (!fs.existsSync(outDir)) {
@@ -326,12 +326,12 @@ export async function generateVoiceoverTTS({
   }
 
   fs.writeFileSync(outputPath, buffer);
-  log(`✅ Berhasil menghasilkan voice over ANGELICA! Ukuran: ${(buffer.length / 1024).toFixed(1)} KB`);
+  log(`✅ Berhasil menghasilkan voice over RINDI! Ukuran: ${(buffer.length / 1024).toFixed(1)} KB`);
 
   return {
     audioPath: outputPath,
     provider: 'fish_audio',
-    voice: 'ANGELICA',
+    voice: 'RINDI',
     modelId: referenceId,
     sizeBytes: buffer.length,
     cleanScript: subtitleText,

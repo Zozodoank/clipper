@@ -1,16 +1,16 @@
-# Kamus Fonetik TTS Angelica (Fish Audio)
+# Kamus Fonetik TTS Rindi (Fish Audio)
 
 File ini adalah daftar kata taling (/e/ atau /ɛ/) yang diubah otomatis menjadi beraksen `é` sebelum dikirim ke TTS Fish Audio.
 
 ### 📝 Cara Penggunaan & Pengeditan Manual:
 1. **Mengaktifkan Kata**: Tulis `kata_asli = kata_fonetik` (contoh: `keren = kéren`).
-2. **Menonaktifkan Kata** (jika Angelica sudah fasih mengucapkannya dengan huruf 'e' biasa): Beri tanda pagar `#` di depannya (contoh: `# meja = méja`).
+2. **Menonaktifkan Kata** (jika Rindi sudah fasih mengucapkannya dengan huruf 'e' biasa): Beri tanda pagar `#` di depannya (contoh: `# meja = méja`).
 3. **Mengubah Pelafalan**: Cukup ubah kata di sebelah kanan tanda `=` (contoh: `capek = capé`).
 4. **Perubahan Otomatis**: Setiap kali Anda menyimpan file ini, server akan langsung membaca perubahan tanpa perlu restart.
 
 ---
 
-## 🚫 Kata yang Dinonaktifkan (Angelica Sudah Fasih / Tetap 'e' Biasa)
+## 🚫 Kata yang Dinonaktifkan (Rindi Sudah Fasih / Tetap 'e' Biasa)
 # Kata di bawah ini dibiarkan menggunakan huruf 'e' standar:
 # meja = méja
 # beres = bérés

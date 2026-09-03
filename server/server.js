@@ -287,9 +287,9 @@ app.get('/api/health', async (req, res) => {
     defaultAiProvider: 'openrouter',
     tts: {
       available: true,
-      defaultVoice: 'ANGELICA (Fish Audio S2.1 Pro)',
+      defaultVoice: 'RINDI (Fish Audio S2.1 Pro)',
       provider: 'fish_audio',
-      modelId: process.env.FISH_AUDIO_MODEL_ID || 'c95eaba077c7436aab953b1b1327d9c5',
+      modelId: process.env.FISH_AUDIO_MODEL_ID || '9c94fb1d0504466898beb87481df9fa1',
       fishAudioConfigured: Boolean(process.env.FISH_AUDIO_API_KEY && !process.env.FISH_AUDIO_API_KEY.startsWith('your_')),
     },
     envFilesLoaded: envFiles.map((envPath) => path.relative(path.resolve(__dirname, '..'), envPath).replace(/\\/g, '/')),
@@ -584,7 +584,7 @@ export async function runStage1Pipeline({
 
     updateProgress({
       step: 'tts_generating',
-      message: '🎙️ Menghasilkan voice over ANGELICA (Fish Audio S2.1 Pro)...',
+      message: '🎙️ Menghasilkan voice over RINDI (Fish Audio S2.1 Pro)...',
       progress: 84,
       status: 'running',
     });
@@ -1234,7 +1234,7 @@ async function processJobVoiceover(jobId, customScript = null) {
   };
 
   try {
-    updateProgress({ step: 'tts_generating', message: '🎙️ Menghasilkan voice over ANGELICA (Fish Audio S2.1 Pro)...', progress: 20, status: 'running' });
+    updateProgress({ step: 'tts_generating', message: '🎙️ Menghasilkan voice over RINDI (Fish Audio S2.1 Pro)...', progress: 20, status: 'running' });
 
     const ttsResult = await generateVoiceoverTTS({
       script: scriptToUse,
@@ -1273,7 +1273,7 @@ async function processJobVoiceover(jobId, customScript = null) {
       downloadUrl: `/api/download/${finalFileName}?t=${cacheBuster}`,
       finalLocalPath: finalOutputPath,
       voiceoverAudioUrl: `/api/audio/${voiceoverFileName}?t=${cacheBuster}`,
-      ttsVoice: ttsResult.voice || 'ANGELICA (Fish Audio S2.1 Pro)',
+      ttsVoice: ttsResult.voice || 'RINDI (Fish Audio S2.1 Pro)',
       ttsProvider: ttsResult.provider || 'fish_audio',
       cleanScript: ttsResult.cleanScript,
       hasFinalVideo: true,

@@ -105,7 +105,7 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId, refreshSign
               if (data.batch.isQuotaExhausted) {
                 alert(`⚠️ Kuota Fish Audio S2.1 Pro telah habis setelah menyelesaikan ${data.batch.successfulJobs} job. Sisanya dapat dilanjutkan besok ketika kuota direset.`);
               } else if (data.batch.successfulJobs > 0) {
-                alert(`✨ Selesai! Berhasil menyatukan ${data.batch.successfulJobs} video dengan suara ANGELICA & subtitle.`);
+                alert(`✨ Selesai! Berhasil menyatukan ${data.batch.successfulJobs} video dengan suara RINDI & subtitle.`);
               }
             }
           }
@@ -198,7 +198,7 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId, refreshSign
     e.stopPropagation();
     if (awaitingVoiceoverJobs.length === 0) return;
 
-    if (!confirm(`Generate TTS otomatis untuk ${awaitingVoiceoverJobs.length} job yang menunggu dengan Fish Audio (ANGELICA)?\n\nSistem di server akan memproses seluruh video satu per satu secara berurutan tanpa terputus.`)) {
+    if (!confirm(`Generate TTS otomatis untuk ${awaitingVoiceoverJobs.length} job yang menunggu dengan Fish Audio (RINDI)?\n\nSistem di server akan memproses seluruh video satu per satu secara berurutan tanpa terputus.`)) {
       return;
     }
 
@@ -320,7 +320,7 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId, refreshSign
                       : `${awaitingVoiceoverJobs.length} Job Menunggu Voiceover`}
                   </span>
                   <span className="text-[10px] font-mono px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30">
-                    Fish Audio ANGELICA
+                    Fish Audio RINDI
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-300 mt-0.5 truncate max-w-[340px] sm:max-w-[480px]">
@@ -445,7 +445,7 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId, refreshSign
                       )}
                       {isAwaitingVoiceover && (
                         <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                          ✨ Siap TTS ANGELICA
+                          ✨ Siap TTS RINDI
                         </span>
                       )}
                     </div>
@@ -465,7 +465,7 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId, refreshSign
                                 ? 'bg-slate-800 text-slate-400 border border-slate-700 cursor-not-allowed'
                                 : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 text-white shadow-emerald-500/20 hover:scale-[1.02] active:scale-[0.98]'
                             }`}
-                            title="Generate suara ANGELICA & satukan subtitle ke video final secara otomatis"
+                            title="Generate suara RINDI & satukan subtitle ke video final secara otomatis"
                           >
                             {isProcessingThis ? (
                               <>

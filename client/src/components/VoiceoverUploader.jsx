@@ -170,15 +170,15 @@ export default function VoiceoverUploader({
           </div>
           <div>
             <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <span>Voiceover AI Otomatis (Suara ANGELICA)</span>
+              <span>Voiceover AI Otomatis (Suara RINDI)</span>
               <span className="text-[10px] uppercase font-bold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
                 Fish Audio S2.1 Pro
               </span>
             </h3>
             <p className="text-xs text-slate-400">
               {hasAudioAlready
-                ? 'Suara iklan wanita Indonesia ANGELICA sudah otomatis terpasang & subtitle tersinkron.'
-                : 'Suara iklan wanita Indonesia ANGELICA otomatis disintesis via Fish Audio & disinkronkan ke video 9:16.'}
+                ? 'Suara iklan wanita Indonesia RINDI sudah otomatis terpasang & subtitle tersinkron.'
+                : 'Suara iklan wanita Indonesia RINDI otomatis disintesis via Fish Audio & disinkronkan ke video 9:16.'}
             </p>
           </div>
         </div>
@@ -197,7 +197,7 @@ export default function VoiceoverUploader({
           <div className="flex items-center justify-between text-xs">
             <span className="font-semibold text-slate-300 flex items-center gap-1.5">
               <Music className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Preview Suara: <strong className="text-emerald-300">{result.ttsVoice || 'ANGELICA (Fish Audio S2.1 Pro)'}</strong></span>
+              <span>Preview Suara: <strong className="text-emerald-300">{result.ttsVoice || 'RINDI (Fish Audio S2.1 Pro)'}</strong></span>
             </span>
             <span className="text-[11px] text-slate-500 font-mono">Audio Sinkron 9:16</span>
           </div>
@@ -242,12 +242,12 @@ export default function VoiceoverUploader({
           {isGeneratingTTS ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Menghasilkan Voiceover ANGELICA (Fish Audio)...</span>
+              <span>Menghasilkan Voiceover RINDI (Fish Audio)...</span>
             </>
           ) : (
             <>
               <Sparkles className="w-4 h-4" />
-              <span>Generate Ulang Suara ANGELICA & Render Video</span>
+              <span>Generate Ulang Suara RINDI & Render Video</span>
             </>
           )}
         </button>

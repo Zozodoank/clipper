@@ -25,7 +25,8 @@ export function applyIndonesianPhoneticFixes(text) {
     .replace(/\b(?:banget|bangett|bangnget|bangget)\b/gi, 'bangét')
     .replace(/\bkeren\b/gi, 'kéren')
     .replace(/\bpengen\b/gi, 'péngin')
-    .replace(/\b(?:enggak|engga|nggak|ngga|gak)\b/gi, 'énggak')
+    .replace(/\bnyesel\b/gi, 'nyésél')
+    .replace(/\b(?:enggak|engga|nggak|ngga)\b/gi, 'énggak')
 
     // 2. User-specified affiliate phonetic rules:
     // worth it ➔ wortit
@@ -167,6 +168,7 @@ export function cleanScriptForSubtitles(rawScript) {
   text = text.replace(/\bbangét\b/gi, 'banget');
   text = text.replace(/\b(kerén|kéren)\b/gi, 'keren');
   text = text.replace(/\bpéngin\b/gi, 'pengen');
+  text = text.replace(/\bnyésél\b/gi, 'nyesel');
   text = text.replace(/\bénggak\b/gi, 'enggak');
   text = text.replace(/\btu\s*in\s*wan\b/gi, '2 in 1');
   text = text.replace(/\btri\s*in\s*wan\b/gi, '3 in 1');

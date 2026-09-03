@@ -20,28 +20,35 @@ export function applyIndonesianPhoneticFixes(text) {
   if (!text || typeof text !== 'string') return '';
 
   return text
-    // 1. "banget" -> "bangnget" (smooths the nasal /ŋ/ phoneme so it doesn't split into "ban" and "et")
-    .replace(/\bbanget\b/gi, 'bangnget')
-    .replace(/\bbangett\b/gi, 'bangnget')
-    // 2. Slang & loanwords common in affiliate product reviews
+    // 1. "banget" -> "bangét" (tanda aksen / garis miring kecil di atas e agar suara natural tanpa patahan glottal)
+    .replace(/\bbanget\b/gi, 'bangét')
+    .replace(/\bbangett\b/gi, 'bangét')
+    .replace(/\bbangnget\b/gi, 'bangét')
+    .replace(/\bbangget\b/gi, 'bangét')
+    // 2. User-specified affiliate phonetic rules:
+    // worth it ➔ wortit
     .replace(/\bworth\s*it\b/gi, 'wortit')
+    // aesthetic ➔ estetik
     .replace(/\baesthetic\b/gi, 'estetik')
+    // checkout ➔ cekout
     .replace(/\bcheck\s*out\b/gi, 'cekout')
     .replace(/\bcheckout\b/gi, 'cekout')
+    // flash sale ➔ flas sel
+    .replace(/\bflash\s*sale\b/gi, 'flas sel')
+    // 2 in 1 / 2in1 ➔ tu in wan
+    .replace(/\b1\s*in\s*1\b/gi, 'wan in wan')
+    .replace(/\b2\s*in\s*1\b/gi, 'tu in wan')
+    .replace(/\b3\s*in\s*1\b/gi, 'tri in wan')
+    .replace(/\b4\s*in\s*1\b/gi, 'for in wan')
+    .replace(/\b(\d+)\s*in\s*(\d+)\b/gi, '$1 in $2')
+    // 3. Additional online shopping terms
     .replace(/\bShopee\b/gi, 'Syopi')
     .replace(/\bTikTok\b/gi, 'Tiktok')
     .replace(/\bvoucher\b/gi, 'vowcer')
     .replace(/\bfree\s*ongkir\b/gi, 'fri ongkir')
-    .replace(/\bflash\s*sale\b/gi, 'fles sel')
     .replace(/\breview\b/gi, 'reviu')
     .replace(/\bsimple\b/gi, 'simpel')
-    .replace(/\brecommended\b/gi, 'rekomended')
-    // 3. Multi-in-one product names
-    .replace(/\b1\s*in\s*1\b/gi, 'wan in wan')
-    .replace(/\b2\s*in\s*1\b/gi, 'dua in wan')
-    .replace(/\b3\s*in\s*1\b/gi, 'tiga in wan')
-    .replace(/\b4\s*in\s*1\b/gi, 'empat in wan')
-    .replace(/\b(\d+)\s*in\s*(\d+)\b/gi, '$1 in $2');
+    .replace(/\brecommended\b/gi, 'rekomended');
 }
 
 /**
@@ -127,6 +134,12 @@ export function cleanScriptForSubtitles(rawScript) {
   text = text.replace(/[*_~`]/g, '');
   text = text.replace(/^[-•*]\s+/gm, '');
   text = text.replace(/#\w+/g, '');
+
+  // Normalize phonetic spellings back to standard text for on-screen subtitles
+  text = text.replace(/\bbangét\b/gi, 'banget');
+  text = text.replace(/\btu\s*in\s*wan\b/gi, '2 in 1');
+  text = text.replace(/\bflas\s*sel\b/gi, 'flash sale');
+  text = text.replace(/\bwortit\b/gi, 'worth it');
 
   const lines = text
     .split(/\r?\n/)

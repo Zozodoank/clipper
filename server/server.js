@@ -253,9 +253,10 @@ function isVideoFilePath(p) {
 }
 
 function isQuotaErrorMessage(msg = '') {
-  const lower = msg.toLowerCase();
+  const lower = String(msg).toLowerCase();
   return lower.includes('saldo') || lower.includes('insufficient') ||
-    lower.includes('balance') || lower.includes('quota') || lower.includes('credit');
+    lower.includes('balance') || lower.includes('quota') || lower.includes('kuota') ||
+    lower.includes('credit') || lower.includes('fish audio');
 }
 
 // ─── API Routes ──────────────────────────────────────────────────────────────
@@ -286,8 +287,9 @@ app.get('/api/health', async (req, res) => {
     defaultAiProvider: 'openrouter',
     tts: {
       available: true,
-      defaultVoice: 'id-ID-GadisNeural (Suara Gadis Indonesia)',
-      provider: process.env.TTS_PROVIDER || 'edge_neural',
+      defaultVoice: 'ANGELICA (Fish Audio S2.1 Pro)',
+      provider: 'fish_audio',
+      modelId: process.env.FISH_AUDIO_MODEL_ID || 'c95eaba077c7436aab953b1b1327d9c5',
       fishAudioConfigured: Boolean(process.env.FISH_AUDIO_API_KEY && !process.env.FISH_AUDIO_API_KEY.startsWith('your_')),
     },
     envFilesLoaded: envFiles.map((envPath) => path.relative(path.resolve(__dirname, '..'), envPath).replace(/\\/g, '/')),
@@ -582,7 +584,7 @@ export async function runStage1Pipeline({
 
     updateProgress({
       step: 'tts_generating',
-      message: '🎙️ Menghasilkan voiceover AI otomatis (Suara Gadis Indonesia)...',
+      message: '🎙️ Menghasilkan voice over ANGELICA (Fish Audio S2.1 Pro)...',
       progress: 84,
       status: 'running',
     });
@@ -598,7 +600,8 @@ export async function runStage1Pipeline({
       });
       ttsSucceeded = true;
     } catch (ttsErr) {
-      console.warn(`[Job ${jobId}] Auto TTS warning:`, ttsErr.message);
+      console.error(`[Job ${jobId}] Fish Audio TTS Error:`, ttsErr.message);
+      throw ttsErr;
     }
 
     if (ttsSucceeded && fs.existsSync(autoVoiceoverPath)) {
@@ -1214,12 +1217,11 @@ app.post('/api/regenerate-voiceover', async (req, res) => {
   };
 
   try {
-    updateProgress({ step: 'tts_generating', message: '🎙️ Menghasilkan voiceover otomatis (Gadis Indonesia)...', progress: 20, status: 'running' });
+    updateProgress({ step: 'tts_generating', message: '🎙️ Menghasilkan voice over ANGELICA (Fish Audio S2.1 Pro)...', progress: 20, status: 'running' });
 
     const ttsResult = await generateVoiceoverTTS({
       script: scriptToUse,
       outputPath: voiceoverAudioPath,
-      voice: voice || 'id-ID-GadisNeural',
       onProgress: (msg) => updateProgress({ step: 'tts_generating', message: `🎙️ ${msg}`, progress: 35, status: 'running' }),
       jobId,
     });

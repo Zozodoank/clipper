@@ -1,6 +1,9 @@
 import fs from 'fs';
 import path from 'path';
-import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
+
+// Default Model ID: ANGELICA (Indonesian female advertisement voice on Fish Audio)
+export const DEFAULT_FISH_MODEL_ID = 'c95eaba077c7436aab953b1b1327d9c5';
+export const DEFAULT_FISH_VOICE_NAME = 'ANGELICA';
 
 /**
  * Strips timestamps, emotion tags, speaker markers, and markdown from AI script
@@ -55,143 +58,30 @@ export function cleanScriptForTTS(rawScript) {
 }
 
 /**
- * Generate Voiceover Audio via Microsoft Edge Neural TTS (Default: id-ID-GadisNeural)
- * Extremely natural, expressive Indonesian female voice with high emotional dynamic,
- * 100% free, zero configuration, zero latency queue.
+ * Helper to test whether an error is due to Fish Audio quota exhaustion
  */
-async function generateWithEdgeNeural(cleanText, outputPath, voice = 'id-ID-GadisNeural') {
-  const tts = new MsEdgeTTS();
-  try {
-    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-    
-    // Create temp directory for msedge-tts output
-    const outDir = path.dirname(outputPath);
-    if (!fs.existsSync(outDir)) {
-      fs.mkdirSync(outDir, { recursive: true });
-    }
-
-    const result = await tts.toFile(outDir, cleanText);
-    tts.close();
-
-    if (result && result.audioFilePath) {
-      // If filename differs from target outputPath, move/copy it
-      if (path.resolve(result.audioFilePath) !== path.resolve(outputPath)) {
-        if (fs.existsSync(outputPath)) {
-          try { fs.unlinkSync(outputPath); } catch {}
-        }
-        fs.copyFileSync(result.audioFilePath, outputPath);
-        try { fs.unlinkSync(result.audioFilePath); } catch {}
-      }
-    }
-
-    if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size < 500) {
-      throw new Error('File audio yang dihasilkan kosong atau tidak valid.');
-    }
-
-    return {
-      audioPath: outputPath,
-      provider: 'edge_neural',
-      voice: voice,
-      sizeBytes: fs.statSync(outputPath).size,
-    };
-  } catch (err) {
-    try { tts.close(); } catch {}
-    throw err;
-  }
+export function isFishAudioQuotaError(statusCode, responseText = '') {
+  if (statusCode === 402 || statusCode === 429) return true;
+  const lower = String(responseText).toLowerCase();
+  return lower.includes('insufficient') ||
+    lower.includes('quota') ||
+    lower.includes('credit') ||
+    lower.includes('balance') ||
+    lower.includes('saldo') ||
+    lower.includes('rate limit') ||
+    lower.includes('exceeded') ||
+    lower.includes('free tier limit');
 }
 
 /**
- * Generate Voiceover Audio via Fish Audio Official API (https://api.fish.audio/v1/tts)
- * Uses high-fidelity neural Indonesian female voice model when FISH_AUDIO_API_KEY is available.
- */
-async function generateWithFishAudioApi(cleanText, outputPath, apiKey, modelId) {
-  if (!apiKey) {
-    throw new Error('FISH_AUDIO_API_KEY is not configured in .env');
-  }
-
-  // Use configured modelId or fallback to general high-quality Indonesian female reference
-  const referenceId = modelId || process.env.FISH_AUDIO_MODEL_ID || '7f92f8afb8ec43bf81429cc1c9199cb1';
-
-  const response = await fetch('https://api.fish.audio/v1/tts', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'model': 's2.1-pro-free',
-    },
-    body: JSON.stringify({
-      text: cleanText,
-      reference_id: referenceId,
-      format: 'mp3',
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => '');
-    throw new Error(`Fish Audio API HTTP ${response.status}: ${errorText || response.statusText}`);
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-
-  if (buffer.length < 500) {
-    throw new Error('Hasil audio Fish Audio kosong atau terlalu kecil.');
-  }
-
-  fs.writeFileSync(outputPath, buffer);
-
-  return {
-    audioPath: outputPath,
-    provider: 'fish_audio_api',
-    voice: `Fish Audio (${referenceId})`,
-    sizeBytes: buffer.length,
-  };
-}
-
-/**
- * Generate Voiceover Audio via Hugging Face Gradio Client (@gradio/client)
- * Optional experimental integration for Fish Speech HF spaces.
- */
-async function generateWithGradioSpace(cleanText, outputPath, spaceName = 'fishaudio/fish-speech-1.4') {
-  const { client } = await import('@gradio/client');
-  const app = await client(spaceName);
-  const result = await app.predict(0, [cleanText]);
-
-  if (!result || !result.data) {
-    throw new Error('Gradio Space tidak mengembalikan data audio.');
-  }
-
-  // Handle URL or file blob from gradio client
-  const audioData = result.data[0];
-  if (typeof audioData === 'string' && (audioData.startsWith('http://') || audioData.startsWith('https://'))) {
-    const resp = await fetch(audioData);
-    const buf = Buffer.from(await resp.arrayBuffer());
-    fs.writeFileSync(outputPath, buf);
-  } else if (audioData?.url) {
-    const resp = await fetch(audioData.url);
-    const buf = Buffer.from(await resp.arrayBuffer());
-    fs.writeFileSync(outputPath, buf);
-  } else {
-    throw new Error('Format data audio dari Gradio Space tidak dikenali.');
-  }
-
-  return {
-    audioPath: outputPath,
-    provider: 'fish_speech_gradio',
-    voice: spaceName,
-    sizeBytes: fs.statSync(outputPath).size,
-  };
-}
-
-/**
- * Primary Unified TTS Dispatcher
- * Defaults to the ultra-realistic Indonesian female voice "Gadis" (id-ID-GadisNeural).
- * If Fish Audio API Key is present, prefers Fish Audio with automatic fallback to Gadis.
+ * Generate Voiceover Audio directly via Fish Audio API (S2.1 Pro)
+ * Uses Voice Model ANGELICA (c95eaba077c7436aab953b1b1327d9c5).
+ * If quota runs out, stops the job and marks it as retryable tomorrow.
  */
 export async function generateVoiceoverTTS({
   script,
   outputPath,
-  voice = 'id-ID-GadisNeural',
+  modelId = null,
   onProgress = null,
   jobId = '',
 }) {
@@ -201,46 +91,82 @@ export async function generateVoiceoverTTS({
   }
 
   const log = (msg) => {
-    console.log(`[TTS${jobId ? ` ${jobId}` : ''}] ${msg}`);
+    console.log(`[Fish Audio${jobId ? ` ${jobId}` : ''}] ${msg}`);
     if (onProgress) onProgress(msg);
   };
 
-  log(`Memproses naskah TTS (${cleanText.length} karakter): "${cleanText.slice(0, 60)}..."`);
-
-  const fishApiKey = (process.env.FISH_AUDIO_API_KEY || '').trim();
-  const ttsEngine = (process.env.TTS_PROVIDER || '').toLowerCase().trim();
-
-  // Try Fish Audio if explicitly requested or if FISH_AUDIO_API_KEY is configured
-  if (ttsEngine === 'fish_audio' || (fishApiKey && !fishApiKey.startsWith('your_'))) {
-    try {
-      log('Mencoba generate dengan Fish Audio API...');
-      const res = await generateWithFishAudioApi(cleanText, outputPath, fishApiKey);
-      log(`✅ Berhasil dengan Fish Audio! Ukuran: ${(res.sizeBytes / 1024).toFixed(1)} KB`);
-      return { ...res, cleanScript: cleanText };
-    } catch (fishErr) {
-      log(`⚠️ Fish Audio gagal (${fishErr.message}). Beralih otomatis ke Suara Gadis Indonesia (Edge Neural)...`);
-    }
+  const apiKey = (process.env.FISH_AUDIO_API_KEY || '').trim();
+  if (!apiKey || apiKey.startsWith('your_') || apiKey.endsWith('_here')) {
+    const err = new Error('FISH_AUDIO_API_KEY belum disetel di server/.env. Silakan isi API key Fish Audio Anda.');
+    err.isConfigError = true;
+    throw err;
   }
 
-  // Try Gradio Space if requested
-  if (ttsEngine === 'gradio') {
-    try {
-      log('Mencoba generate via HuggingFace Gradio Space...');
-      const res = await generateWithGradioSpace(cleanText, outputPath);
-      log(`✅ Berhasil via Gradio Space! Ukuran: ${(res.sizeBytes / 1024).toFixed(1)} KB`);
-      return { ...res, cleanScript: cleanText };
-    } catch (gradioErr) {
-      log(`⚠️ Gradio Space gagal (${gradioErr.message}). Beralih otomatis ke Suara Gadis Indonesia...`);
-    }
+  const referenceId = (
+    modelId ||
+    process.env.FISH_AUDIO_MODEL_ID ||
+    DEFAULT_FISH_MODEL_ID
+  ).trim();
+
+  log(`Menghasilkan voice over ANGELICA (${cleanText.length} karakter): "${cleanText.slice(0, 50)}..."`);
+
+  const outDir = path.dirname(outputPath);
+  if (!fs.existsSync(outDir)) {
+    fs.mkdirSync(outDir, { recursive: true });
   }
 
-  // Primary Default: Ultra-Realistic Indonesian Female Voice (id-ID-GadisNeural)
-  log(`Menghasilkan suara wanita Indonesia paling realistis (Gadis Neural - "${voice}")...`);
-  const result = await generateWithEdgeNeural(cleanText, outputPath, voice);
-  log(`✅ Suara Gadis Indonesia berhasil digenerate! Ukuran: ${(result.sizeBytes / 1024).toFixed(1)} KB`);
+  let response;
+  try {
+    response = await fetch('https://api.fish.audio/v1/tts', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'model': 's2.1-pro-free',
+      },
+      body: JSON.stringify({
+        text: cleanText,
+        reference_id: referenceId,
+        format: 'mp3',
+      }),
+    });
+  } catch (networkErr) {
+    throw new Error(`Gagal menghubungi server Fish Audio: ${networkErr.message}`);
+  }
+
+  if (!response.ok) {
+    const rawError = await response.text().catch(() => '');
+    console.error(`[Fish Audio Error HTTP ${response.status}]`, rawError);
+
+    if (isFishAudioQuotaError(response.status, rawError)) {
+      const quotaErr = new Error(
+        'Kuota harian Fish Audio (S2.1 Pro) telah habis. Proses dihentikan dan Anda dapat menekan tombol Retry besok ketika kuota direset.'
+      );
+      quotaErr.isQuotaError = true;
+      quotaErr.canRetry = true;
+      quotaErr.statusCode = response.status;
+      throw quotaErr;
+    }
+
+    throw new Error(`Fish Audio API HTTP ${response.status}: ${rawError || response.statusText}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  if (buffer.length < 500) {
+    throw new Error('Hasil audio Fish Audio kosong atau file rusak.');
+  }
+
+  fs.writeFileSync(outputPath, buffer);
+  log(`✅ Berhasil menghasilkan voice over ANGELICA! Ukuran: ${(buffer.length / 1024).toFixed(1)} KB`);
 
   return {
-    ...result,
+    audioPath: outputPath,
+    provider: 'fish_audio',
+    voice: 'ANGELICA',
+    modelId: referenceId,
+    sizeBytes: buffer.length,
     cleanScript: cleanText,
   };
 }

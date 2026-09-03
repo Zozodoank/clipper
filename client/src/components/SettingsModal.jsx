@@ -84,17 +84,17 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
             <div className="flex items-center justify-between">
               <span className="font-semibold text-slate-200 flex items-center gap-1.5 text-sm">
                 <Volume2 className="w-4 h-4 text-emerald-400" />
-                <span>Mesin Voiceover TTS Otomatis</span>
+                <span>Mesin Voiceover: Fish Audio S2.1 Pro</span>
               </span>
               <span className="text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                Default: Gadis Indonesia
+                Voice: ANGELICA
               </span>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed">
-              Menggunakan suara wanita Indonesia paling realistis (<strong className="text-emerald-300">Gadis Neural</strong>) secara bawaan. 100% gratis, tanpa antrean, dan otomatis memproses naskah tanpa timestamp/tag.
+              Menggunakan API Fish Audio secara langsung dengan model suara wanita Indonesia <strong className="text-emerald-300">ANGELICA</strong> (ID: <code className="text-slate-300 font-mono text-[10px]">c95eaba077c7436aab953b1b1327d9c5</code>).
             </p>
             <p className="text-[11px] text-slate-400">
-              💡 <em>Mendukung Fish Audio API jika <code className="text-slate-300">FISH_AUDIO_API_KEY</code> diisi di <code className="text-slate-300 font-mono">server/.env</code>.</em>
+              💡 <em>Jika kuota harian S2.1 Pro habis, proses akan berhenti dan tombol Retry siap digunakan saat kuota terisi kembali besok.</em>
             </p>
           </div>
 

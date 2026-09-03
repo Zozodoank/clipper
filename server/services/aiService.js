@@ -205,21 +205,25 @@ export async function selectHighlightWithAI({
   const systemPrompt = `You are an expert Short-Form Affiliate Video QC Director.
 Evaluate the ${frames.length} sampled frames of the source video for the product: "${effectiveTitle}".
 
-CRITERIA:
-1. REJECT if:
-   - Pure unboxing / parcel opening / bubble wrap with no actual product in action.
-   - Talking heads / person just talking with no hands-on product demonstration.
-   - Irrelevant video / wrong product / poor amateur quality.
-   - The video is dominated by channel watermarks, channel logos, creator handles (@username), or floating subtitles that cannot be avoided.
-   Output strict JSON:
-   {"status": "reject", "reason": "<alasan penolakan singkat dalam bahasa Indonesia>"}
+CRITERIA FOR REJECTION (Output {"status": "reject", "reason": "<alasan penolakan singkat dalam bahasa Indonesia>"}):
+1. AI-GENERATED / SYNTHETIC / CGI / ANIMATION:
+   - REJECT if the video is AI-generated (e.g. Sora, Runway, Kling, Hailuo, synthetic video, 3D animated, CGI, cartoon, or computer-generated slop).
+   - The footage MUST be REAL, AUTHENTIC PHYSICAL DEMONSTRATION with real human hands interacting with the real physical product (like viral Douyin / Chinese gadget demo videos or real creator product reviews).
+2. TALKING HEADS & NON-PRODUCT FOOTAGE:
+   - REJECT if it is a person talking to camera / vlog / talking head with no direct hands-on product demonstration.
+   - REJECT if it is pure unboxing / parcel opening / bubble wrap with no actual product in action.
+3. DIRTY / WATERMARKED / CHANNEL LOGOS:
+   - REJECT if the video is dominated by channel watermarks, channel logos, creator handles (@username), or floating subtitles that cannot be avoided.
+4. IRRELEVANT / WRONG PRODUCT / POOR QUALITY:
+   - REJECT if wrong product, blurry/poor amateur quality, or does not clearly demonstrate how the product works.
 
-2. ACCEPT if:
-   - There are active, clean product demonstrations (hands using the product, showing features/results, faceless/product-focused).
-   - STRICT ZERO WATERMARK/IDENTITY: NEVER select frames with channel watermarks, channel logos/badges, creator handles (@username), or floating subtitles! ONLY choose 100% clean product demonstration frames!
-   - Select 4 to 7 frame indices (numbers 1 to ${frames.length}) showing the best distinct, watermark-free product demonstration moments (spaced at least 5 seconds apart).
-   - Output strict minimal JSON:
-   {"status": "accept", "frames": [4, 8, 12, 16, 20, 24], "productHook": "<hook pendek menarik dalam bahasa Indonesia>", "hasProductBrand": false}`;
+CRITERIA FOR ACCEPTANCE:
+- Video shows REAL, AUTHENTIC, PHYSICAL HANDS-ON DEMONSTRATION of the product (hands using the item, showing functionality, practical experiments, results, or problem-solving — exactly like top Douyin/Chinese or pro affiliate demonstration videos).
+- Faceless or product-focused, clean framing.
+- STRICT ZERO WATERMARK/IDENTITY: NEVER select frames with channel watermarks, channel logos/badges, creator handles (@username), or floating subtitles! ONLY choose 100% clean product demonstration frames!
+- Select 4 to 7 frame indices (numbers 1 to ${frames.length}) showing the best distinct, watermark-free product demonstration moments (spaced at least 5 seconds apart).
+- Output strict minimal JSON:
+{"status": "accept", "frames": [4, 8, 12, 16, 20, 24], "productHook": "<hook pendek menarik dalam bahasa Indonesia>", "hasProductBrand": false}`;
 
   const userPrompt = `Product Title: "${effectiveTitle}"
 ${effectiveDesc ? `Product Description: "${effectiveDesc}"` : ''}
@@ -227,11 +231,11 @@ Total Duration: ${totalDuration}s
 Sampled Frames:
 ${frames.map((f, i) => `#${i + 1} (${f.timeFormatted})`).join(', ')}
 
-Review visual frames. STRICTLY AVOID any frames with channel watermark, channel logo, @username, or floating subtitles.
-If the entire video is dirty/watermarked or has creator identity, reject:
-{"status": "reject", "reason": "Terdapat watermark/identitas channel pembuat"}
-If clean product shots exist, select 4 to 7 clean frame indices:
-{"status": "accept", "frames": [indices], "productHook": "...", "hasProductBrand": false}`;
+Review visual frames carefully:
+- REJECT if: AI-generated/synthetic/CGI video, cartoon/animation, talking head with no hands-on demo, parcel unboxing, or covered in channel watermarks/logos.
+  Output: {"status": "reject", "reason": "Video buatan AI / tidak fokus pada peragaan produk fisik"}
+- ACCEPT ONLY if: Real physical footage demonstrating product functionality with real hands (like Douyin/Chinese affiliate style or real hands-on reviews).
+  Output: {"status": "accept", "frames": [indices], "productHook": "...", "hasProductBrand": false}`;
 
   const messageContent = [
     { type: 'text', text: userPrompt },
@@ -256,7 +260,8 @@ If clean product shots exist, select 4 to 7 clean frame indices:
 
   const MAX_RETRIES = modelFallbackList.length;
 
-  let lastError;
+  let lastError = null;
+
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     activeModel = modelFallbackList[attempt];
     try {
@@ -288,12 +293,15 @@ If clean product shots exist, select 4 to 7 clean frame indices:
       console.log(`[AIService ${provider} ${activeModel}] Raw response:`, rawContent);
       let parsed = repairJson(rawContent);
 
+      // JIKA AI SECARA RESMI MENOLAK VIDEO (AI REJECTION DECISION):
+      // Langsung hentikan proses! JANGAN coba fallback model lain agar keputusan editorial AI tidak dilanggar!
       if (parsed.status === 'reject' || parsed.isProductMatch === false || parsed.isUsableSourceVideo === false) {
-        const rejectionMsg = parsed.reason || parsed.rejectionReason || 'Video ditolak oleh AI: Tidak ada peragaan produk yang sesuai.';
-        if (!allowFallbackClips) {
-          throw new Error(rejectionMsg);
-        }
-        console.warn(`[AIService] AI flagged video: "${rejectionMsg}". Applying fallback clip plan...`);
+        const rejectionMsg = parsed.reason || parsed.rejectionReason || 'Video ditolak oleh AI: Tidak fokus pada peragaan produk fisik asli.';
+        console.warn(`[AIService ${provider} ${activeModel}] ⛔ VIDEO RESMI DITOLAK OLEH AI: ${rejectionMsg}`);
+        const rejectError = new Error(`Video ditolak oleh AI (${activeModel}): ${rejectionMsg}`);
+        rejectError.isAiRejection = true;
+        rejectError.rejectionReason = rejectionMsg;
+        throw rejectError;
       }
 
       const selectedIndices = Array.isArray(parsed.frames) ? parsed.frames : [];
@@ -357,6 +365,10 @@ If clean product shots exist, select 4 to 7 clean frame indices:
         clips,
       };
     } catch (err) {
+      if (err.isAiRejection) {
+        clearInterval(heartbeat);
+        throw err; // JANGAN fallback jika model AI memang menolak video!
+      }
       lastError = err;
       const status = err.status || err.statusCode;
       const msg = (err.message || '').toLowerCase();

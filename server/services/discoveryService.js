@@ -516,14 +516,14 @@ export async function discoverYouTubeCandidatesForProduct({
 
   // Targeted search modifiers to find high-production, experienced creator demonstration videos
   const searchModifiers = [
-    'review unboxing peragaan',
+    'review peragaan pemakaian',
     'demo cara pakai tes fungsi',
-    'unboxing review pemakaian',
+    'China creative gadgets demo',
+    'smart home gadgets tools',
     'demonstrasi cara kerja praktis',
-    'review produk b-roll sinematik',
-    'hands on demo review unboxing',
-    'tes fungsi cara pakai review',
+    'hands on demo review',
     'spill barang unik peragaan',
+    'kitchen gadget tools demo',
     'unboxing aesthetic peragaan produk',
   ];
 
@@ -845,7 +845,10 @@ function isLikelyCleanYouTubeCandidate(candidate) {
     'podcast', 'reaction', 'kompilasi', 'compilation', 'full album', 'playlist',
     'vlog', 'daily vlog', 'a day in my life', 'cerita', 'bincang', 'talkshow', 'ngobrol',
     'cara belanja', 'cara checkout', 'daftar akun', 'tutorial aplikasi', 'cara jualan', 'cara live',
-    'shopee affiliate tutorial', 'aplikasi shopee'
+    'shopee affiliate tutorial', 'aplikasi shopee',
+    // Filter AI-generated, synthetic, and cartoon/3D animation
+    'ai generated', 'ai video', 'generative ai', 'sora', 'runway', 'kling', 'hailuo', 'pika',
+    'animation', 'animasi', '3d animation', 'cgi', 'cartoon', 'kartun', 'anime'
   ];
   return !excludedTitleWords.some((keyword) => titleText.includes(keyword));
 }

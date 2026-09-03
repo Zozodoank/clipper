@@ -62,14 +62,28 @@ function loadEnvFromDisk() {
   }
 }
 
-const openRouterVisionModels = [
+const defaultOpenRouterModels = [
+  "openrouter/auto",
+  "openrouter/free",
   "google/gemini-2.0-pro-exp-02-05:free",
   "google/gemini-2.5-flash-free",
   "google/lyria-3-clip-preview",
   "qwen/qwen-vl-plus:free",
-  "meta-llama/llama-3.2-11b-vision-instruct:free",
-  "google/gemma-4-31b-it:free"
+  "meta-llama/llama-3.2-11b-vision-instruct:free"
 ];
+
+function getEffectiveOpenRouterModels() {
+  loadEnvFromDisk();
+  const customModel = (process.env.OPENROUTER_MODEL || '').trim();
+  const models = [];
+  if (customModel && !customModel.startsWith('your_') && !customModel.endsWith('_here')) {
+    models.push(customModel);
+  }
+  for (const m of defaultOpenRouterModels) {
+    if (!models.includes(m)) models.push(m);
+  }
+  return models;
+}
 
 function getOpenRouterKeys(apiKeyOverride) {
   loadEnvFromDisk();
@@ -114,7 +128,7 @@ function getAiClientConfig({ apiKeyOverride } = {}) {
           "X-Title": "AI Affiliate Clipper",
         }
       }),
-      models: openRouterVisionModels,
+      models: getEffectiveOpenRouterModels(),
       provider: 'OpenRouter',
       keyIndex: safeIndex,
       totalKeys: openRouterKeys.length
@@ -143,6 +157,9 @@ function formatApiError(err, modelName = 'AI', provider = 'AI') {
 
   if (status === 402 || message.toLowerCase().includes('insufficient') || message.toLowerCase().includes('balance') || message.toLowerCase().includes('quota') || message.toLowerCase().includes('credit')) {
     return `Saldo / Kuota ${provider} API Anda tidak mencukupi. Silakan periksa akun ${provider} Anda.`;
+  }
+  if (status === 402 || message.toLowerCase().includes('more credits') || message.toLowerCase().includes('can only afford')) {
+    return `Saldo / Credit OpenRouter Anda tidak mencukupi untuk memproses video ini. Silakan lakukan top-up (Deposit) di https://openrouter.ai/settings/credits.`;
   }
   if (status === 401 || message.toLowerCase().includes('invalid api key') || message.toLowerCase().includes('unauthorized') || message.toLowerCase().includes('api_key_invalid')) {
     return `${provider} API Key tidak valid atau tidak memiliki izin akses. Silakan periksa kembali API Key Anda di file server/.env.`;
@@ -346,6 +363,7 @@ Return strict JSON in this format:
         ],
         response_format: { type: 'json_object' },
         temperature: 0.3,
+        max_tokens: 1500,
       });
 
       clearInterval(heartbeat);
@@ -638,6 +656,7 @@ Return strict JSON in this format:
         ],
         response_format: { type: 'json_object' },
         temperature: 0.7,
+        max_tokens: 2000,
       });
 
       clearInterval(heartbeat);

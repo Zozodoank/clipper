@@ -85,7 +85,7 @@ model = model
 modern = modern
 tren = tren
 konten = konten
-video = video
+video = fideo
 kabel = kabel
 kaleng = kaleng
 karet = karet
@@ -103,7 +103,7 @@ stempel = stempel
 pulpen = pulpen
 tenda = tenda
 tetes = tetes
-ventilasi = ventilasi
+ventilasi = fentilasi
 wastafel = wastafel
 zipper = zipér
 obeng = obeng
@@ -142,7 +142,7 @@ rekomendasi = rekomendasi
 rekor = rekor
 relevan = relevan
 renovasi = renovasi
-versi = versi
+versi = fersi
 kosmetik = kosmetik
 komedo = komedo
 komedi = komedi
@@ -268,3 +268,15 @@ tante = tanté
 tengok = tengok
 tensi = tensi
 toilet = toilet
+
+---
+
+## 7. Kata Berawalan Huruf V (Diganti F agar tidak dibaca "bhee" / "vee")
+viral = firal
+voucher = fowcer
+variasi = fariasi
+varian = farian
+volume = folume
+vakum = fakum
+vitamin = fitamin
+vintage = fintej

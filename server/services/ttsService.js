@@ -50,7 +50,17 @@ export function applyIndonesianPhoneticFixes(text) {
     .replace(/\b(\d+)\s*in\s*(\d+)\b/gi, '$1 in $2')
 
     // 3. Kata Serapan & Marketing yang Rawan Terbaca Bule / Aksen Inggris:
-    .replace(/\bviral\b/gi, 'vi-ral')               // Mencegah dibaca "vay-ral"
+    // Kata-kata berawalan V diganti F agar model TTS tidak membacanya "bhee" / "vee"
+    .replace(/\bviral\b/gi, 'firal')
+    .replace(/\bvoucher\b/gi, 'fowcer')
+    .replace(/\bvideo\b/gi, 'fidéo')
+    .replace(/\bvariasi\b/gi, 'fariasi')
+    .replace(/\bvarian\b/gi, 'farian')
+    .replace(/\bventilasi\b/gi, 'féntilasi')
+    .replace(/\bversi\b/gi, 'férsi')
+    .replace(/\bvakum\b/gi, 'fakum')
+    .replace(/\bvitamin\b/gi, 'fitamin')
+    .replace(/\bvintage\b/gi, 'fintij')
     .replace(/\bportable\b/gi, 'portabel')          // Mencegah dibaca "por-tuh-bl"
     .replace(/\bdesign\b/gi, 'desain')              // Mencegah dibaca "di-zayn"
     .replace(/\bcompact\b/gi, 'kompak')             // Mencegah dibaca "kuhm-pækt"
@@ -74,7 +84,6 @@ export function applyIndonesianPhoneticFixes(text) {
     .replace(/\b(\d+)\s*(?:pcs|pc)\b/gi, '$1 buah') // "3 pcs" -> "3 buah"
     .replace(/\bShopee\b/gi, 'Syopi')
     .replace(/\bTikTok\b/gi, 'Tiktok')
-    .replace(/\bvoucher\b/gi, 'vowcer')
 
     // 5. Satuan Produk (Mencegah lafal huruf asing "see-em", "kay-gee"):
     .replace(/\b(\d+)\s*cm\b/gi, '$1 senti')
@@ -176,12 +185,19 @@ export function cleanScriptForSubtitles(rawScript) {
   text = text.replace(/\bwortit\b/gi, 'worth it');
   text = text.replace(/\bcekout\b/gi, 'checkout');
   text = text.replace(/\bCe\s*O\s*De\b/gi, 'COD');
-  text = text.replace(/\bvi-ral\b/gi, 'viral');
+  text = text.replace(/\b(vi-ral|firal)\b/gi, 'viral');
+  text = text.replace(/\b(vowcer|fowcer)\b/gi, 'voucher');
+  text = text.replace(/\b(fidéo|fideo)\b/gi, 'video');
+  text = text.replace(/\bfariasi\b/gi, 'variasi');
+  text = text.replace(/\bfarian\b/gi, 'varian');
+  text = text.replace(/\b(férsi|fersi)\b/gi, 'versi');
+  text = text.replace(/\b(féntilasi|fentilasi)\b/gi, 'ventilasi');
+  text = text.replace(/\bfakum\b/gi, 'vakum');
+  text = text.replace(/\bfitamin\b/gi, 'vitamin');
   text = text.replace(/\bredi\s*stok\b/gi, 'ready stock');
   text = text.replace(/\bril-pik\b/gi, 'real pict');
   text = text.replace(/\bgais\b/gi, 'guys');
   text = text.replace(/\bSyopi\b/gi, 'Shopee');
-  text = text.replace(/\bvowcer\b/gi, 'voucher');
   text = text.replace(/\bpéngin\b/gi, 'pengen');
   text = text.replace(/\bskinker\b/gi, 'skincare');
 

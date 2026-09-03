@@ -1183,20 +1183,38 @@ app.post('/api/upload-voiceover', upload.single('audio'), async (req, res) => {
 // 6b. Regenerate Voiceover automatically via TTS & Re-render Final Video
 app.post('/api/regenerate-voiceover', async (req, res) => {
   reloadEnvironment();
-  const { jobId, customScript, voice } = req.body;
+  const { jobId, customScript } = req.body;
 
   if (!jobId) return res.status(400).json({ error: 'Job ID is required.' });
 
-  const job = activeJobs.get(jobId);
+  let job = activeJobs.get(jobId);
+  if (!job && fs.existsSync(jobsFilePath)) {
+    try {
+      const existing = JSON.parse(fs.readFileSync(jobsFilePath, 'utf-8'));
+      if (existing[jobId]) {
+        job = existing[jobId];
+        activeJobs.set(jobId, job);
+      }
+    } catch {}
+  }
+
   const silentPath = job?.silentLocalPath || path.join(outputDir, `silent_clip_${jobId}.mp4`);
 
   if (!job || !fs.existsSync(silentPath)) {
-    return res.status(404).json({ error: 'Job session expired or silent video not found.' });
+    return res.status(404).json({ error: `File video 9:16 untuk job ${jobId} tidak ditemukan di folder output.` });
   }
 
-  const scriptToUse = (customScript && customScript.trim())
+  let scriptToUse = (customScript && customScript.trim())
     ? customScript.trim()
     : (job.aiStudioPrompt || job.voiceoverScript || '');
+
+  if (!scriptToUse && Array.isArray(job.scenes) && job.scenes.length > 0) {
+    scriptToUse = job.scenes.map((s, idx) => `[00:${String(idx * 5).padStart(2, '0')}] ${s.voiceover || ''}`).join('\n');
+  }
+
+  if (!scriptToUse && job.productTitle) {
+    scriptToUse = `Kenalin, ${job.productTitle}! Solusi paling praktis buat kamu. Cek produk di bawah sekarang sebelum kehabisan!`;
+  }
 
   if (!scriptToUse) {
     return res.status(400).json({ error: 'Naskah voiceover tidak boleh kosong.' });
@@ -1256,11 +1274,12 @@ app.post('/api/regenerate-voiceover', async (req, res) => {
       downloadUrl: `/api/download/${finalFileName}?t=${cacheBuster}`,
       finalLocalPath: finalOutputPath,
       voiceoverAudioUrl: `/api/audio/${voiceoverFileName}?t=${cacheBuster}`,
-      ttsVoice: ttsResult.voice || 'Gadis Indonesia (Neural)',
-      ttsProvider: ttsResult.provider || 'edge_neural',
+      ttsVoice: ttsResult.voice || 'ANGELICA (Fish Audio S2.1 Pro)',
+      ttsProvider: ttsResult.provider || 'fish_audio',
       cleanScript: ttsResult.cleanScript,
       hasFinalVideo: true,
       hasSilentVideo: true,
+      updatedAt: new Date().toISOString(),
     };
 
     activeJobs.set(jobId, updatedJob);
@@ -1272,8 +1291,9 @@ app.post('/api/regenerate-voiceover', async (req, res) => {
   } catch (error) {
     console.error(`[Job ${jobId}] Regenerate Voiceover Error:`, error);
     cleanupTempFiles([voiceoverAudioPath, srtPath]);
-    updateProgress({ step: 'error', message: error.message, progress: 0, status: 'error', error: error.message });
-    res.status(500).json({ success: false, error: error.message, jobId });
+    const isQuotaError = error.isQuotaError || isQuotaErrorMessage(error.message);
+    updateProgress({ step: 'error', message: error.message, progress: 0, status: 'error', error: error.message, isQuotaError, canRetry: true });
+    res.status(isQuotaError ? 402 : 500).json({ success: false, error: error.message, isQuotaError, jobId });
   }
 });
 

@@ -281,13 +281,7 @@ If accept: {"status": "accept", "frames": [indices], "productHook": "...", "hasP
 
       const rawContent = response.choices?.[0]?.message?.content || '{}';
       console.log(`[AIService ${provider} ${activeModel}] Raw response:`, rawContent);
-      let parsed;
-      try {
-        parsed = JSON.parse(rawContent);
-      } catch (e) {
-        const cleaned = rawContent.replace(/```json/gi, '').replace(/```/g, '').trim();
-        parsed = JSON.parse(cleaned);
-      }
+      let parsed = repairJson(rawContent);
 
       if (parsed.status === 'reject' || parsed.isProductMatch === false || parsed.isUsableSourceVideo === false) {
         const rejectionMsg = parsed.reason || parsed.rejectionReason || 'Video ditolak oleh AI: Tidak ada peragaan produk yang sesuai.';
@@ -585,18 +579,17 @@ Return strict JSON in this format:
         ],
         response_format: { type: 'json_object' },
         temperature: 0.7,
-        max_tokens: 2000,
+        max_tokens: 4000,
       });
 
       clearInterval(heartbeat);
 
       const rawContent = response.choices?.[0]?.message?.content || '{}';
-      console.log(`[AIService ${provider} ${activeModel} Scripting] Raw response:`, rawContent);
-      try {
-        parsed = JSON.parse(rawContent);
-      } catch (e) {
-        const cleaned = rawContent.replace(/```json/gi, '').replace(/```/g, '').trim();
-        parsed = JSON.parse(cleaned);
+      console.log(`[AIService ${provider} ${activeModel} Scripting] Raw response length: ${rawContent.length}`);
+      parsed = repairJson(rawContent);
+
+      if (!parsed || (!parsed.sampleContext && !parsed.scenes && !parsed.voiceoverScript)) {
+        throw new Error(`AI model ${activeModel} mengembalikan response kosong atau tidak lengkap.`);
       }
 
       break; // success — exit retry loop
@@ -617,12 +610,17 @@ Return strict JSON in this format:
     }
   }
 
-  if (lastError && !parsed.sampleContext) {
+  if (lastError && !parsed.sampleContext && !parsed.scenes) {
     clearInterval(heartbeat);
     throw new Error(formatApiError(lastError, activeModel, provider));
   }
 
+  const scenes = normalizeShortScenes(parsed.scenes, effectiveTitle, segmentDuration);
+
   let voiceoverScript = (parsed.voiceoverScript || '').trim();
+  if (!voiceoverScript && scenes.length > 0) {
+    voiceoverScript = scenes.map(s => `[${s.timeRange ? s.timeRange.split(' - ')[0] : '00:00'}] ${s.voiceover}`).join('\n');
+  }
   if (!voiceoverScript) {
     voiceoverScript = `[HOOK]\nStop scroll! ${effectiveTitle} yang satu ini bener-bener lagi viral dan wajib banget kamu punya!\n\n[DEMO & BENEFIT]\n${effectiveDesc ? effectiveDesc.slice(0, 100) : 'Kualitasnya kokoh, desainnya elegan, dan praktis banget buat dipakai sehari-hari tanpa ribet.'}\n\n[VALUE PROPOSITION]\nUdah banyak yang review bagus dan terbukti awet buat jangka panjang.\n\n[CALL TO ACTION]\nMumpung lagi ada promo dan diskon spesial, buruan cek produk di bawah sekarang sebelum kehabisan!`;
   }
@@ -669,11 +667,58 @@ Return strict JSON in this format:
       keyFeatures: ["Praktis & Multifungsi", "Bahan Berkualitas", "Harga Terjangkau"],
       buyingTrigger: "FOMO & Diskon Terbatas"
     },
-    scenes: normalizeShortScenes(parsed.scenes, effectiveTitle, segmentDuration),
+    scenes,
     voiceoverScript,
     aiStudioPrompt,
     caption,
   };
+}
+
+// Robust JSON parser with auto-repair for truncated output
+function repairJson(raw) {
+  if (!raw || typeof raw !== 'string') return {};
+  const cleaned = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch (initialErr) {
+    try {
+      let str = cleaned;
+      if (str.endsWith('\\')) str = str.slice(0, -1);
+
+      // Check unclosed quote
+      let inString = false;
+      for (let i = 0; i < str.length; i++) {
+        if (str[i] === '"' && (i === 0 || str[i - 1] !== '\\')) {
+          inString = !inString;
+        }
+      }
+      if (inString) str += '"';
+
+      // Balance braces and brackets
+      const stack = [];
+      let inStr = false;
+      for (let i = 0; i < str.length; i++) {
+        const c = str[i];
+        if (c === '"' && (i === 0 || str[i - 1] !== '\\')) {
+          inStr = !inStr;
+        } else if (!inStr) {
+          if (c === '{' || c === '[') stack.push(c);
+          else if (c === '}' && stack[stack.length - 1] === '{') stack.pop();
+          else if (c === ']' && stack[stack.length - 1] === '[') stack.pop();
+        }
+      }
+
+      while (stack.length > 0) {
+        const top = stack.pop();
+        if (top === '{') str += '}';
+        else if (top === '[') str += ']';
+      }
+
+      return JSON.parse(str);
+    } catch {
+      throw initialErr;
+    }
+  }
 }
 
 // Helpers

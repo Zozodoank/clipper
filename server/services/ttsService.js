@@ -29,9 +29,13 @@ export function applyIndonesianPhoneticFixes(text) {
     // "banget" -> "bangét" (tanda aksen / garis miring kecil di atas e agar suara natural tanpa patahan glottal)
     .replace(/\b(?:banget|bangett|bangnget|bangget)\b/gi, 'bangét')
     .replace(/\bpengen\b/gi, 'péngin')
-    .replace(/\bkece\b/gi, 'kécé')
+    .replace(/\b(?:kece|kécé)\b/gi, 'keren')
     .replace(/\byuk\b/gi, 'yu')
     .replace(/\b(?:enggak|engga|nggak|ngga)\b/gi, 'énggak')
+
+    // Filter platform media sosial / marketplace agar tidak pernah terucap di voiceover:
+    .replace(/\b(?:racun\s+)?(?:tiktok|shopee|instagram|youtube|facebook|reels|medsos)\b/gi, 'belanja')
+    .replace(/\b(?:Shopee|Syopi|TikTok|Tiktok|Instagram|Facebook|YouTube|Reels)\b/gi, '')
 
     // 2. User-specified affiliate phonetic rules:
     // worth it ➔ wortit

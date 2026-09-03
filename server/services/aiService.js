@@ -349,7 +349,7 @@ If clean product shots exist, select 4 to 7 clean frame indices:
         startSeconds: clips[0].startSeconds,
         endSeconds: clips[clips.length - 1].endSeconds,
         duration,
-        productHook: parsed.productHook || 'Racun Shopee Viral Wajib Punya!',
+        productHook: parsed.productHook || 'Racun Belanja Viral Wajib Punya!',
         hasProductBrand,
         detectedBrand,
         allowHflip,
@@ -460,10 +460,12 @@ CRITICAL DURATION & WORD-COUNT TIMING RULES (MANDATORY):
 STRICT RULES FOR VOICE OVER & CALL TO ACTION:
 - NEVER mention unboxing, opening packaging, bubble wrap, or cardboard boxes in the narration. Focus 100% on the product's practical features, active demonstration, and problem-solving benefits like a top pro affiliate creator.
 - Write in natural, engaging conversational Indonesian.
-- NEVER use the word "Shopee" in the voiceover script or scene spoken lines.
+- DILARANG KERAS menggunakan kata "kece" dalam naskah voiceover! Gunakan kata alternatif seperti "keren", "elegan", "praktis", "cakep", atau "bagus".
+- DILARANG KERAS menyebutkan nama platform media sosial maupun marketplace apa pun dalam narasi suara (DILARANG menyebut: TikTok, Shopee, Instagram, YouTube, Facebook, Reels, Tokopedia, medsos, dll).
+- DILARANG mengatakan "racun TikTok", "racun Shopee", "viral di TikTok", atau "viral di medsos". Cukup gunakan "racun belanja", "barang viral", atau "produk viral".
 - NEVER say "link di bio" or "klik link di bio".
 - ALWAYS use direct calls like "Cek produk di bawah sekarang", "Klik produk di bawah", "Checkout produk di bawah mumpung promo", or "Cek selengkapnya di bawah".
-- Gunakan ejaan bahasa Indonesia baku yang wajar dan bersih (contoh: kece, keren, capek, lezat) tanpa menggunakan tanda aksen é/è.
+- Gunakan ejaan bahasa Indonesia baku yang wajar dan bersih tanpa menggunakan tanda aksen é/è.
 
 4. 'aiStudioPrompt':
    - A copy-paste ready text block formatted EXACTLY for Google AI Studio TTS Playground (Composer view).
@@ -508,10 +510,11 @@ PENTING - ATURAN DURASI, TIMESTAMP & TEMPO NASKAH:
 2. Naskah voiceover HARUS pas ${minWords} s/d ${maxWords} kata (sekitar 12-14 kata tiap scene 5 detik) agar pas dengan durasi video tanpa perlu diperlambat!
 3. Setiap baris naskah voiceover dan prompt AI Studio WAJIB diawali penanda waktu video, misal: [00:00], [00:05], [00:10], [00:15], [00:20], [00:25], [00:30], [00:35], dst.
 4. JANGAN gunakan nama karakter suara khusus (cukup gunakan header "Speaker 1").
-5. JANGAN PERNAH gunakan kata "Shopee" dalam naskah voiceover maupun Kotak Scene.
-6. JANGAN PERNAH gunakan kata "link di bio".
-7. Selalu gunakan ajakan seperti "Cek produk di bawah sekarang", "Klik produk di bawah", atau "Checkout produk di bawah sebelum kehabisan".
-8. Gunakan ejaan bahasa Indonesia baku yang wajar (misal: kece, keren, capek) tanpa menambahkan tanda aksen é.
+5. DILARANG KERAS menggunakan kata "kece"! Gunakan kata seperti keren, elegan, praktis, atau bagus.
+6. DILARANG KERAS menyebutkan nama platform media sosial atau marketplace apa pun (seperti Shopee, TikTok, Instagram, YouTube, Facebook, Reels, medsos, dll) di naskah voiceover maupun Kotak Scene!
+7. JANGAN PERNAH gunakan kata "link di bio".
+8. Selalu gunakan ajakan seperti "Cek produk di bawah sekarang", "Klik produk di bawah", atau "Checkout produk di bawah sebelum kehabisan".
+9. Gunakan ejaan bahasa Indonesia baku yang wajar (misal: keren, elegan, praktis) tanpa menambahkan tanda aksen é.
 
 Return strict JSON in this format:
 {

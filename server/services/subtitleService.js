@@ -52,6 +52,10 @@ export function generateAssSubtitles(scriptText, totalDurationSec, assOutputPath
     line = line.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
     // Ensure on-screen subtitles always display standard Indonesian spelling without accents (e.g. kécé -> kece)
     line = line.replace(/[éèê]/g, 'e').replace(/[ÉÈÊ]/g, 'E');
+    // Ensure on-screen subtitles never contain "kece" or platform names
+    line = line.replace(/\b(?:kece|Kece|KECE)\b/g, 'keren');
+    line = line.replace(/\b(?:racun\s+)?(?:tiktok|shopee|instagram|youtube|facebook|reels|medsos)\b/gi, 'belanja');
+    line = line.replace(/\b(?:Shopee|TikTok|Instagram|Facebook|YouTube|Reels)\b/gi, '');
     line = line.replace(/\s+/g, ' ').trim();
 
     if (!line) continue;

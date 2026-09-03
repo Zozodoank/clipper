@@ -63,7 +63,12 @@ function loadEnvFromDisk() {
 }
 
 const openRouterVisionModels = [
-  "openrouter/free" // Model gratis eksklusif dari OpenRouter (Auto-Router Vision & Scripting)
+  "google/gemini-2.0-pro-exp-02-05:free",
+  "google/gemini-2.5-flash-free",
+  "google/lyria-3-clip-preview",
+  "qwen/qwen-vl-plus:free",
+  "meta-llama/llama-3.2-11b-vision-instruct:free",
+  "google/gemma-4-31b-it:free"
 ];
 
 function getOpenRouterKeys(apiKeyOverride) {
@@ -146,7 +151,7 @@ function formatApiError(err, modelName = 'AI', provider = 'AI') {
     return `Batas frekuensi permintaan (Rate Limit) ${provider} tercapai. Silakan tunggu beberapa saat dan coba lagi.`;
   }
   if (status === 404 || message.toLowerCase().includes('model_not_found') || message.toLowerCase().includes('does not exist')) {
-    return `Model '${modelName}' tidak tersedia di akun ${provider} Anda.`;
+    return `Semua model fallback gagal. Model terakhir yang dicoba ('${modelName}') tidak tersedia di akun ${provider} Anda.`;
   }
   return `${provider} API Error (${modelName}): ${message}`;
 }
@@ -409,7 +414,7 @@ Return strict JSON in this format:
       const isOverloaded = status === 429 || status === 503 || status === 529 || msg.includes('overload') || msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('429');
 
       if (attempt < MAX_RETRIES - 1) {
-        console.warn(`[AIService] AI model ${activeModel} failed (attempt ${attempt + 1}). Trying next fallback model...`);
+        console.warn(`[AIService] AI model ${activeModel} failed (attempt ${attempt + 1}, status: ${status}, error: ${msg}). Trying next fallback model...`);
         continue;
       }
 
@@ -654,7 +659,7 @@ Return strict JSON in this format:
       const isOverloaded = status === 429 || status === 503 || status === 529 || msg.includes('overload') || msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('429');
 
       if (attempt < MAX_RETRIES - 1) {
-        console.warn(`[AIService Scripting] AI model ${activeModel} failed (attempt ${attempt + 1}). Trying next fallback model...`);
+        console.warn(`[AIService Scripting] AI model ${activeModel} failed (attempt ${attempt + 1}, status: ${status}, error: ${msg}). Trying next fallback model...`);
         continue;
       }
 

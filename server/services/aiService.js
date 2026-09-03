@@ -509,6 +509,9 @@ STRICT RULES FOR VOICE OVER & CALL TO ACTION:
 - NEVER use the word "Shopee" in the voiceover script or scene spoken lines.
 - NEVER say "link di bio" or "klik link di bio".
 - ALWAYS use direct calls like "Cek produk di bawah sekarang", "Klik produk di bawah", "Checkout produk di bawah mumpung promo", or "Cek selengkapnya di bawah".
+- INDONESIAN PHONETIC RULES FOR TTS ACCURACY:
+  * For 'voiceoverScript', write accented 'é' on words with the 'e' taling sound (/e/ or /ɛ/) to ensure accurate TTS pronunciation: kéren, capék, cékout, lélé, soré, bésok, céwék, modél, désain.
+  * Keep standard 'e' for pepet (/ə/) sounds, prefixes, and common words: pegel, meja, beres, segar, besar, tenang, beli, ke-, se-, me-, te-, pe-.
 
 4. 'aiStudioPrompt':
    - A copy-paste ready text block formatted EXACTLY for Google AI Studio TTS Playground (Composer view).
@@ -556,6 +559,7 @@ PENTING - ATURAN DURASI, TIMESTAMP & TEMPO NASKAH:
 5. JANGAN PERNAH gunakan kata "Shopee" dalam naskah voiceover maupun Kotak Scene.
 6. JANGAN PERNAH gunakan kata "link di bio".
 7. Selalu gunakan ajakan seperti "Cek produk di bawah sekarang", "Klik produk di bawah", atau "Checkout produk di bawah sebelum kehabisan".
+8. ATURAN FONETIK TTS: Tuliskan huruf 'é' pada kata yang berbunyi taling (/e/ atau /ɛ/) seperti kéren, capék, cékout, bésok, soré, modél. Kata berbunyi pepet atau yang sudah fasih (/ə/) seperti pegel, meja, beres, segar, besar, ke- TETAP gunakan e biasa.
 
 Return strict JSON in this format:
 {

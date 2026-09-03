@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { applyTalingPhonetics } from './phoneticData.js';
 
 // Default Model ID: ANGELICA (Indonesian female advertisement voice on Fish Audio)
 export const DEFAULT_FISH_MODEL_ID = 'c95eaba077c7436aab953b1b1327d9c5';
@@ -14,19 +15,20 @@ export const VALID_FISH_TAGS = new Set([
 
 /**
  * Phonetic adaptations for Indonesian words on multilingual TTS models.
- * Solves common mispronunciation issues (such as "banget" sounding like "ban" + "et").
+ * Solves common mispronunciation issues (such as "banget" sounding like "ban" + "et",
+ * and distinguishing taling /e/ vs pepet /ə/ for Fish Audio Angelica).
  */
 export function applyIndonesianPhoneticFixes(text) {
   if (!text || typeof text !== 'string') return '';
 
-  return text
-    // 1. Vokal & Diakritik Khas Indonesia:
+  // 1. Terapkan leksikon taling & morphological affix engine (misal: keren -> kéren, mejanya -> méjanya)
+  let result = applyTalingPhonetics(text);
+
+  return result
+    // 2. Vokal & Diakritik Slang/Khas Indonesia:
     // "banget" -> "bangét" (tanda aksen / garis miring kecil di atas e agar suara natural tanpa patahan glottal)
     .replace(/\b(?:banget|bangett|bangnget|bangget)\b/gi, 'bangét')
-    .replace(/\bkeren\b/gi, 'kéren')
     .replace(/\bpengen\b/gi, 'péngin')
-    .replace(/\bnyesel\b/gi, 'nyésél')
-    .replace(/\bribet\b/gi, 'ribét')
     .replace(/\byuk\b/gi, 'yu')
     .replace(/\b(?:enggak|engga|nggak|ngga)\b/gi, 'énggak')
 
@@ -167,12 +169,6 @@ export function cleanScriptForSubtitles(rawScript) {
   text = text.replace(/#\w+/g, '');
 
   // Normalize phonetic spellings back to standard text for on-screen subtitles
-  text = text.replace(/\bbangét\b/gi, 'banget');
-  text = text.replace(/\b(kerén|kéren)\b/gi, 'keren');
-  text = text.replace(/\bpéngin\b/gi, 'pengen');
-  text = text.replace(/\bnyésél\b/gi, 'nyesel');
-  text = text.replace(/\bribét\b/gi, 'ribet');
-  text = text.replace(/\bénggak\b/gi, 'enggak');
   text = text.replace(/\btu\s*in\s*wan\b/gi, '2 in 1');
   text = text.replace(/\btri\s*in\s*wan\b/gi, '3 in 1');
   text = text.replace(/\bfor\s*in\s*wan\b/gi, '4 in 1');
@@ -186,6 +182,11 @@ export function cleanScriptForSubtitles(rawScript) {
   text = text.replace(/\bgais\b/gi, 'guys');
   text = text.replace(/\bSyopi\b/gi, 'Shopee');
   text = text.replace(/\bvowcer\b/gi, 'voucher');
+  text = text.replace(/\bpéngin\b/gi, 'pengen');
+  text = text.replace(/\bskinker\b/gi, 'skincare');
+
+  // Remove all accent marks (é, è, ê -> e) so subtitle screen text is pure standard Indonesian
+  text = text.replace(/[éèê]/g, 'e').replace(/[ÉÈÊ]/g, 'E');
 
   const lines = text
     .split(/\r?\n/)

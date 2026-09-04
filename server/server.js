@@ -298,6 +298,15 @@ app.get('/api/health', async (req, res) => {
   });
 });
 
+function stripShopeeLinkFromCaption(caption = '') {
+  if (!caption) return '';
+  return caption
+    .replace(/(?:🛒\s*)?(?:link\s+(?:produk|shopee|pembelian)?\s*:\s*)?https?:\/\/[^\s]+/gi, '')
+    .replace(/(?:🛒\s*)?(?:link\s+(?:produk|shopee|pembelian)?\s*:\s*)?shope\.ee\/[^\s]+/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 // 2. Get all jobs history
 app.get('/api/jobs', (req, res) => {
   const jobs = [];
@@ -327,7 +336,7 @@ app.get('/api/jobs', (req, res) => {
       ttsVoice: job.ttsVoice || 'Gadis Indonesia (Neural)',
       voiceoverAudioUrl: job.voiceoverAudioUrl || null,
       sampleContext: job.sampleContext || null,
-      caption: job.caption || '',
+      caption: stripShopeeLinkFromCaption(job.caption || ''),
       highlight: job.highlight || null,
       productHook: job.productHook || '',
       videoTitle: job.videoTitle || job.productTitle || '',
@@ -350,6 +359,98 @@ app.delete('/api/jobs/:jobId', (req, res) => {
   activeJobs.delete(jobId);
   deletePersistedJob(jobId);
   res.json({ success: true, jobId });
+});
+
+function updateJobProgress(jobId, data) {
+  const payload = typeof data === 'string'
+    ? { step: 'processing', message: data, progress: 50, jobId, status: 'running' }
+    : { status: 'running', ...data, jobId };
+  jobProgress.set(jobId, payload);
+  console.log(`[Job ${jobId}] [${payload.progress || 0}%] ${payload.message || ''}`);
+}
+
+// 3b. Retry / Regenerate an existing completed or failed job with fresh 1080p video & voiceover
+app.post('/api/jobs/:jobId/retry', async (req, res) => {
+  reloadEnvironment();
+  const { jobId } = req.params;
+  const { forceNewCandidate = true } = req.body || {};
+
+  const job = activeJobs.get(jobId);
+  if (!job) {
+    return res.status(404).json({ error: `Job ${jobId} tidak ditemukan.` });
+  }
+
+  console.log(`[Retry] Starting full regeneration for job ${jobId} ("${job.productTitle}")...`);
+
+  // Delete old outputs and temp files to ensure bad old video/audio is completely replaced
+  deleteJobFiles(jobId, outputDir, tempDir);
+  job.downloadedVideoPath = null;
+  job.hasDownloadedVideo = false;
+  job.hasFinalVideo = false;
+  job.hasSilentVideo = false;
+  job.stage = 'running';
+  job.updatedAt = new Date().toISOString();
+  activeJobs.set(jobId, job);
+  persistJob(jobId, job);
+
+  // Initialize progress state so SSE client immediately sees running status
+  updateJobProgress(jobId, {
+    step: 'retry_start',
+    message: `Menyiapkan generate ulang untuk "${job.productTitle}"...`,
+    progress: 5,
+    status: 'running',
+  });
+
+  // Trigger regeneration asynchronously so SSE progress streams live to the frontend
+  (async () => {
+    try {
+      let targetYoutubeUrl = job.youtubeUrl;
+      if (forceNewCandidate && job.productTitle) {
+        const usedVids = getAllUsedYouTubeVideoIds();
+        const oldVid = extractVideoId(job.youtubeUrl);
+        if (oldVid) usedVids.add(oldVid);
+
+        updateJobProgress(jobId, { step: 'auto_youtube_search', message: `Mencari video 1080p baru untuk "${job.productTitle.slice(0, 30)}..."`, progress: 8, status: 'running' });
+        const freshCandidates = await discoverYouTubeCandidatesForProduct({
+          productTitle: job.productTitle,
+          productDescription: job.productDescription,
+          limit: 8,
+          excludeVideoIds: usedVids,
+          onProgress: (p) => updateJobProgress(jobId, { ...p, status: 'running' }),
+        });
+
+        if (freshCandidates && freshCandidates.length > 0 && freshCandidates[0].url) {
+          targetYoutubeUrl = freshCandidates[0].url;
+          job.youtubeUrl = targetYoutubeUrl;
+          activeJobs.set(jobId, job);
+          persistJob(jobId, job);
+          console.log(`[Retry ${jobId}] Found fresh 1080p candidate: ${targetYoutubeUrl}`);
+        }
+      }
+
+      await runStage1Pipeline({
+        jobId,
+        youtubeUrl: targetYoutubeUrl,
+        shopeeLink: job.shopeeLink,
+        productTitle: job.productTitle,
+        productDescription: job.productDescription,
+        apiKey: undefined,
+        options: { aiProvider: 'openrouter' },
+        requireCleanGeminiPlan: true,
+      });
+      console.log(`[Retry ${jobId}] Full regeneration completed successfully.`);
+    } catch (retryErr) {
+      console.error(`[Retry ${jobId}] Regeneration failed:`, retryErr.message);
+      job.stage = 'error';
+      job.lastError = retryErr.message;
+      job.errorAt = new Date().toISOString();
+      activeJobs.set(jobId, job);
+      persistJob(jobId, job);
+      updateJobProgress(jobId, { step: 'error', status: 'error', error: retryErr.message, message: `Gagal generate ulang: ${retryErr.message}` });
+    }
+  })();
+
+  res.json({ success: true, jobId, message: 'Job sedang di-generate ulang dengan source video 1080p baru & voiceover baru.' });
 });
 
 // 4. SSE endpoint for live job progress streaming
@@ -838,6 +939,19 @@ app.post('/api/generate', async (req, res) => {
   }
 
   const jobId = clientJobId || crypto.randomBytes(6).toString('hex');
+  if (clientJobId && req.body.forceFreshVideo) {
+    console.log(`[Job ${clientJobId}] Force-fresh generation requested: cleaning up old files...`);
+    deleteJobFiles(clientJobId, outputDir, tempDir);
+    const existingJob = activeJobs.get(clientJobId);
+    if (existingJob) {
+      existingJob.downloadedVideoPath = null;
+      existingJob.hasDownloadedVideo = false;
+      existingJob.hasFinalVideo = false;
+      existingJob.hasSilentVideo = false;
+      existingJob.stage = 'running';
+    }
+  }
+
   try {
     const stage1Result = await runStage1Pipeline({
       jobId,

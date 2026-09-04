@@ -509,14 +509,14 @@ Speaker 1
    - IMPORTANT: The output of 'aiStudioPrompt' must be a plain string (not JSON) ready to paste directly into AI Studio. Do NOT add any JSON object inside it.
 
 5. 'caption':
-   - High-converting Instagram & Facebook Reels caption with emojis, Indonesian hashtags (#racunbelanja, #racuntiktok, #reelsviral, #affiliateindonesia, etc.), and the provided affiliate link.
+   - High-converting Instagram & Facebook Reels caption with emojis, attention-grabbing hook, product benefits, CTA (e.g. 'Cek produk di bio / komentar ya!'), and relevant Indonesian hashtags (#racunbelanja, #racuntiktok, #reelsviral, #affiliateindonesia, #spillracun).
+   - STRICT RULE: DO NOT include any URLs, website links, or Shopee links inside the caption text!
 
 Output MUST be strictly valid JSON matching the requested schema.`;
 
   const userPrompt = `=== INFORMASI PRODUK UTAMA ===
 Judul / Nama Produk: "${effectiveTitle}"
 ${effectiveDesc ? `Deskripsi & Spesifikasi Produk: "${effectiveDesc}"` : 'Deskripsi: (Analisis dari visual frame video)'}
-Shopee Affiliate Link: ${shopeeLink || 'https://shope.ee/link'}
 Visual Hook: "${productHook || 'Racun Viral Wajib Punya!'}"
 Durasi Video Potongan: ${targetDuration} detik (Wajib naskah dengan panjang ${minWords} - ${maxWords} kata, target ideal: ~${targetWords} kata)
 
@@ -533,8 +533,8 @@ PENTING - ATURAN DURASI, TIMESTAMP & TEMPO NASKAH:
 4. JANGAN gunakan nama karakter suara khusus (cukup gunakan header "Speaker 1").
 5. DILARANG KERAS menggunakan kata "kece"! Gunakan kata seperti keren, elegan, praktis, atau bagus.
 6. DILARANG KERAS menyebutkan nama platform media sosial atau marketplace apa pun (seperti Shopee, TikTok, Instagram, YouTube, Facebook, Reels, medsos, dll) di naskah voiceover maupun Kotak Scene!
-7. JANGAN PERNAH gunakan kata "link di bio".
-8. Selalu gunakan ajakan seperti "Cek produk di bawah sekarang", "Klik produk di bawah", atau "Checkout produk di bawah sebelum kehabisan".
+7. JANGAN PERNAH gunakan kata "link di bio" di dalam naskah voiceover. Selalu gunakan ajakan seperti "Cek produk di bawah sekarang", "Klik produk di bawah", atau "Checkout produk di bawah sebelum kehabisan".
+8. PADA BAGIAN 'CAPTION': DILARANG KERAS menuliskan link Shopee, URL, atau tautan web apa pun di dalam caption! Cukup sertakan hook, deskripsi manfaat, CTA di bio/komentar, dan hashtag viral.
 9. Gunakan ejaan bahasa Indonesia baku yang wajar (misal: keren, elegan, praktis) tanpa menambahkan tanda aksen é.
 
 Return strict JSON in this format:
@@ -656,10 +656,15 @@ Return strict JSON in this format:
   }
 
   let caption = (parsed.caption || '').trim();
+  // Strictly strip any accidental URLs, Shopee links, or "Link Produk: https://..." from caption
+  caption = caption
+    .replace(/(?:🛒\s*)?(?:link\s+(?:produk|shopee|pembelian)?\s*:\s*)?https?:\/\/[^\s]+/gi, '')
+    .replace(/(?:🛒\s*)?(?:link\s+(?:produk|shopee|pembelian)?\s*:\s*)?shope\.ee\/[^\s]+/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
   if (!caption) {
-    caption = `🔥 Racun Belanja Viral: ${effectiveTitle}!\n\n${effectiveDesc ? effectiveDesc + '\n\n' : ''}Buruan checkout sekarang mumpung lagi diskon spesial!\n\n🛒 Link Produk: ${shopeeLink || 'https://shope.ee/link-disini'}\n\n#racunbelanja #racuntiktok #reelsviral #affiliateindonesia #spillracun`;
-  } else if (shopeeLink && !caption.includes(shopeeLink)) {
-    caption += `\n\n🛒 Link Produk: ${shopeeLink}`;
+    caption = `🔥 Racun Belanja Viral: ${effectiveTitle}!\n\n${effectiveDesc ? effectiveDesc + '\n\n' : ''}Buruan checkout sekarang mumpung lagi diskon spesial!\n\n🛒 Link produk cek di bio / komentar ya!\n\n#racunbelanja #racuntiktok #reelsviral #affiliateindonesia #spillracun`;
   }
 
   let aiStudioPrompt = (parsed.aiStudioPrompt || '').trim();

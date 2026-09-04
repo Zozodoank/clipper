@@ -111,7 +111,7 @@ export default function InputCard({
               <ShoppingBag className="w-4 h-4 text-shopee-500" />
               Shopee Affiliate Link <span className="text-shopee-500">*</span>
             </span>
-            <span className="text-[11px] font-normal text-slate-400">CTA di caption & naskah</span>
+            <span className="text-[11px] font-normal text-slate-400">Tersimpan untuk referensi produk & script.txt</span>
           </label>
           <input
             type="text"

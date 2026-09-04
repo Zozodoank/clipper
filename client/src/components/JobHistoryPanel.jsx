@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import {
   History, RefreshCw, Trash2, Film, CheckCircle2, AlertCircle,
   Clock, Download, Music, ChevronRight, X, Info, FolderOpen, ExternalLink,
-  Sparkles, Volume2, AlertTriangle, Loader2
+  Sparkles, Volume2, AlertTriangle, Loader2, Search
 } from 'lucide-react';
 
 const STAGE_CONFIG = {
@@ -26,11 +26,14 @@ function StageBadge({ stage }) {
   );
 }
 
-export default function JobHistoryPanel({ onSelectJob, currentJobId, refreshSignal = 0 }) {
+export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId, refreshSignal = 0 }) {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [retryingId, setRetryingId] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState('all'); // 'all' | 'completed' | 'tts' | 'failed'
 
   // TTS processing state
   const [processingTtsId, setProcessingTtsId] = useState(null);
@@ -221,6 +224,21 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId, refreshSign
     }
   };
 
+  const handleRetryJob = async (e, job) => {
+    e.stopPropagation();
+    if (onRetryJob) {
+      setRetryingId(job.jobId);
+      try {
+        await onRetryJob(job);
+      } finally {
+        setRetryingId(null);
+      }
+    } else {
+      onSelectJob(job);
+    }
+  };
+
+  const completedJobs = jobs.filter(j => j.stage === 'completed');
   const retryableStages = ['error', 'interrupted', 'downloaded'];
   const retryableJobs = jobs.filter(j => retryableStages.includes(j.stage));
 
@@ -231,6 +249,20 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId, refreshSign
   };
   const awaitingVoiceoverJobs = jobs.filter(isJobReadyForTTS);
   const hasNewItems = retryableJobs.length > 0 || awaitingVoiceoverJobs.length > 0;
+
+  const filteredJobs = jobs.filter((job) => {
+    if (activeFilter === 'completed' && job.stage !== 'completed') return false;
+    if (activeFilter === 'tts' && !isJobReadyForTTS(job)) return false;
+    if (activeFilter === 'failed' && !retryableStages.includes(job.stage)) return false;
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchTitle = (job.productTitle || '').toLowerCase().includes(q);
+      const matchId = (job.jobId || '').toLowerCase().includes(q);
+      return matchTitle || matchId;
+    }
+    return true;
+  });
 
   if (!isOpen) {
     return (
@@ -366,12 +398,84 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId, refreshSign
         </div>
       )}
 
+      {/* Search Bar & Category Filters for quick navigation of 120+ jobs */}
+      <div className="px-4 pt-3 pb-2 border-b border-slate-800/80 space-y-2">
+        <div className="relative">
+          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="text"
+            placeholder="Cari dari 120+ produk / Job ID..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-slate-900/90 border border-slate-700/60 rounded-xl pl-8 pr-8 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500/50"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-[11px] scrollbar-none">
+          <button
+            type="button"
+            onClick={() => setActiveFilter('all')}
+            className={`px-2.5 py-0.5 rounded-lg font-semibold transition-all whitespace-nowrap ${
+              activeFilter === 'all'
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                : 'text-slate-400 hover:text-slate-200 bg-slate-800/40'
+            }`}
+          >
+            Semua ({jobs.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveFilter('completed')}
+            className={`px-2.5 py-0.5 rounded-lg font-semibold transition-all whitespace-nowrap ${
+              activeFilter === 'completed'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                : 'text-slate-400 hover:text-slate-200 bg-slate-800/40'
+            }`}
+          >
+            Selesai ({completedJobs.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveFilter('tts')}
+            className={`px-2.5 py-0.5 rounded-lg font-semibold transition-all whitespace-nowrap ${
+              activeFilter === 'tts'
+                ? 'bg-teal-500/20 text-teal-300 border border-teal-500/40'
+                : 'text-slate-400 hover:text-slate-200 bg-slate-800/40'
+            }`}
+          >
+            Siap TTS ({awaitingVoiceoverJobs.length})
+          </button>
+          {retryableJobs.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setActiveFilter('failed')}
+              className={`px-2.5 py-0.5 rounded-lg font-semibold transition-all whitespace-nowrap ${
+                activeFilter === 'failed'
+                  ? 'bg-red-500/20 text-red-300 border border-red-500/40'
+                  : 'text-slate-400 hover:text-slate-200 bg-slate-800/40'
+              }`}
+            >
+              Gagal ({retryableJobs.length})
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Banner 2: Retryable failed jobs */}
-      {retryableJobs.length > 0 && (
-        <div className="mx-4 mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-[11px] flex items-start gap-2">
+      {retryableJobs.length > 0 && activeFilter === 'all' && (
+        <div className="mx-4 mt-2.5 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-[11px] flex items-start gap-2">
           <Info className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
           <p>
-            <strong>{retryableJobs.length} job</strong> dapat di-retry. Job dengan video yang sudah terunduh tidak perlu download ulang.
+            <strong>{retryableJobs.length} job gagal</strong> dapat di-retry langsung.
           </p>
         </div>
       )}
@@ -383,17 +487,18 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId, refreshSign
             <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />
             Memuat riwayat job...
           </div>
-        ) : jobs.length === 0 ? (
+        ) : filteredJobs.length === 0 ? (
           <div className="text-center py-8 text-slate-500 text-xs">
             <History className="w-6 h-6 mx-auto mb-2 opacity-40" />
-            Belum ada riwayat job.
+            {searchQuery ? 'Tidak ada job yang sesuai pencarian.' : 'Belum ada riwayat job.'}
           </div>
         ) : (
-          jobs.map((job) => {
+          filteredJobs.map((job) => {
             const isRetryable = retryableStages.includes(job.stage);
             const isCurrent = job.jobId === currentJobId;
             const isAwaitingVoiceover = !job.hasFinalVideo && (job.stage === 'awaiting_voiceover' || job.hasSilentVideo);
             const isProcessingThis = processingTtsId === job.jobId || (batchStatus.isRunning && batchStatus.currentJobId === job.jobId);
+            const isRetryingThis = retryingId === job.jobId;
 
             // Determine button label and style
             const actionConfig = (() => {
@@ -489,18 +594,45 @@ export default function JobHistoryPanel({ onSelectJob, currentJobId, refreshSign
                             <Music className="w-3 h-3" />
                             <span className="hidden xl:inline">Manual</span>
                           </button>
+
+                          {/* Retry button on awaiting voiceover */}
+                          <button
+                            type="button"
+                            disabled={isRetryingThis}
+                            className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition-all shadow-sm"
+                            title="Generate ulang video & naskah dari awal"
+                            onClick={(e) => handleRetryJob(e, job)}
+                          >
+                            <RefreshCw className={`w-3 h-3 ${isRetryingThis ? 'animate-spin' : ''}`} />
+                            <span>{isRetryingThis ? '...' : 'Retry'}</span>
+                          </button>
                         </div>
                       ) : (
                         <>
                           {job.stage === 'completed' && (
-                            <button
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-slate-800 transition-colors"
-                              title="Buka file ini di Windows Explorer"
-                              onClick={(e) => handleOpenFolder(e, job.finalFileName || `final_clip_${job.jobId}.mp4`)}
-                            >
-                              <FolderOpen className="w-3.5 h-3.5" />
-                            </button>
+                            <>
+                              <button
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-amber-300 hover:bg-slate-800 transition-colors"
+                                title="Buka file ini di Windows Explorer"
+                                onClick={(e) => handleOpenFolder(e, job.finalFileName || `final_clip_${job.jobId}.mp4`)}
+                              >
+                                <FolderOpen className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* PROMINENT RETRY BUTTON FOR COMPLETED JOBS */}
+                              <button
+                                type="button"
+                                disabled={isRetryingThis}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition-all shadow-sm"
+                                title="Generate ulang video 1080p & voiceover baru untuk produk ini"
+                                onClick={(e) => handleRetryJob(e, job)}
+                              >
+                                <RefreshCw className={`w-3 h-3 ${isRetryingThis ? 'animate-spin text-amber-400' : ''}`} />
+                                <span>{isRetryingThis ? 'Memproses...' : 'Retry'}</span>
+                              </button>
+                            </>
                           )}
+
                           <button
                             className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all ${actionConfig.style}`}
                             onClick={(e) => { e.stopPropagation(); onSelectJob(job); }}

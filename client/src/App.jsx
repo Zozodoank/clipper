@@ -211,6 +211,98 @@ export default function App() {
     runGeneratePipeline(job.jobId, restoredForm);
   };
 
+  const handleRetryJob = async (job) => {
+    const isCompleted = job.stage === 'completed';
+    const confirmMsg = isCompleted
+      ? `Generate ulang job "${job.productTitle || job.jobId}"?\n\nVideo lama dan voiceover yang kualitasnya kurang baik akan dihapus dan diganti secara otomatis dengan video source 1080p baru & voiceover baru.`
+      : `Generate ulang job "${job.productTitle || job.jobId}" dari awal?`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    lastJobIdRef.current = job.jobId;
+
+    const restoredForm = {
+      ...formData,
+      youtubeUrl: job.youtubeUrl || formData.youtubeUrl,
+      shopeeLink: job.shopeeLink || formData.shopeeLink,
+      productTitle: job.productTitle || formData.productTitle,
+      productDescription: job.productDescription || formData.productDescription,
+    };
+    setFormData(restoredForm);
+    lastFormDataRef.current = restoredForm;
+
+    setIsLoading(true);
+    setResult(null);
+
+    setProgressState({
+      step: 'retry_start',
+      message: `Menyiapkan generate ulang untuk "${job.productTitle || job.jobId}" (Source 1080p & Voiceover Baru)...`,
+      progress: 5,
+      status: 'running',
+      error: null,
+      isQuotaError: false,
+      canRetry: false,
+    });
+
+    if (eventSourceRef.current) eventSourceRef.current.close();
+
+    const sse = new EventSource(`/api/progress/${job.jobId}`);
+    eventSourceRef.current = sse;
+
+    sse.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        setProgressState((prev) => ({
+          ...prev,
+          step: data.step || prev.step,
+          message: data.message || prev.message,
+          progress: data.progress !== undefined ? data.progress : prev.progress,
+          status: data.status || prev.status,
+          error: data.error || null,
+          isQuotaError: data.isQuotaError || false,
+          canRetry: data.canRetry || false,
+        }));
+
+        if ((data.status === 'awaiting_voiceover' || data.status === 'completed') && data.result) {
+          setResult(data.result);
+          setIsLoading(false);
+          sse.close();
+          setHistoryRefreshSignal((v) => v + 1);
+        } else if (data.status === 'error') {
+          setIsLoading(false);
+          sse.close();
+          setHistoryRefreshSignal((v) => v + 1);
+        }
+      } catch (e) {
+        console.error('Error parsing SSE event in handleRetryJob:', e);
+      }
+    };
+    sse.onerror = () => sse.close();
+
+    try {
+      const res = await fetch(`/api/jobs/${job.jobId}/retry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ forceNewCandidate: true }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Gagal memulai retry pada server.');
+      }
+    } catch (err) {
+      setProgressState((prev) => ({
+        ...prev,
+        step: 'error',
+        message: err.message || 'Gagal generate ulang.',
+        status: 'error',
+        error: err.message,
+        canRetry: true,
+      }));
+      setIsLoading(false);
+      if (eventSourceRef.current) eventSourceRef.current.close();
+    }
+  };
+
   const handleVoiceoverUploadSuccess = (finalData) => {
     setResult(finalData);
     setProgressState({
@@ -238,6 +330,7 @@ export default function App() {
 
             <JobHistoryPanel
               onSelectJob={handleSelectJob}
+              onRetryJob={handleRetryJob}
               currentJobId={lastJobIdRef.current}
               refreshSignal={historyRefreshSignal}
             />

@@ -606,12 +606,13 @@ export async function runStage1Pipeline({
         ? existingJob.downloadedVideoPath
         : null);
 
-    const isLowDataMode = process.env.LOW_DATA_MODE !== 'false'; // Default to Smart Low Data Mode enabled
+    const isLowDataMode = process.env.LOW_DATA_MODE === 'true'; // Default: FALSE (Langsung unduh 1080p Full HD asli dari YouTube)
 
     if (cachedVideoPath) {
       const cachedDims = await getVideoDimensions(cachedVideoPath);
       if (cachedDims && !cachedDims.is1080pOrHigher) {
-        console.warn(`[Job ${jobId}] Cached video (${cachedVideoPath}) is below 1080p (${cachedDims.width}x${cachedDims.height}). Re-downloading 1080p source...`);
+        console.warn(`[Job ${jobId}] Cached video (${cachedVideoPath}) is below 1080p (${cachedDims.width}x${cachedDims.height}). Deleting old low-res cache and re-downloading 1080p source directly...`);
+        try { fs.unlinkSync(cachedVideoPath); } catch {}
         cachedVideoPath = null;
       }
     }
@@ -620,28 +621,34 @@ export async function runStage1Pipeline({
       rawVideoPath = cachedVideoPath;
       updateProgress({
         step: 'download',
-        message: `Video sudah ada (${(fs.statSync(rawVideoPath).size / 1024 / 1024).toFixed(1)} MB). Skip download, langsung proses.`,
+        message: `Video 1080p sudah ada (${(fs.statSync(rawVideoPath).size / 1024 / 1024).toFixed(1)} MB). Skip download, langsung proses.`,
         progress: 30,
         status: 'running'
       });
     } else if (isLowDataMode) {
-      // TAHAP 1 (Hemat Kuota): Unduh preview 360p ringan untuk analisa visual AI
+      // TAHAP 1 (Hemat Kuota Manual): Unduh preview 360p ringan jika LOW_DATA_MODE=true
       updateProgress({ step: 'download', message: 'Downloading lightweight preview (360p - Low Data Mode)...', progress: 12, status: 'running' });
       const previewDl = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: 'preview', prefix: 'preview' });
       rawVideoPath = previewDl.filePath;
       videoMeta = previewDl.metadata;
 
-      // Always verify real duration from the downloaded file using FFprobe (most reliable)
       const realDuration = await getMediaDurationSec(rawVideoPath);
       if (realDuration && realDuration > 5) {
         videoMeta.duration = realDuration;
       }
       console.log(`[Job ${jobId}] Preview ready: "${videoMeta.title}" duration=${videoMeta.duration}s file=${rawVideoPath}`);
     } else {
-      updateProgress({ step: 'download', message: 'Downloading source video (1080p) via yt-dlp...', progress: 12, status: 'running' });
+      // DEFAULT: Langsung unduh video 1080p Full HD murni dari YouTube tanpa melalui 360p
+      updateProgress({ step: 'download', message: 'Mengunduh langsung video sumber kualitas 1080p Full HD dari YouTube...', progress: 12, status: 'running' });
       const dlResult = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: '1080p', prefix: 'raw' });
       rawVideoPath = dlResult.filePath;
       videoMeta = dlResult.metadata;
+
+      const realDuration = await getMediaDurationSec(rawVideoPath);
+      if (realDuration && realDuration > 5) {
+        videoMeta.duration = realDuration;
+      }
+      console.log(`[Job ${jobId}] Direct 1080p source ready: "${videoMeta.title}" duration=${videoMeta.duration}s file=${rawVideoPath}`);
 
       const updatedMeta = { ...jobMeta, downloadedVideoPath: rawVideoPath, stage: 'downloaded' };
       activeJobs.set(jobId, updatedMeta);

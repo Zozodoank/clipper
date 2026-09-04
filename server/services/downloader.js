@@ -542,8 +542,12 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
   const ffmpegPath = getFFmpegPath();
   const outputTemplate = path.join(outputDir, `${prefix}_${videoId}.%(ext)s`);
 
-  const qualityLabel = isPreview ? '360p (Hemat Kuota)' : '1080p Full HD';
-  onProgress({ step: 'download', message: `Downloading preview (${qualityLabel}) for AI analysis...`, progress: 10 });
+  const qualityLabel = isPreview ? '360p Preview' : '1080p Full HD';
+  onProgress({
+    step: 'download',
+    message: isPreview ? `Downloading preview (${qualityLabel})...` : `Downloading direct 1080p Full HD source video from YouTube...`,
+    progress: 10
+  });
 
   // For full 1080p: fetch metadata first for scripting
   let metadata = { title: 'YouTube Video', duration: 60 };

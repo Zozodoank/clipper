@@ -606,65 +606,50 @@ export async function runStage1Pipeline({
         ? existingJob.downloadedVideoPath
         : null);
 
-    const isLowDataMode = process.env.LOW_DATA_MODE === 'true'; // Default: FALSE (Langsung unduh 1080p Full HD asli dari YouTube)
+    let previewVideoPath = null;
 
     if (cachedVideoPath) {
       const cachedDims = await getVideoDimensions(cachedVideoPath);
-      if (cachedDims && !cachedDims.is1080pOrHigher) {
-        console.warn(`[Job ${jobId}] Cached video (${cachedVideoPath}) is below 1080p (${cachedDims.width}x${cachedDims.height}). Deleting old low-res cache and re-downloading 1080p source directly...`);
+      if (cachedDims && cachedDims.is1080pOrHigher) {
+        rawVideoPath = cachedVideoPath;
+        updateProgress({
+          step: 'download',
+          message: `Video 1080p sudah ada (${(fs.statSync(rawVideoPath).size / 1024 / 1024).toFixed(1)} MB). Skip download, langsung proses.`,
+          progress: 30,
+          status: 'running'
+        });
+      } else {
+        // Hapus cache video lama jika di bawah 1080p agar tidak tercampur
         try { fs.unlinkSync(cachedVideoPath); } catch {}
         cachedVideoPath = null;
       }
     }
 
-    if (cachedVideoPath) {
-      rawVideoPath = cachedVideoPath;
-      updateProgress({
-        step: 'download',
-        message: `Video 1080p sudah ada (${(fs.statSync(rawVideoPath).size / 1024 / 1024).toFixed(1)} MB). Skip download, langsung proses.`,
-        progress: 30,
-        status: 'running'
-      });
-    } else if (isLowDataMode) {
-      // TAHAP 1 (Hemat Kuota Manual): Unduh preview 360p ringan jika LOW_DATA_MODE=true
-      updateProgress({ step: 'download', message: 'Downloading lightweight preview (360p - Low Data Mode)...', progress: 12, status: 'running' });
+    if (!rawVideoPath) {
+      // TAHAP 1: Unduh preview 360p ringan dari YouTube khusus untuk analisa visual AI
+      updateProgress({ step: 'download', message: 'Mengunduh preview video (360p) untuk analisa visual AI...', progress: 12, status: 'running' });
       const previewDl = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: 'preview', prefix: 'preview' });
-      rawVideoPath = previewDl.filePath;
+      previewVideoPath = previewDl.filePath;
       videoMeta = previewDl.metadata;
 
-      const realDuration = await getMediaDurationSec(rawVideoPath);
+      const realDuration = await getMediaDurationSec(previewVideoPath);
       if (realDuration && realDuration > 5) {
         videoMeta.duration = realDuration;
       }
-      console.log(`[Job ${jobId}] Preview ready: "${videoMeta.title}" duration=${videoMeta.duration}s file=${rawVideoPath}`);
-    } else {
-      // DEFAULT: Langsung unduh video 1080p Full HD murni dari YouTube tanpa melalui 360p
-      updateProgress({ step: 'download', message: 'Mengunduh langsung video sumber kualitas 1080p Full HD dari YouTube...', progress: 12, status: 'running' });
-      const dlResult = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: '1080p', prefix: 'raw' });
-      rawVideoPath = dlResult.filePath;
-      videoMeta = dlResult.metadata;
-
-      const realDuration = await getMediaDurationSec(rawVideoPath);
-      if (realDuration && realDuration > 5) {
-        videoMeta.duration = realDuration;
-      }
-      console.log(`[Job ${jobId}] Direct 1080p source ready: "${videoMeta.title}" duration=${videoMeta.duration}s file=${rawVideoPath}`);
-
-      const updatedMeta = { ...jobMeta, downloadedVideoPath: rawVideoPath, stage: 'downloaded' };
-      activeJobs.set(jobId, updatedMeta);
-      persistJob(jobId, updatedMeta);
+      console.log(`[Job ${jobId}] Preview 360p siap untuk analisa AI: "${videoMeta.title}" duration=${videoMeta.duration}s file=${previewVideoPath}`);
     }
 
-    updateProgress({ step: 'frames_raw', message: 'Extracting source frames for AI analysis...', progress: 38, status: 'running' });
-    const { frames: rawFrames } = await extractFrames(rawVideoPath, rawFramesDir, updateProgress, {
+    const videoForFrames = previewVideoPath || rawVideoPath;
+    updateProgress({ step: 'frames_raw', message: 'Mengekstrak frame preview untuk analisa AI...', progress: 38, status: 'running' });
+    const { frames: rawFrames } = await extractFrames(videoForFrames, rawFramesDir, updateProgress, {
       sampleIntervalSec: 1,
       maxSampleFrames: 30,
     });
 
     const aiProvider = options.aiProvider || 'openrouter';
 
-    console.log(`[Job ${jobId}] Sending to AI: videoMeta.duration=${videoMeta.duration}s, ${rawFrames.length} frames`);
-    updateProgress({ step: 'gemini_vision', message: 'AI analyzing faceless product frames and crop focus...', progress: 48, status: 'running' });
+    console.log(`[Job ${jobId}] Mengirim ke AI: videoMeta.duration=${videoMeta.duration}s, ${rawFrames.length} frames`);
+    updateProgress({ step: 'gemini_vision', message: 'AI menganalisa frame produk dan menentukan cuplikan terbaik...', progress: 48, status: 'running' });
     const highlight = await selectHighlightWithAI({
       apiKey,
       aiProvider,
@@ -675,29 +660,35 @@ export async function runStage1Pipeline({
       onProgress: updateProgress,
     });
 
-    // TAHAP 2 (Lolos Seleksi): Video lolos seleksi AI! Baru unduh video 1080p Full HD asli untuk proses render
-    if (isLowDataMode && !cachedVideoPath) {
-      updateProgress({ step: 'download_hd', message: '✅ Video lolos seleksi AI! Mengunduh kualitas 1080p Full HD...', progress: 55, status: 'running' });
+    // TAHAP 2: AI telah menyetujui video! Backend langsung mengunduh video 1080p Full HD asli dari YouTube untuk rendering
+    if (!rawVideoPath) {
+      updateProgress({ step: 'download_hd', message: '✅ Video disetujui AI! Mengunduh kualitas 1080p Full HD langsung dari YouTube...', progress: 55, status: 'running' });
       try {
         const hdDl = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: '1080p', prefix: 'raw' });
-        if (hdDl && hdDl.filePath && fs.existsSync(hdDl.filePath)) {
-          const hdDims = await getVideoDimensions(hdDl.filePath);
-          if (hdDims && (hdDims.is1080pOrHigher || hdDims.width >= 720 || hdDims.height >= 720)) {
-            console.log(`[Job ${jobId}] ✅ Video HD/Full HD berhasil diunduh (${hdDims.width}x${hdDims.height}). Menggantikan preview 360p.`);
-            // Hapus file preview 360p untuk menghemat ruang memori HP
-            try {
-              if (fs.existsSync(rawVideoPath) && rawVideoPath !== hdDl.filePath) {
-                fs.unlinkSync(rawVideoPath);
-              }
-            } catch {}
-            rawVideoPath = hdDl.filePath;
-          } else {
-            console.warn(`[Job ${jobId}] Resolusi video HD (${hdDims?.width}x${hdDims?.height}) di bawah standar.`);
-            rawVideoPath = hdDl.filePath;
-          }
+        if (!hdDl || !hdDl.filePath || !fs.existsSync(hdDl.filePath)) {
+          throw new Error('File video 1080p tidak ditemukan setelah download.');
         }
+
+        const hdDims = await getVideoDimensions(hdDl.filePath);
+        const isRealHd = hdDims && (hdDims.is1080pOrHigher || hdDims.width >= 720 || hdDims.height >= 720);
+        if (!isRealHd) {
+          try { fs.unlinkSync(hdDl.filePath); } catch {}
+          throw new Error(`Resolusi video (${hdDims?.width}x${hdDims?.height}) kurang dari 1080p Full HD.`);
+        }
+
+        console.log(`[Job ${jobId}] ✅ Video 1080p Full HD asli berhasil diunduh (${hdDims.width}x${hdDims.height}). Menggantikan preview 360p.`);
+        rawVideoPath = hdDl.filePath;
+
+        // Hapus file preview 360p agar tidak memakan ruang penyimpanan HP dan tidak tertukar
+        try {
+          if (previewVideoPath && fs.existsSync(previewVideoPath) && previewVideoPath !== rawVideoPath) {
+            fs.unlinkSync(previewVideoPath);
+          }
+        } catch {}
       } catch (hdErr) {
-        console.warn(`[Job ${jobId}] Gagal mengunduh stream terpisah 1080p: ${hdErr.message}. Menggunakan video yang ada untuk proses render.`);
+        console.error(`[Job ${jobId}] ❌ Gagal mengunduh video 1080p Full HD dari YouTube: ${hdErr.message}`);
+        // Wajib lempar error dan BATALKAN render jika 1080p gagal, TIDAK BOLEH render video 360p!
+        throw new Error(`Gagal mengunduh video kualitas 1080p Full HD langsung dari YouTube untuk rendering: ${hdErr.message}`);
       }
 
       const updatedMeta = { ...jobMeta, downloadedVideoPath: rawVideoPath, stage: 'downloaded' };

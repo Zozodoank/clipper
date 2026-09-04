@@ -87,10 +87,10 @@ export async function renderSilentAntiDetectionVideo({
       '-an', // Strictly NO AUDIO
       '-c:v', 'libx264',
       '-preset', 'fast',
-      '-crf', '19',
-      '-b:v', '5500k',
-      '-maxrate', '7500k',
-      '-bufsize', '10000k',
+      '-crf', '18',
+      '-b:v', '8000k',
+      '-maxrate', '12000k',
+      '-bufsize', '16000k',
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
       outputVideo
@@ -205,10 +205,10 @@ export async function mergeVoiceoverAndBurnSubtitles({
     args.push(
       '-c:v', 'libx264',
       '-preset', 'fast',
-      '-crf', '19',
-      '-b:v', '5500k',
-      '-maxrate', '7500k',
-      '-bufsize', '10000k',
+      '-crf', '18',
+      '-b:v', '8000k',
+      '-maxrate', '12000k',
+      '-bufsize', '16000k',
       '-c:a', 'aac',
       '-b:a', '192k',
       '-pix_fmt', 'yuv420p',
@@ -263,24 +263,24 @@ function buildClipFilter({ inputIndex, outputLabel, reframe = {}, hflip, ptsFact
   const clipHflip = isFlipDisabled ? false : (reframe.hflip !== undefined ? reframe.hflip : hflip);
   const renderMode = reframe.renderMode === 'vertical_crop' ? 'vertical_crop' : 'preserve_full_product';
   const preFlip = clipHflip ? 'hflip,' : '';
-  const finish = `setsar=1,setpts=${ptsFactor}*PTS,eq=contrast=1.05:saturation=1.05:brightness=0.01`;
+  const finish = `setsar=1,setpts=${ptsFactor}*PTS,eq=contrast=1.05:saturation=1.05:brightness=0.01,unsharp=5:5:0.8:5:5:0.0`;
 
   if (renderMode === 'vertical_crop') {
     const focusX = clampNumber(reframe.focusX, 0, 1, 0.5).toFixed(3);
     const focusY = clampNumber(reframe.focusY, 0, 1, 0.55).toFixed(3);
     return [
-      `[${inputIndex}:v]${preFlip}scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920:(iw-1080)*${focusX}:(ih-1920)*${focusY},${finish}[${outputLabel}]`
+      `[${inputIndex}:v]${preFlip}scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920:(iw-1080)*${focusX}:(ih-1920)*${focusY},${finish}[${outputLabel}]`
     ];
   }
 
   const focusX = clampNumber(reframe.focusX, 0, 1, 0.5).toFixed(3);
-  const focusY = clampNumber(reframe.focusY, 0, 1, 0.5).toFixed(3);
+  const focusY = clampNumber(reframe.focusY, 0, 1, 0.55).toFixed(3);
 
   // Put the source into a larger central square stage, matching the visible product area users expect.
   return [
     `[${inputIndex}:v]${preFlip}split=2[bgsrc${inputIndex}][fgsrc${inputIndex}]`,
-    `[bgsrc${inputIndex}]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=24:12,eq=brightness=-0.12:saturation=0.85[bg${inputIndex}]`,
-    `[fgsrc${inputIndex}]scale=1080:1560:force_original_aspect_ratio=increase,crop=1080:1560:(iw-1080)*${focusX}:(ih-1560)*${focusY},setsar=1[fg${inputIndex}]`,
+    `[bgsrc${inputIndex}]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,boxblur=24:12,eq=brightness=-0.12:saturation=0.85[bg${inputIndex}]`,
+    `[fgsrc${inputIndex}]scale=1080:1560:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1560:(iw-1080)*${focusX}:(ih-1560)*${focusY},setsar=1[fg${inputIndex}]`,
     `[bg${inputIndex}][fg${inputIndex}]overlay=(W-w)/2:(H-h)/2,${finish}[${outputLabel}]`,
   ];
 }

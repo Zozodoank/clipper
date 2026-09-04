@@ -57,7 +57,7 @@ function findCookiesFile() {
  * Base yt-dlp args used for all requests (search + download).
  * Stripped of --remote-components and --js-runtimes which break on Android/Termux.
  */
-function getYtDlpArgs(clientSpoof = 'tv_embedded,web_creator') {
+function getYtDlpArgs(clientSpoof = null) {
   const residentialProxy = (process.env.RESIDENTIAL_PROXY || process.env.PROXY_URL || '').trim();
   const proxyArgs = residentialProxy ? ['--proxy', residentialProxy] : [];
 
@@ -71,13 +71,19 @@ function getYtDlpArgs(clientSpoof = 'tv_embedded,web_creator') {
   const args = [
     '--no-check-certificates',
     '--geo-bypass',
-    '--extractor-args', `youtube:player_client=${clientSpoof};formats=missing_pot`,
-    ...cookiesArgs,
-    ...proxyArgs
   ];
 
+  if (clientSpoof && clientSpoof !== 'default') {
+    args.push('--extractor-args', `youtube:player_client=${clientSpoof};formats=missing_pot`);
+  } else {
+    args.push('--extractor-args', 'youtube:formats=missing_pot');
+  }
+
+  if (cookiesArgs.length) args.push(...cookiesArgs);
+  if (proxyArgs.length) args.push(...proxyArgs);
+
   // Only supply custom Android User Agent if clientSpoof explicitly starts with android
-  if (clientSpoof.startsWith('android')) {
+  if (clientSpoof && clientSpoof.startsWith('android')) {
     args.push('--user-agent', 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro Build/UQ1A.240205.004) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36');
   }
 
@@ -89,7 +95,7 @@ function getYtDlpArgs(clientSpoof = 'tv_embedded,web_creator') {
  */
 function getFastArgs() {
   return [
-    ...getYtDlpArgs('tv_embedded,web_creator,mweb'),
+    ...getYtDlpArgs('default'),
     '--rm-cache-dir',
   ];
 }
@@ -97,7 +103,7 @@ function getFastArgs() {
 /**
  * Download args with gentle rate-limiting and anti-bot spoofing.
  */
-function getDownloadArgs(clientProfile = 'tv_embedded,web_creator') {
+function getDownloadArgs(clientProfile = 'default') {
   return [
     ...getYtDlpArgs(clientProfile),
     '--limit-rate', '6M',
@@ -565,13 +571,14 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
     }
   }
 
-  // Multi-profile rotation prioritizing clients without SABR restrictions (TV, Creator, iOS, Web)
+  // Multi-profile rotation:
+  // First attempt uses yt-dlp default (visionos) which reliably extracts 1080p+, 1440p, 4K without SABR / PO-token blocks.
+  // Fallbacks try android, ios, mweb. We avoid tv_embedded (deprecated in yt-dlp) and web_creator (forces sign-in).
   const clientProfiles = [
-    'tv_embedded,web_creator',
-    'tv,mweb',
+    'default',
+    'android,web',
     'ios,mweb',
-    'web_creator,web',
-    'android,mweb',
+    'mweb',
   ];
 
   let lastDownloadError = '';
@@ -588,10 +595,11 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
 
     const dlBaseArgs = getDownloadArgs(clientType);
 
-    // Resilient format selector: tries 360p preview for AI analysis vs True 1080p Full HD+ for final rendering
+    // Resilient format selector: 360p preview for AI analysis vs True 1080p Full HD+ for final rendering
+    // NOTE: 1080p selector strictly requires >=720p and never falls back to 360p/best.
     const formatSelector = isPreview
       ? '18/bestvideo[height<=360]+bestaudio/best[height<=360]/bestvideo[height<=480]+bestaudio/best[height<=480]/worstvideo+worstaudio/worst/best'
-      : 'bestvideo[height>=1080]+bestaudio/bestvideo[width>=1080]+bestaudio/best[height>=1080]/best[width>=1080]/bestvideo[height>=1080]/bestvideo+bestaudio/best';
+      : 'bestvideo[height>=1080]+bestaudio/bestvideo[width>=1080]+bestaudio/bestvideo[height>=1080]/best[height>=1080]/bestvideo[height>=720]+bestaudio/bestvideo[height>=720]/best[height>=720]';
 
     const dlArgs = [
       '--ffmpeg-location',
@@ -669,7 +677,11 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
             if (isHd) {
               console.log(`[Downloader] ✅ Resolusi ${dims.width}x${dims.height} memenuhi standar HD/Full HD. Siap di-render.`);
             } else {
-              console.warn(`[Downloader] Resolusi video (${dims.width}x${dims.height}) akan di-upscale ke 1080x1920 saat render.`);
+              // Video is below 720p (e.g. 360p). Reject and delete it so next profile can attempt to find 1080p!
+              console.warn(`[Downloader] ❌ Resolusi video (${dims.width}x${dims.height}) di bawah standar HD. Menolak video 360p dan mencoba profil lain untuk 1080p...`);
+              try { fs.unlinkSync(downloadedFile); } catch {}
+              lastDownloadError = `Resolusi video (${dims.width}x${dims.height}) terlalu rendah (360p). Memerlukan minimal 720p/1080p.`;
+              continue;
             }
           }
         }

@@ -63,7 +63,16 @@ export async function getYtDlpPath(onProgress = null) {
   const localBinaryPath = path.join(binDir, binaryName);
 
   if (fs.existsSync(localBinaryPath)) {
-    return localBinaryPath;
+    try {
+      const stats = fs.statSync(localBinaryPath);
+      if (stats.size > 15000000) {
+        return localBinaryPath;
+      }
+      console.warn(`[BinaryChecker] Existing yt-dlp binary is incomplete (${stats.size} bytes). Re-downloading...`);
+      fs.unlinkSync(localBinaryPath);
+    } catch {
+      return localBinaryPath;
+    }
   }
 
   // Auto-download yt-dlp binary if missing
@@ -71,7 +80,7 @@ export async function getYtDlpPath(onProgress = null) {
   if (onProgress) onProgress('Downloading yt-dlp binary engine for first-time setup...');
 
   try {
-    const YTDlpWrapClass = YTDlpWrap.default || YTDlpWrap;
+    const YTDlpWrapClass = YTDlpWrap.default?.downloadFromGithub ? YTDlpWrap.default : (YTDlpWrap.downloadFromGithub ? YTDlpWrap : (YTDlpWrap.default?.default || YTDlpWrap));
     await YTDlpWrapClass.downloadFromGithub(localBinaryPath);
     if (process.platform !== 'win32') {
       fs.chmodSync(localBinaryPath, '755');

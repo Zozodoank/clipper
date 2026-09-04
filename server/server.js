@@ -674,13 +674,20 @@ export async function runStage1Pipeline({
       try {
         const hdDl = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: '1080p', prefix: 'raw' });
         if (hdDl && hdDl.filePath && fs.existsSync(hdDl.filePath)) {
-          // Hapus file preview 360p untuk menghemat ruang memori HP
-          try {
-            if (fs.existsSync(rawVideoPath) && rawVideoPath !== hdDl.filePath) {
-              fs.unlinkSync(rawVideoPath);
-            }
-          } catch {}
-          rawVideoPath = hdDl.filePath;
+          const hdDims = await getVideoDimensions(hdDl.filePath);
+          if (hdDims && (hdDims.is1080pOrHigher || hdDims.width >= 720 || hdDims.height >= 720)) {
+            console.log(`[Job ${jobId}] ✅ Video HD/Full HD berhasil diunduh (${hdDims.width}x${hdDims.height}). Menggantikan preview 360p.`);
+            // Hapus file preview 360p untuk menghemat ruang memori HP
+            try {
+              if (fs.existsSync(rawVideoPath) && rawVideoPath !== hdDl.filePath) {
+                fs.unlinkSync(rawVideoPath);
+              }
+            } catch {}
+            rawVideoPath = hdDl.filePath;
+          } else {
+            console.warn(`[Job ${jobId}] Resolusi video HD (${hdDims?.width}x${hdDims?.height}) di bawah standar.`);
+            rawVideoPath = hdDl.filePath;
+          }
         }
       } catch (hdErr) {
         console.warn(`[Job ${jobId}] Gagal mengunduh stream terpisah 1080p: ${hdErr.message}. Menggunakan video yang ada untuk proses render.`);

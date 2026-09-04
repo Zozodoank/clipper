@@ -270,7 +270,12 @@ app.get('/api/health', async (req, res) => {
   ).trim().replace(/^["']|["']$/g, '');
   const openRouterKeySet = Boolean(rawOpenRouterKey && !rawOpenRouterKey.startsWith('your_') && !rawOpenRouterKey.endsWith('_here'));
 
-  const activeAiEngine = openRouterKeySet ? 'openrouter' : 'none';
+  const rawGeminiKey = (
+    process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || ''
+  ).trim().replace(/^["']|["']$/g, '');
+  const geminiKeySet = Boolean(rawGeminiKey && !rawGeminiKey.startsWith('your_') && !rawGeminiKey.endsWith('_here'));
+
+  const activeAiEngine = openRouterKeySet ? 'openrouter' : (geminiKeySet ? 'gemini' : 'none');
 
   const binaryCheck = await checkSystemDependencies();
 
@@ -284,6 +289,8 @@ app.get('/api/health', async (req, res) => {
       ytdlp: binaryCheck.ytdlp,
     },
     openRouterKeyConfigured: openRouterKeySet,
+    geminiKeyConfigured: geminiKeySet,
+    geminiFallbackConfigured: geminiKeySet,
     activeAiEngine,
     defaultAiProvider: 'openrouter',
     tts: {
@@ -1856,9 +1863,10 @@ app.use((err, req, res, next) => {
 app.listen(PORT, '0.0.0.0', () => {
   reloadEnvironment();
   const openRouterKey = process.env.OPENROUTER_API_KEY ? process.env.OPENROUTER_API_KEY.trim() : '';
+  const geminiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
   const activeProvider = (openRouterKey && openRouterKey !== 'your_openrouter_api_key_here')
     ? `✨ OpenRouter (Primary)`
-    : '❌ None (Set OPENROUTER_API_KEY in server/.env)';
+    : (geminiKey && geminiKey !== 'your_gemini_api_key_here' ? `✨ Google Gemini Direct (Primary)` : '❌ None (Set OPENROUTER_API_KEY or GEMINI_API_KEY in server/.env)');
 
   console.log(`\n======================================================`);
   console.log(`🎬 Local AI Affiliate Clipper Backend Server`);
@@ -1869,6 +1877,9 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`⚡ Active AI Engine: ${activeProvider}`);
   if (openRouterKey && openRouterKey !== 'your_openrouter_api_key_here') {
     console.log(`🔑 OpenRouter Key: configured (${openRouterKey.length} chars)`);
+  }
+  if (geminiKey && geminiKey !== 'your_gemini_api_key_here') {
+    console.log(`🔑 Google Gemini API: configured (Direct fallback ready)`);
   }
   console.log(`======================================================\n`);
 });

@@ -108,14 +108,55 @@ function getOpenRouterKeys(apiKeyOverride) {
 
 let currentOpenRouterKeyIndex = 0;
 
-function getAiClientConfig({ apiKeyOverride } = {}) {
+const defaultGeminiDirectModels = [
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+  'gemini-3.1-flash-lite',
+  'gemini-flash-lite-latest',
+];
+
+function getDirectGeminiApiKey(apiKeyOverride) {
   loadEnvFromDisk();
-  
+  if (apiKeyOverride) {
+    const cleaned = cleanEnvKey(apiKeyOverride);
+    if (cleaned.startsWith('AIzaSy')) return cleaned;
+  }
+  return cleanEnvKey(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '');
+}
+
+export function getDirectGeminiClientConfig({ apiKeyOverride } = {}) {
+  const apiKey = getDirectGeminiApiKey(apiKeyOverride);
+  if (!apiKey || apiKey.startsWith('your_') || apiKey.endsWith('_here')) return null;
+
+  return {
+    client: new OpenAI({
+      apiKey,
+      baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+      timeout: 120000,
+    }),
+    models: defaultGeminiDirectModels,
+    provider: 'Google Gemini Direct',
+  };
+}
+
+function getAiClientConfig({ apiKeyOverride, aiProvider } = {}) {
+  loadEnvFromDisk();
+
+  // If Gemini is explicitly requested or passed as override, prioritize Gemini Direct
+  const directGeminiKey = getDirectGeminiApiKey(apiKeyOverride);
+  if (apiKeyOverride?.startsWith('AIzaSy') || aiProvider === 'gemini' || process.env.ACTIVE_AI_ENGINE === 'gemini') {
+    const geminiConf = getDirectGeminiClientConfig({ apiKeyOverride });
+    if (geminiConf) {
+      console.log(`[AIService] Initialize Direct Google Gemini Client (${geminiConf.models[0]})...`);
+      return geminiConf;
+    }
+  }
+
   const openRouterKeys = getOpenRouterKeys(apiKeyOverride);
   if (openRouterKeys.length > 0) {
     const safeIndex = currentOpenRouterKeyIndex % openRouterKeys.length;
     currentOpenRouterKeyIndex++; 
-    
+
     console.log(`[AIService] Initialize OpenRouter Client: Key=${openRouterKeys[safeIndex].substring(0, 10)}...`);
 
     return {
@@ -135,7 +176,14 @@ function getAiClientConfig({ apiKeyOverride } = {}) {
     };
   }
 
-  throw new Error('OpenRouter API Key belum disetel di server/.env (OPENROUTER_API_KEY). Silakan tambahkan OPENROUTER_API_KEY di file server/.env.');
+  // Fallback to direct Gemini API if OpenRouter keys are not available
+  const directGemini = getDirectGeminiClientConfig({ apiKeyOverride });
+  if (directGemini) {
+    console.log(`[AIService] Initialize Direct Google Gemini Client (${directGemini.models[0]})...`);
+    return directGemini;
+  }
+
+  throw new Error('API Key belum disetel di server/.env. Silakan tambahkan OPENROUTER_API_KEY atau GEMINI_API_KEY di file server/.env.');
 }
 
 const DEFAULT_REFRAME = {
@@ -180,6 +228,7 @@ function formatApiError(err, modelName = 'AI', provider = 'AI') {
  */
 export async function selectHighlightWithAI({
   apiKey,
+  aiProvider,
   frames,
   videoMetadata,
   productTitle,
@@ -188,7 +237,7 @@ export async function selectHighlightWithAI({
   allowFallbackClips = false,
   onProgress = () => {}
 }) {
-  let activeConfig = getAiClientConfig({ apiKeyOverride: apiKey });
+  let activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
   let { client, models: modelFallbackList, provider } = activeConfig;
   let activeModel = modelFallbackList[0];
 
@@ -262,29 +311,30 @@ Review visual frames carefully:
     const elapsedSec = Math.round((Date.now() - startTimeMs) / 1000);
     onProgress({
       step: 'gemini_vision',
-      message: `${provider} (${activeModel}) menganalisa ${frames.length} frame visual... (${elapsedSec} detik)`,
-      progress: Math.min(58, 48 + Math.floor(elapsedSec / 4)),
+      message: `${provider} (${activeModel}) menganalisis frame video & verifikasi produk... (${elapsedSec} detik)`,
+      progress: Math.min(54, 45 + Math.floor(elapsedSec / 3)),
     });
   }, 2000);
 
-  const MAX_RETRIES = modelFallbackList.length;
-
+  let totalRetries = modelFallbackList.length;
   let lastError = null;
+  let hasFallenBackToGemini = (provider === 'Google Gemini Direct');
 
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+  for (let attempt = 0; attempt < totalRetries; attempt++) {
     activeModel = modelFallbackList[attempt];
     try {
       if (attempt > 0) {
-        for (let t = 5; t > 0; t--) {
+        for (let t = 4; t > 0; t--) {
           onProgress({
             step: 'gemini_vision',
-            message: `API overloaded/error. Switching to fallback model (${activeModel}) dalam ${t} detik...`,
+            message: `AI model sebelumnya bermasalah. Mencoba model fallback (${activeModel}) dalam ${t} detik...`,
             progress: 48,
           });
           await new Promise(r => setTimeout(r, 1000));
         }
       }
 
+      console.log(`[AIService Vision] Calling ${provider} with model: ${activeModel}...`);
       const response = await client.chat.completions.create({
         model: activeModel,
         messages: [
@@ -292,8 +342,8 @@ Review visual frames carefully:
           { role: 'user', content: messageContent },
         ],
         response_format: { type: 'json_object' },
-        temperature: 0.3,
-        max_tokens: 500,
+        temperature: 0.2,
+        max_tokens: 1200,
       });
 
       clearInterval(heartbeat);
@@ -302,8 +352,6 @@ Review visual frames carefully:
       console.log(`[AIService ${provider} ${activeModel}] Raw response:`, rawContent);
       let parsed = repairJson(rawContent);
 
-      // JIKA AI SECARA RESMI MENOLAK VIDEO (AI REJECTION DECISION):
-      // Langsung hentikan proses! JANGAN coba fallback model lain agar keputusan editorial AI tidak dilanggar!
       if (parsed.status === 'reject' || parsed.isProductMatch === false || parsed.isExactProductMatch === false || parsed.isUsableSourceVideo === false) {
         const rejectionMsg = parsed.reason || parsed.rejectionReason || 'Video ditolak oleh AI: Produk di video tidak cocok dengan link Shopee atau tidak fokus pada peragaan produk fisik asli.';
         console.warn(`[AIService ${provider} ${activeModel}] ⛔ VIDEO RESMI DITOLAK OLEH AI: ${rejectionMsg}`);
@@ -337,8 +385,6 @@ Review visual frames carefully:
             }
           });
         }
-      } else if (Array.isArray(parsed.clips) && parsed.clips.length > 0) {
-        candidateClips = parsed.clips;
       }
 
       const hasProductBrand = Boolean(parsed.hasProductBrand);
@@ -351,9 +397,7 @@ Review visual frames carefully:
         allowHflip,
       });
       const duration = clips.reduce((total, clip) => total + (clip.endSeconds - clip.startSeconds), 0);
-      const startTime = clips[0].startTime;
-      const endTime = clips[clips.length - 1].endTime;
-
+      
       onProgress({
         step: 'gemini_vision',
         message: `${provider} (${activeModel}) selected ${clips.length} clean 5-second product shots (${duration}s total).`,
@@ -361,8 +405,8 @@ Review visual frames carefully:
       });
 
       return {
-        startTime,
-        endTime,
+        startTime: clips[0].startTime,
+        endTime: clips[clips.length - 1].endTime,
         startSeconds: clips[0].startSeconds,
         endSeconds: clips[clips.length - 1].endSeconds,
         duration,
@@ -376,15 +420,35 @@ Review visual frames carefully:
     } catch (err) {
       if (err.isAiRejection) {
         clearInterval(heartbeat);
-        throw err; // JANGAN fallback jika model AI memang menolak video!
+        throw err;
       }
       lastError = err;
       const status = err.status || err.statusCode;
       const msg = (err.message || '').toLowerCase();
-      const isOverloaded = status === 429 || status === 503 || status === 529 || msg.includes('overload') || msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('429');
+      const isFatalAuthOrBilling = status === 401 || status === 402 || msg.includes('balance') || msg.includes('credits');
 
-      if (attempt < MAX_RETRIES - 1) {
-        console.warn(`[AIService] AI model ${activeModel} failed (attempt ${attempt + 1}, status: ${status}, error: ${msg}). Trying next fallback model...`);
+      // Fallback langsung ke Google Gemini Direct API jika OpenRouter bermasalah atau habis saldo
+      if (!hasFallenBackToGemini) {
+        const geminiFallback = getDirectGeminiClientConfig({ apiKeyOverride: apiKey });
+        if (geminiFallback && (isFatalAuthOrBilling || attempt >= totalRetries - 1)) {
+          console.warn(`[AIService Vision] OpenRouter error (${err.message}). Beralih langsung ke Google Gemini Direct API fallback (${geminiFallback.models[0]})...`);
+          onProgress({
+            step: 'gemini_vision',
+            message: `OpenRouter gagal. Mengaktifkan direct fallback Google Gemini API (${geminiFallback.models[0]})...`,
+            progress: 47,
+          });
+          hasFallenBackToGemini = true;
+          client = geminiFallback.client;
+          modelFallbackList = geminiFallback.models;
+          provider = geminiFallback.provider;
+          totalRetries = modelFallbackList.length;
+          attempt = -1; // Reset agar loop berikutnya mulai dari model Gemini pertama
+          continue;
+        }
+      }
+
+      if (attempt < totalRetries - 1) {
+        console.warn(`[AIService Vision] AI model ${activeModel} failed (attempt ${attempt + 1}, status: ${status}, error: ${msg}). Trying next fallback model...`);
         continue;
       }
 
@@ -408,6 +472,7 @@ Review visual frames carefully:
  */
 export async function generateAdAdvisorScriptWithAI({
   apiKey,
+  aiProvider,
   trimmedFrames,
   videoMetadata,
   productTitle,
@@ -417,7 +482,7 @@ export async function generateAdAdvisorScriptWithAI({
   segmentDuration = 45,
   onProgress = () => {}
 }) {
-  let activeConfig = getAiClientConfig({ apiKeyOverride: apiKey });
+  let activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
   let { client, models: modelFallbackList, provider } = activeConfig;
   let activeModel = modelFallbackList[0];
 
@@ -582,16 +647,16 @@ Return strict JSON in this format:
     });
   }, 2000);
 
-  const MAX_RETRIES = modelFallbackList.length;
-
+  let totalRetries = modelFallbackList.length;
   let parsed = {};
   let lastError;
+  let hasFallenBackToGemini = (provider === 'Google Gemini Direct');
 
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+  for (let attempt = 0; attempt < totalRetries; attempt++) {
     activeModel = modelFallbackList[attempt];
     try {
       if (attempt > 0) {
-        for (let t = 5; t > 0; t--) {
+        for (let t = 4; t > 0; t--) {
           onProgress({
             step: 'gpt_scripting',
             message: `API overloaded/error. Switching fallback model (${activeModel}) naskah dalam ${t} detik...`,
@@ -627,15 +692,35 @@ Return strict JSON in this format:
       lastError = err;
       const status = err.status || err.statusCode;
       const msg = (err.message || '').toLowerCase();
-      const isOverloaded = status === 429 || status === 503 || status === 529 || msg.includes('overload') || msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('429');
+      const isFatalAuthOrBilling = status === 401 || status === 402 || msg.includes('balance') || msg.includes('credits');
 
-      if (attempt < MAX_RETRIES - 1) {
+      // Fallback langsung ke Google Gemini Direct API jika OpenRouter bermasalah atau habis saldo
+      if (!hasFallenBackToGemini) {
+        const geminiFallback = getDirectGeminiClientConfig({ apiKeyOverride: apiKey });
+        if (geminiFallback && (isFatalAuthOrBilling || attempt >= totalRetries - 1)) {
+          console.warn(`[AIService Scripting] OpenRouter error (${err.message}). Beralih langsung ke Google Gemini Direct API fallback (${geminiFallback.models[0]})...`);
+          onProgress({
+            step: 'gpt_scripting',
+            message: `OpenRouter gagal. Mengaktifkan direct fallback Google Gemini API (${geminiFallback.models[0]})...`,
+            progress: 78,
+          });
+          hasFallenBackToGemini = true;
+          client = geminiFallback.client;
+          modelFallbackList = geminiFallback.models;
+          provider = geminiFallback.provider;
+          totalRetries = modelFallbackList.length;
+          attempt = -1; // Reset agar loop berikutnya mulai dari model Gemini pertama
+          continue;
+        }
+      }
+
+      if (attempt < totalRetries - 1) {
         console.warn(`[AIService Scripting] AI model ${activeModel} failed (attempt ${attempt + 1}, status: ${status}, error: ${msg}). Trying next fallback model...`);
         continue;
       }
 
       clearInterval(heartbeat);
-      console.error(`[AIService ${provider} ${activeModel} Scripting] Error:`, err);
+      console.error(`[AIService ${provider} ${activeModel}] Error:`, err);
       throw new Error(formatApiError(err, activeModel, provider));
     }
   }

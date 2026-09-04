@@ -203,39 +203,48 @@ export async function selectHighlightWithAI({
   const effectiveDesc = productDescription || videoMetadata?.description || '';
 
   const systemPrompt = `You are an expert Short-Form Affiliate Video QC Director.
-Evaluate the ${frames.length} sampled frames of the source video for the product: "${effectiveTitle}".
+Evaluate the ${frames.length} sampled frames of the source video for the target Shopee product: "${effectiveTitle}".
 
-CRITERIA FOR REJECTION (Output {"status": "reject", "reason": "<alasan penolakan singkat dalam bahasa Indonesia>"}):
+CRITICAL RULE 1: EXACT PHYSICAL PRODUCT MATCH VERIFICATION
+- Identify what physical product is being demonstrated in these visual frames.
+- Compare it directly with the target Shopee product: "${effectiveTitle}".
+- The product in the video MUST be the EXACT same product type, function, and model as "${effectiveTitle}".
+- REJECT IMMEDIATELY if the video shows a DIFFERENT product (for example: target is an electric mini chopper, but video shows a vegetable slicer, knife set, oil bottle, or unrelated item).
+- REJECT IMMEDIATELY if the video is a compilation / haul video showing multiple random gadgets instead of specifically demonstrating this product.
+- If rejected for wrong product, output:
+  {"status": "reject", "detectedProduct": "<nama produk yang tampak di video>", "isExactProductMatch": false, "reason": "Produk di video (<nama produk>) tidak cocok dengan produk Shopee (${effectiveTitle})"}
+
+CRITICAL RULE 2: REJECTION CRITERIA:
 1. AI-GENERATED / SYNTHETIC / CGI / ANIMATION:
    - REJECT if the video is AI-generated (e.g. Sora, Runway, Kling, Hailuo, synthetic video, 3D animated, CGI, cartoon, or computer-generated slop).
-   - The footage MUST be REAL, AUTHENTIC PHYSICAL DEMONSTRATION with real human hands interacting with the real physical product (like viral Douyin / Chinese gadget demo videos or real creator product reviews).
+   - Footage MUST be REAL, AUTHENTIC PHYSICAL DEMONSTRATION with real human hands.
 2. TALKING HEADS & NON-PRODUCT FOOTAGE:
    - REJECT if it is a person talking to camera / vlog / talking head with no direct hands-on product demonstration.
-   - REJECT if it is pure unboxing / parcel opening / bubble wrap with no actual product in action.
+   - REJECT if it is pure parcel unboxing / bubble wrap with no actual product in action.
 3. DIRTY / WATERMARKED / CHANNEL LOGOS:
    - REJECT if the video is dominated by channel watermarks, channel logos, creator handles (@username), or floating subtitles that cannot be avoided.
-4. IRRELEVANT / WRONG PRODUCT / POOR QUALITY:
-   - REJECT if wrong product, blurry/poor amateur quality, or does not clearly demonstrate how the product works.
 
 CRITERIA FOR ACCEPTANCE:
-- Video shows REAL, AUTHENTIC, PHYSICAL HANDS-ON DEMONSTRATION of the product (hands using the item, showing functionality, practical experiments, results, or problem-solving — exactly like top Douyin/Chinese or pro affiliate demonstration videos).
+- Video shows REAL, AUTHENTIC, PHYSICAL HANDS-ON DEMONSTRATION of the EXACT product: "${effectiveTitle}".
 - Faceless or product-focused, clean framing.
-- STRICT ZERO WATERMARK/IDENTITY: NEVER select frames with channel watermarks, channel logos/badges, creator handles (@username), or floating subtitles! ONLY choose 100% clean product demonstration frames!
+- STRICT ZERO WATERMARK/IDENTITY: NEVER select frames with channel watermarks, logos, or subtitles!
 - Select 4 to 7 frame indices (numbers 1 to ${frames.length}) showing the best distinct, watermark-free product demonstration moments (spaced at least 5 seconds apart).
 - Output strict minimal JSON:
-{"status": "accept", "frames": [4, 8, 12, 16, 20, 24], "productHook": "<hook pendek menarik dalam bahasa Indonesia>", "hasProductBrand": false}`;
+{"status": "accept", "detectedProduct": "<nama produk di video>", "isExactProductMatch": true, "frames": [4, 8, 12, 16, 20], "productHook": "<hook pendek menarik dalam bahasa Indonesia>", "hasProductBrand": false}`;
 
-  const userPrompt = `Product Title: "${effectiveTitle}"
+  const userPrompt = `Target Shopee Product: "${effectiveTitle}"
 ${effectiveDesc ? `Product Description: "${effectiveDesc}"` : ''}
 Total Duration: ${totalDuration}s
 Sampled Frames:
 ${frames.map((f, i) => `#${i + 1} (${f.timeFormatted})`).join(', ')}
 
 Review visual frames carefully:
-- REJECT if: AI-generated/synthetic/CGI video, cartoon/animation, talking head with no hands-on demo, parcel unboxing, or covered in channel watermarks/logos.
-  Output: {"status": "reject", "reason": "Video buatan AI / tidak fokus pada peragaan produk fisik"}
-- ACCEPT ONLY if: Real physical footage demonstrating product functionality with real hands (like Douyin/Chinese affiliate style or real hands-on reviews).
-  Output: {"status": "accept", "frames": [indices], "productHook": "...", "hasProductBrand": false}`;
+1. Visual Product Match: Does the physical item in the video match "${effectiveTitle}"?
+   - If DIFFERENT product or compilation: output {"status": "reject", "detectedProduct": "<nama produk>", "isExactProductMatch": false, "reason": "Produk di video tidak cocok dengan link Shopee"}
+2. Video Quality & Authenticity: Is it AI-generated, talking head without demo, or covered in watermarks?
+   - If YES: output {"status": "reject", "isExactProductMatch": false, "reason": "<alasan penolakan>"}
+3. If it is a clean, REAL hands-on demo of the EXACT product "${effectiveTitle}":
+   - Output {"status": "accept", "detectedProduct": "<nama produk>", "isExactProductMatch": true, "frames": [indices], "productHook": "...", "hasProductBrand": false}`;
 
   const messageContent = [
     { type: 'text', text: userPrompt },
@@ -295,8 +304,8 @@ Review visual frames carefully:
 
       // JIKA AI SECARA RESMI MENOLAK VIDEO (AI REJECTION DECISION):
       // Langsung hentikan proses! JANGAN coba fallback model lain agar keputusan editorial AI tidak dilanggar!
-      if (parsed.status === 'reject' || parsed.isProductMatch === false || parsed.isUsableSourceVideo === false) {
-        const rejectionMsg = parsed.reason || parsed.rejectionReason || 'Video ditolak oleh AI: Tidak fokus pada peragaan produk fisik asli.';
+      if (parsed.status === 'reject' || parsed.isProductMatch === false || parsed.isExactProductMatch === false || parsed.isUsableSourceVideo === false) {
+        const rejectionMsg = parsed.reason || parsed.rejectionReason || 'Video ditolak oleh AI: Produk di video tidak cocok dengan link Shopee atau tidak fokus pada peragaan produk fisik asli.';
         console.warn(`[AIService ${provider} ${activeModel}] ⛔ VIDEO RESMI DITOLAK OLEH AI: ${rejectionMsg}`);
         const rejectError = new Error(`Video ditolak oleh AI (${activeModel}): ${rejectionMsg}`);
         rejectError.isAiRejection = true;

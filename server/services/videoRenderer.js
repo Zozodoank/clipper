@@ -390,6 +390,41 @@ export function getMediaDurationSec(filePath, ffmpegPath = getFFmpegPath()) {
   });
 }
 
+/**
+ * Inspects a video file using FFmpeg to determine its exact resolution and whether it meets minimal 1080p Full HD.
+ * @param {string} filePath - Path to video file
+ * @param {string} [ffmpegPath]
+ * @returns {Promise<{ width: number, height: number, is1080pOrHigher: boolean } | null>}
+ */
+export function getVideoDimensions(filePath, ffmpegPath = getFFmpegPath()) {
+  return new Promise((resolve) => {
+    if (!filePath || !fs.existsSync(filePath)) {
+      return resolve(null);
+    }
+    const proc = spawn(ffmpegPath, ['-i', filePath]);
+    let stderr = '';
+    proc.stderr.on('data', (d) => stderr += d.toString());
+    proc.on('close', () => {
+      const match = stderr.match(/Stream #\d+:\d+.*Video:.*?,\s*(\d{3,5})x(\d{3,5})/s);
+      if (!match) return resolve(null);
+      const width = Number(match[1]);
+      const height = Number(match[2]);
+
+      // True 1080p Full HD:
+      // Landscape 16:9 (1920x1080) -> width=1920, height=1080
+      // Vertical 9:16 Shorts (1080x1920) -> width=1080, height=1920
+      // In both cases, the minimum dimension is >= 1080 and maximum is >= 1920
+      const is1080pOrHigher = (width >= 1080 && height >= 1080) ||
+                              width >= 1920 ||
+                              height >= 1920 ||
+                              Math.min(width, height) >= 1080;
+
+      resolve({ width, height, is1080pOrHigher });
+    });
+    proc.on('error', () => resolve(null));
+  });
+}
+
 function mergeAudioOnlyFallback({
   ffmpegPath,
   silentVideoPath,

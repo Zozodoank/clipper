@@ -4,6 +4,7 @@ import fs from 'fs';
 import net from 'net';
 import { fileURLToPath } from 'url';
 import { getYtDlpPath, getFFmpegPath } from './binaryChecker.js';
+import { getVideoDimensions } from './videoRenderer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -298,7 +299,7 @@ async function downloadWithCobaltApi(url, outputPath, onProgress) {
 
 // ── YouTube Downloader via RapidAPI (yt-api) ──
 
-async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress) {
+async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress, { quality = '1080p' } = {}) {
   const apiKey = process.env.RAPIDAPI_KEY?.trim();
   const host = process.env.RAPIDAPI_HOST?.trim() || 'yt-api.p.rapidapi.com';
   if (!apiKey) return null;
@@ -336,19 +337,25 @@ async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress) {
       tags: []
     };
 
-    // Pick best combined audio+video format prioritizing 1080p Full HD -> 720p HD -> best available
-    let best = data.formats.find(f => f.qualityLabel === '1080p' && f.audioQuality) ||
-               data.formats.find(f => f.qualityLabel === '1080p') ||
-               data.formats.find(f => f.qualityLabel === '720p' && f.audioQuality) ||
-               data.formats.find(f => f.qualityLabel === '720p') ||
-               data.formats.find(f => f.audioQuality) || 
-               data.formats[0];
+    const isPreview = quality === 'preview' || quality === 'low';
+    let best = null;
+    if (isPreview) {
+      best = data.formats.find(f => f.qualityLabel === '360p' && f.audioQuality) ||
+             data.formats.find(f => f.qualityLabel === '360p') ||
+             data.formats.find(f => f.audioQuality) || 
+             data.formats[0];
+    } else {
+      // Strictly require 1080p or higher formats (1080p, 1440p, 2160p)
+      best = data.formats.find(f => (f.qualityLabel === '1080p' || f.qualityLabel === '1440p' || f.qualityLabel === '2160p') && f.audioQuality) ||
+             data.formats.find(f => f.qualityLabel === '1080p' || f.qualityLabel === '1440p' || f.qualityLabel === '2160p');
+    }
 
     if (!best || !best.url) {
+      console.warn(`[Downloader] yt-api notice: Tidak ada stream minimal 1080p pada RapidAPI`);
       return null;
     }
 
-    onProgress({ step: 'download', message: `Downloading video via RapidAPI stream (${best.qualityLabel || 'HD'})...`, progress: 18 });
+    onProgress({ step: 'download', message: `Downloading video via RapidAPI stream (${best.qualityLabel || '1080p'})...`, progress: 18 });
     console.log(`[Downloader] yt-api stream: ${best.qualityLabel}, hasAudio=${!!best.audioQuality}`);
 
     await downloadFileFromUrl(best.url, outputPath, { onProgress });
@@ -577,7 +584,7 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
     // Resilient format selector: tries 360p preview for AI analysis vs True 1080p Full HD+ for final rendering
     const formatSelector = isPreview
       ? '18/bestvideo[height<=360]+bestaudio/best[height<=360]/bestvideo[height<=480]+bestaudio/best[height<=480]/worstvideo+worstaudio/worst/best'
-      : 'bestvideo[height>=1080]+bestaudio/bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best';
+      : 'bestvideo[height>=1080]+bestaudio/bestvideo[width>=1080]+bestaudio/best[height>=1080]/best[width>=1080]';
 
     const dlArgs = [
       '--ffmpeg-location',
@@ -647,6 +654,17 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
       }
 
       if (fs.existsSync(downloadedFile) && fs.statSync(downloadedFile).size > 100000) {
+        if (!isPreview) {
+          // Strictly verify that the downloaded video meets minimal 1080p Full HD
+          const dims = await getVideoDimensions(downloadedFile, ffmpegPath);
+          if (dims) {
+            console.log(`[Downloader] Video resolution check: ${dims.width}x${dims.height} (1080p+: ${dims.is1080pOrHigher})`);
+            if (!dims.is1080pOrHigher) {
+              try { fs.unlinkSync(downloadedFile); } catch {}
+              throw new Error(`Resolusi video sumber (${dims.width}x${dims.height}) di bawah standar minimal 1080p Full HD. Video dilewati untuk menjaga kualitas konten.`);
+            }
+          }
+        }
         onProgress({ step: 'download', message: `Video download (${qualityLabel}) completed successfully.`, progress: 35 });
         return { filePath: downloadedFile, metadata };
       }
@@ -659,8 +677,15 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
   // Tier 3: Try RapidAPI fallback if available
   if (process.env.RAPIDAPI_KEY) {
     onProgress({ step: 'download', message: 'Mencoba pengunduhan cadangan via RapidAPI Stream Proxy...', progress: 28 });
-    const rapidDl = await downloadWithYouTubeMediaDownloader(url, finalExpectedPath, onProgress);
+    const rapidDl = await downloadWithYouTubeMediaDownloader(url, finalExpectedPath, onProgress, { quality });
     if (rapidDl && fs.existsSync(rapidDl.filePath)) {
+      if (!isPreview) {
+        const dims = await getVideoDimensions(rapidDl.filePath, ffmpegPath);
+        if (dims && !dims.is1080pOrHigher) {
+          try { fs.unlinkSync(rapidDl.filePath); } catch {}
+          throw new Error(`Resolusi video RapidAPI (${dims.width}x${dims.height}) di bawah standar minimal 1080p Full HD.`);
+        }
+      }
       return rapidDl;
     }
   }

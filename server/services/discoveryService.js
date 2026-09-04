@@ -514,30 +514,26 @@ export async function discoverYouTubeCandidatesForProduct({
   const productWords = normalizeText(coreTitle).split(' ').filter((word) => word.length >= 3);
   const compactTitle = productWords.slice(0, 5).join(' ');
 
-  // Targeted search modifiers to find high-production, experienced creator demonstration videos
+  // Targeted search modifiers to find specific hands-on demonstration and review videos of this exact product
   const searchModifiers = [
-    'review peragaan pemakaian',
-    'demo cara pakai tes fungsi',
-    'China creative gadgets demo',
-    'smart home gadgets tools',
-    'demonstrasi cara kerja praktis',
-    'hands on demo review',
-    'spill barang unik peragaan',
-    'kitchen gadget tools demo',
-    'unboxing aesthetic peragaan produk',
+    'review cara pakai',
+    'demo peragaan fungsi',
+    'tes fungsi cara pakai',
+    'review produk pemakaian',
+    'unboxing review cara pakai',
+    'demonstrasi cara kerja',
   ];
 
   // Randomize modifier order slightly so distinct queries are attempted across multiple jobs
   const shuffledModifiers = [...searchModifiers].sort(() => Math.random() - 0.5);
 
   const queryCandidates = [
-    `${compactTitle} ${shuffledModifiers[0]}`,
-    `${compactTitle} demo cara pakai peragaan`,
-    `${compactTitle} ${shuffledModifiers[1]}`,
-    `unboxing ${compactTitle} review pemakaian`,
-    `${compactTitle} tes fungsi peragaan`,
-    `${compactTitle} b-roll review`,
+    `"${compactTitle}" review cara pakai`,
+    `${compactTitle} demo cara pakai`,
+    `"${compactTitle}" tes fungsi peragaan`,
+    `${compactTitle} review pemakaian`,
     coreTitle,
+    compactTitle,
   ].filter(Boolean);
 
   let candidates = [];
@@ -561,10 +557,9 @@ export async function discoverYouTubeCandidatesForProduct({
     await delayWithJitter(300, 600);
   }
 
-  // Fallback: If all results were previously used, search broader query
+  // Fallback: If all results were previously used, search exact core title
   if (!candidates.length) {
-    const broaderQuery = productWords.slice(0, 3).join(' ');
-    const fallbackResults = await searchYouTubeVideos(`${broaderQuery} unboxing review`, { limit, onProgress });
+    const fallbackResults = await searchYouTubeVideos(`${compactTitle} review`, { limit, onProgress });
     const nonExcluded = (fallbackResults || []).filter((c) => {
       const vid = c.id || extractVideoId(c.url);
       return vid && !excludeSet.has(vid);
@@ -573,33 +568,17 @@ export async function discoverYouTubeCandidatesForProduct({
   }
 
   const cleanCandidates = candidates
-    .filter((candidate) => isLikelyCleanYouTubeCandidate(candidate))
+    .filter((candidate) => isLikelyCleanYouTubeCandidate(candidate, productWords))
     .map((candidate) => ({
       ...candidate,
       searchQuery: usedQuery,
       matchScore: scoreCandidateMatch(candidate, productWords, productDescription),
     }))
-    .filter((candidate) => candidate.matchScore >= 0)
+    .filter((candidate) => candidate.matchScore > 0)
     .sort((a, b) => b.matchScore - a.matchScore);
 
-  const pool = cleanCandidates.length > 0 ? cleanCandidates : candidates;
-
-  // Candidate Selection Variety / Weighted Rotation:
-  if (pool.length > 1) {
-    const topScore = pool[0].matchScore || 0;
-    const topTier = pool.filter((c) => (c.matchScore || 0) >= topScore * 0.75);
-    const rest = pool.filter((c) => (c.matchScore || 0) < topScore * 0.75);
-
-    // Shuffle topTier
-    for (let i = topTier.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [topTier[i], topTier[j]] = [topTier[j], topTier[i]];
-    }
-
-    return [...topTier, ...rest];
-  }
-
-  return pool;
+  // Return candidates strictly prioritized by highest matchScore (no random shuffling of top tier)
+  return cleanCandidates.length > 0 ? cleanCandidates : candidates;
 }
 
 export function delayWithJitter(minMs, maxMs) {
@@ -833,7 +812,7 @@ function isShopeeProductUrl(url) {
   }
 }
 
-function isLikelyCleanYouTubeCandidate(candidate) {
+export function isLikelyCleanYouTubeCandidate(candidate, productWords = []) {
   if (!candidate.url || !candidate.id) return false;
   // If duration is known, reject only if too short (<15s) or too long (>30 min)
   if (candidate.duration > 0 && (candidate.duration < 15 || candidate.duration > 1800)) return false;
@@ -842,27 +821,48 @@ function isLikelyCleanYouTubeCandidate(candidate) {
   if (isBulkyOrUnsuitableProduct(titleText)) return false;
 
   const excludedTitleWords = [
-    'podcast', 'reaction', 'kompilasi', 'compilation', 'full album', 'playlist',
+    'podcast', 'reaction', 'kompilasi', 'compilation', 'kumpulan', 'full album', 'playlist',
     'vlog', 'daily vlog', 'a day in my life', 'cerita', 'bincang', 'talkshow', 'ngobrol',
     'cara belanja', 'cara checkout', 'daftar akun', 'tutorial aplikasi', 'cara jualan', 'cara live',
     'shopee affiliate tutorial', 'aplikasi shopee',
+    // Compilation / multi-product videos (cause mismatch with single Shopee link)
+    'top 10', 'top 5', 'top 7', 'top 3', '5 alat', '10 alat', '7 alat', 'rekomendasi barang',
+    'racun shopee haul', 'haul shopee', 'haul tiktok', 'unboxing haul', 'berbagai alat', 'kumpulan gadget',
     // Filter AI-generated, synthetic, and cartoon/3D animation
     'ai generated', 'ai video', 'generative ai', 'sora', 'runway', 'kling', 'hailuo', 'pika',
     'animation', 'animasi', '3d animation', 'cgi', 'cartoon', 'kartun', 'anime'
   ];
-  return !excludedTitleWords.some((keyword) => titleText.includes(keyword));
+  if (excludedTitleWords.some((keyword) => titleText.includes(keyword))) return false;
+
+  // Strict check: Candidate title MUST contain at least one substantive product word
+  if (Array.isArray(productWords) && productWords.length > 0) {
+    const significantWords = productWords.filter(w => w.length >= 3);
+    if (significantWords.length > 0) {
+      const hasProductWord = significantWords.some(w => titleText.includes(w));
+      if (!hasProductWord) return false;
+    }
+  }
+
+  return true;
 }
 
-function scoreCandidateMatch(candidate, productWords, productDescription) {
-  const text = normalizeText(`${candidate.title} ${candidate.description}`);
+export function scoreCandidateMatch(candidate, productWords, productDescription) {
+  const titleText = normalizeText(candidate.title || '');
+  const descText = normalizeText(candidate.description || '');
+  const fullText = `${titleText} ${descText}`;
+
+  // Prioritize title hits over description to guarantee exact product alignment
+  const titleHits = productWords.filter((word) => titleText.includes(word)).length;
+  const fullHits = productWords.filter((word) => fullText.includes(word)).length;
+
   const desc = normalizeText(productDescription);
-  const productHits = productWords.filter((word) => text.includes(word)).length;
   const descHits = desc
     .split(' ')
     .filter((word) => word.length >= 5)
-    .filter((word) => text.includes(word))
+    .filter((word) => fullText.includes(word))
     .slice(0, 5).length;
-  return productHits + (descHits * 0.5);
+
+  return (titleHits * 3) + fullHits + (descHits * 0.5);
 }
 
 function dedupeByUrl(results) {

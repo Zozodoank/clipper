@@ -19,7 +19,8 @@ import { generateSrtSubtitles } from './services/subtitleService.js';
 import {
   renderSilentAntiDetectionVideo,
   mergeVoiceoverAndBurnSubtitles,
-  getMediaDurationSec
+  getMediaDurationSec,
+  getVideoDimensions
 } from './services/videoRenderer.js';
 import { generateVoiceoverTTS, cleanScriptForTTS } from './services/ttsService.js';
 import {
@@ -461,6 +462,14 @@ export async function runStage1Pipeline({
         : null);
 
     const isLowDataMode = process.env.LOW_DATA_MODE !== 'false'; // Default to Smart Low Data Mode enabled
+
+    if (cachedVideoPath) {
+      const cachedDims = await getVideoDimensions(cachedVideoPath);
+      if (cachedDims && !cachedDims.is1080pOrHigher) {
+        console.warn(`[Job ${jobId}] Cached video (${cachedVideoPath}) is below 1080p (${cachedDims.width}x${cachedDims.height}). Re-downloading 1080p source...`);
+        cachedVideoPath = null;
+      }
+    }
 
     if (cachedVideoPath) {
       rawVideoPath = cachedVideoPath;

@@ -547,6 +547,9 @@ STRICT RULES FOR VOICE OVER & CALL TO ACTION:
 - NEVER mention unboxing, opening packaging, bubble wrap, or cardboard boxes in the narration. Focus 100% on the product's practical features, active demonstration, and problem-solving benefits like a top pro affiliate creator.
 - Write in natural, engaging conversational Indonesian.
 - DILARANG KERAS menggunakan kata "kece" dalam naskah voiceover! Gunakan kata alternatif seperti "keren", "elegan", "praktis", "cakep", atau "bagus".
+- DILARANG KERAS menggunakan kata "kangen"! Jangan pernah gunakan kata "kangen" di naskah voiceover maupun caption.
+- HINDARI KATA SLANG / AWALAN INFORMAL "ng" (seperti: nggak, ngasih, ngeliat, ngerasain, ngapain, ngerepotin, ngiris, ngupas, ngatur, dll). Selalu gunakan kata baku bahasa Indonesia (seperti: tidak, tanpa, memberi, melihat, merasakan, mengiris, mengupas, dll).
+- KATA "keju" DAN "beres" WAJIB DITULIS PERSIS SEPERTI INI: "keju" dan "beres" (keju=keju, beres=beres) TANPA tanda kecil atau aksen di atas huruf e (JANGAN PERNAH tulis kéju atau bérés)!
 - DILARANG KERAS menyebutkan nama platform media sosial maupun marketplace apa pun dalam narasi suara (DILARANG menyebut: TikTok, Shopee, Instagram, YouTube, Facebook, Reels, Tokopedia, medsos, dll).
 - DILARANG mengatakan "racun TikTok", "racun Shopee", "viral di TikTok", atau "viral di medsos". Cukup gunakan "racun belanja", "barang viral", atau "produk viral".
 - NEVER say "link di bio" or "klik link di bio".
@@ -597,10 +600,12 @@ PENTING - ATURAN DURASI, TIMESTAMP & TEMPO NASKAH:
 3. Setiap baris naskah voiceover dan prompt AI Studio WAJIB diawali penanda waktu video, misal: [00:00], [00:05], [00:10], [00:15], [00:20], [00:25], [00:30], [00:35], dst.
 4. JANGAN gunakan nama karakter suara khusus (cukup gunakan header "Speaker 1").
 5. DILARANG KERAS menggunakan kata "kece"! Gunakan kata seperti keren, elegan, praktis, atau bagus.
-6. DILARANG KERAS menyebutkan nama platform media sosial atau marketplace apa pun (seperti Shopee, TikTok, Instagram, YouTube, Facebook, Reels, medsos, dll) di naskah voiceover maupun Kotak Scene!
-7. JANGAN PERNAH gunakan kata "link di bio" di dalam naskah voiceover. Selalu gunakan ajakan seperti "Cek produk di bawah sekarang", "Klik produk di bawah", atau "Checkout produk di bawah sebelum kehabisan".
-8. PADA BAGIAN 'CAPTION': DILARANG KERAS menuliskan link Shopee, URL, atau tautan web apa pun di dalam caption! Cukup sertakan hook, deskripsi manfaat, CTA di bio/komentar, dan hashtag viral.
-9. Gunakan ejaan bahasa Indonesia baku yang wajar (misal: keren, elegan, praktis) tanpa menambahkan tanda aksen é.
+6. DILARANG KERAS menggunakan kata "kangen" dan HINDARI kata gaul berawalan "ng" (seperti: nggak, ngasih, ngeliat, ngerasain, ngapain, dll). Gunakan bahasa Indonesia baku (tidak, memberi, melihat, dll).
+7. KATA "keju" DAN "beres" WAJIB DITULIS PERSIS: "keju" dan "beres" (keju=keju, beres=beres) tanpa tanda kecil atau aksen di atas huruf e.
+8. DILARANG KERAS menyebutkan nama platform media sosial atau marketplace apa pun (seperti Shopee, TikTok, Instagram, YouTube, Facebook, Reels, medsos, dll) di naskah voiceover maupun Kotak Scene!
+9. JANGAN PERNAH gunakan kata "link di bio" di dalam naskah voiceover. Selalu gunakan ajakan seperti "Cek produk di bawah sekarang", "Klik produk di bawah", atau "Checkout produk di bawah sebelum kehabisan".
+10. PADA BAGIAN 'CAPTION': DILARANG KERAS menuliskan link Shopee, URL, atau tautan web apa pun di dalam caption! Cukup sertakan hook, deskripsi manfaat, CTA di bio/komentar, dan hashtag viral.
+11. Gunakan ejaan bahasa Indonesia baku yang wajar (misal: keren, elegan, praktis, keju, beres) tanpa menambahkan tanda aksen é atau è.
 
 Return strict JSON in this format:
 {
@@ -778,6 +783,15 @@ Return strict JSON in this format:
     progress: 88
   });
 
+  voiceoverScript = sanitizeScriptVocabulary(voiceoverScript);
+  aiStudioPrompt = sanitizeScriptVocabulary(aiStudioPrompt);
+  caption = sanitizeScriptVocabulary(caption);
+  for (const s of scenes) {
+    if (s.voiceover) s.voiceover = sanitizeScriptVocabulary(s.voiceover);
+    if (s.visualDescription) s.visualDescription = sanitizeScriptVocabulary(s.visualDescription);
+    if (s.adAdvisorNotes) s.adAdvisorNotes = sanitizeScriptVocabulary(s.adAdvisorNotes);
+  }
+
   return {
     sampleContext: parsed.sampleContext || {
       productName: effectiveTitle,
@@ -792,6 +806,45 @@ Return strict JSON in this format:
     aiStudioPrompt,
     caption,
   };
+}
+
+/**
+ * Filter kata-kata script: hindari kata 'kangen' dan 'ng' slang, serta pastikan keju=keju dan beres=beres
+ */
+export function sanitizeScriptVocabulary(text) {
+  if (!text || typeof text !== 'string') return '';
+  return text
+    // 1. Tulis persis keju=keju dan beres=beres tanpa tanda aksen kecil di atas huruf e:
+    .replace(/\b(?:kéju|kèju|kêju)\b/gi, 'keju')
+    .replace(/\b(?:bérés|bèrès|bêrês)\b/gi, 'beres')
+    .replace(/\b(?:dibéréskan|dibèrèskan)\b/gi, 'dibereskan')
+    .replace(/\b(?:membéréskan|membèrèskan)\b/gi, 'membereskan')
+    .replace(/\b(?:méja|mèja|mêja)\b/gi, 'meja')
+
+    // 2. Hindari kata kangen:
+    .replace(/\bkangen\b/gi, 'ingin')
+
+    // 3. Hindari kata slang awalan "ng":
+    .replace(/\b(?:enggak|engga|nggak|ngga)\b/gi, 'tidak')
+    .replace(/\bngasih\b/gi, 'kasih')
+    .replace(/\bngeliat\b/gi, 'melihat')
+    .replace(/\bngerasain\b/gi, 'merasakan')
+    .replace(/\bngapain\b/gi, 'kenapa')
+    .replace(/\bngerepotin\b/gi, 'merepotkan')
+    .replace(/\bngaruh\b/gi, 'berpengaruh')
+    .replace(/\bngelakuin\b/gi, 'melakukan')
+    .replace(/\bngambil\b/gi, 'mengambil')
+    .replace(/\bngatur\b/gi, 'mengatur')
+    .replace(/\bngabisin\b/gi, 'menghabiskan')
+    .replace(/\bngeluarin\b/gi, 'mengeluarkan')
+    .replace(/\bngeringin\b/gi, 'mengeringkan')
+    .replace(/\bngisi\b/gi, 'mengisi')
+    .replace(/\bngiris\b/gi, 'mengiris')
+    .replace(/\bngulek\b/gi, 'mengulek')
+    .replace(/\bngaduk\b/gi, 'mengaduk')
+    .replace(/\bngupas\b/gi, 'mengupas')
+    .replace(/\bngoles\b/gi, 'mengoles')
+    .replace(/\bngocok\b/gi, 'mengocok');
 }
 
 // Robust JSON parser with auto-repair for truncated output

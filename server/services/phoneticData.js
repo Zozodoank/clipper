@@ -14,7 +14,10 @@ const MD_PATH = path.join(__dirname, '..', 'TALING_DICTIONARY.md');
 
 // Kamus fallback kata dasar taling jika file TALING_DICTIONARY.md tidak ditemukan
 export const DEFAULT_TALING_DICTIONARY = {
-  // Paling sering digunakan / Contoh user (meja & beres dinonaktifkan sesuai feedback)
+  // Paling sering digunakan / Contoh user (meja, beres, keju dinonaktifkan sesuai feedback)
+  'keju': 'keju',
+  'beres': 'beres',
+  'meja': 'meja',
   'keren': 'kéren',
   'kesel': 'késél',
   'capek': 'capék',
@@ -144,7 +147,7 @@ export const DEFAULT_TALING_DICTIONARY = {
   'kakek': 'kakék',
   'kaleng': 'kaléng',
   'karet': 'karét',
-  'keju': 'kéju',
+  'keju': 'keju',
   'kencan': 'kéncan',
   'kereta': 'keréta',
   'komedo': 'komédo',
@@ -293,8 +296,9 @@ export function getTalingDictionary() {
 // Backward compatibility
 export const TALING_DICTIONARY = DEFAULT_TALING_DICTIONARY;
 
-// Daftar kata pepet umum (/ə/) yang TIDAK BOLEH diubah jadi taling
+// Daftar kata pepet umum (/ə/) atau kata standar yang TIDAK BOLEH diubah jadi taling (tetap huruf 'e' biasa)
 export const PROTECTED_PEPET_WORDS = new Set([
+  'keju', 'beres', 'meja',
   'pegel', 'segar', 'besar', 'benar', 'senang', 'tenang', 'beli', 'berat',
   'tebal', 'sempurna', 'cepat', 'lewat', 'lemah', 'remuk', 'sederhana',
   'sedikit', 'selesai', 'tenggelam', 'pedas', 'peduli', 'pegang', 'pelan',
@@ -362,6 +366,9 @@ export function fixIndonesianWordPhonetics(word) {
   for (const suf of SUFFIXES) {
     if (lower.endsWith(suf) && lower.length > suf.length + 2) {
       const stem = lower.slice(0, -suf.length);
+      if (PROTECTED_PEPET_WORDS.has(stem)) {
+        return word;
+      }
       if (dictionary[stem]) {
         return preserveCase(word, dictionary[stem] + suf);
       }
@@ -372,6 +379,9 @@ export function fixIndonesianWordPhonetics(word) {
   for (const pref of PREFIXES) {
     if (lower.startsWith(pref) && lower.length > pref.length + 2) {
       const stem = lower.slice(pref.length);
+      if (PROTECTED_PEPET_WORDS.has(stem)) {
+        return word;
+      }
       if (dictionary[stem]) {
         return preserveCase(word, pref + dictionary[stem]);
       }
@@ -384,6 +394,9 @@ export function fixIndonesianWordPhonetics(word) {
       for (const suf of SUFFIXES) {
         if (lower.endsWith(suf) && lower.length > pref.length + suf.length + 2) {
           const stem = lower.slice(pref.length, -suf.length);
+          if (PROTECTED_PEPET_WORDS.has(stem)) {
+            return word;
+          }
           if (dictionary[stem]) {
             return preserveCase(word, pref + dictionary[stem] + suf);
           }

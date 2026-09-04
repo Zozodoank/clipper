@@ -10,10 +10,11 @@ File ini adalah daftar kata taling (/e/ atau /ɛ/) yang diubah otomatis menjadi 
 
 ---
 
-## 🚫 Kata yang Dinonaktifkan (Rindi Sudah Fasih / Tetap 'e' Biasa)
-# Kata di bawah ini dibiarkan menggunakan huruf 'e' standar:
-# meja = méja
-# beres = bérés
+## 🚫 Kata yang Dinonaktifkan / Tetap 'e' Biasa (Tanpa Tanda Aksentuasi)
+# Kata di bawah ini WAJIB persis menggunakan huruf 'e' biasa tanpa tanda kecil di atas huruf e:
+keju = keju
+beres = beres
+meja = meja
 
 ---
 

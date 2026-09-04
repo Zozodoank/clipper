@@ -31,7 +31,36 @@ export function applyIndonesianPhoneticFixes(text) {
     .replace(/\bpengen\b/gi, 'péngin')
     .replace(/\b(?:kece|kécé)\b/gi, 'keren')
     .replace(/\byuk\b/gi, 'yu')
-    .replace(/\b(?:enggak|engga|nggak|ngga)\b/gi, 'énggak')
+    .replace(/\b(?:enggak|engga|nggak|ngga)\b/gi, 'tidak')
+
+    // Hindari kata kangen dan kata-kata slang informal berawalan "ng":
+    .replace(/\bkangen\b/gi, 'ingin')
+    .replace(/\bngasih\b/gi, 'kasih')
+    .replace(/\bngeliat\b/gi, 'melihat')
+    .replace(/\bngerasain\b/gi, 'merasakan')
+    .replace(/\bngapain\b/gi, 'kenapa')
+    .replace(/\bngerepotin\b/gi, 'merepotkan')
+    .replace(/\bngaruh\b/gi, 'berpengaruh')
+    .replace(/\bngelakuin\b/gi, 'melakukan')
+    .replace(/\bngambil\b/gi, 'mengambil')
+    .replace(/\bngatur\b/gi, 'mengatur')
+    .replace(/\bngabisin\b/gi, 'menghabiskan')
+    .replace(/\bngeluarin\b/gi, 'mengeluarkan')
+    .replace(/\bngeringin\b/gi, 'mengeringkan')
+    .replace(/\bngisi\b/gi, 'mengisi')
+    .replace(/\bngiris\b/gi, 'mengiris')
+    .replace(/\bngulek\b/gi, 'mengulek')
+    .replace(/\bngaduk\b/gi, 'mengaduk')
+    .replace(/\bngupas\b/gi, 'mengupas')
+    .replace(/\bngoles\b/gi, 'mengoles')
+    .replace(/\bngocok\b/gi, 'mengocok')
+
+    // Tulis persis keju=keju dan beres=beres tanpa tanda aksen kecil di atas huruf e:
+    .replace(/\b(?:kéju|kèju|kêju)\b/gi, 'keju')
+    .replace(/\b(?:bérés|bèrès|bêrês)\b/gi, 'beres')
+    .replace(/\b(?:dibéréskan|dibèrèskan)\b/gi, 'dibereskan')
+    .replace(/\b(?:membéréskan|membèrèskan)\b/gi, 'membereskan')
+    .replace(/\b(?:méja|mèja|mêja)\b/gi, 'meja')
 
     // Filter platform media sosial / marketplace agar tidak pernah terucap di voiceover:
     .replace(/\b(?:racun\s+)?(?:tiktok|shopee|instagram|youtube|facebook|reels|medsos)\b/gi, 'belanja')

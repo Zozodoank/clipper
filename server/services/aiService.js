@@ -585,8 +585,11 @@ Speaker 1
    - IMPORTANT: The output of 'aiStudioPrompt' must be a plain string (not JSON) ready to paste directly into AI Studio. Do NOT add any JSON object inside it.
 
 5. 'caption':
-   - High-converting Instagram & Facebook Reels caption with emojis, attention-grabbing hook, product benefits, CTA (e.g. 'Cek produk di bio / komentar ya!'), and relevant Indonesian hashtags (#racunbelanja, #racuntiktok, #reelsviral, #affiliateindonesia, #spillracun).
-   - STRICT RULE: DO NOT include any URLs, website links, or Shopee links inside the caption text!
+   - High-converting Instagram & Facebook Reels caption with emojis, attention-grabbing hook, product benefits, CTA (e.g. 'Cek produk di bio ya!'), and relevant Indonesian hashtags (#racunbelanja, #racuntiktok, #reelsviral, #affiliateindonesia, #spillracun).
+   - STRICT RULES FOR CAPTION:
+     * DILARANG KERAS menyertakan link Shopee, tautan web, atau URL apa pun!
+     * DILARANG KERAS menggunakan karakter China/Mandarin/asing (seperti 朋友们 atau huruf Hanzi)! Gunakan 100% bahasa Indonesia.
+     * DILARANG KERAS menuliskan ajakan komentar seperti 'Cek selengkapnya di komentar pertama ya,朋友们!' atau 'cek komentar pertama'. Cukup ajak cek profil atau bio ('Cek produk di bio ya!').
 
 Output MUST be strictly valid JSON matching the requested schema.`;
 
@@ -612,8 +615,9 @@ PENTING - ATURAN DURASI, TIMESTAMP & TEMPO NASKAH:
 7. KATA "keju" DAN "beres" WAJIB DITULIS PERSIS: "keju" dan "beres" (keju=keju, beres=beres) tanpa tanda kecil atau aksen di atas huruf e.
 8. DILARANG KERAS menyebutkan nama platform media sosial atau marketplace apa pun (seperti Shopee, TikTok, Instagram, YouTube, Facebook, Reels, medsos, dll) di naskah voiceover maupun Kotak Scene!
 9. JANGAN PERNAH gunakan kata "link di bio" di dalam naskah voiceover. Selalu gunakan ajakan seperti "Cek produk di bawah sekarang", "Klik produk di bawah", atau "Checkout produk di bawah sebelum kehabisan".
-10. PADA BAGIAN 'CAPTION': DILARANG KERAS menuliskan link Shopee, URL, atau tautan web apa pun di dalam caption! Cukup sertakan hook, deskripsi manfaat, CTA di bio/komentar, dan hashtag viral.
+10. PADA BAGIAN 'CAPTION': DILARANG KERAS menuliskan link Shopee, URL, tautan web apa pun, karakter China/Mandarin (seperti 朋友们), dan ajakan cek komentar pertama! Cukup sertakan hook, deskripsi manfaat, CTA di bio (misal: 'Cek produk di bio ya!'), dan hashtag viral.
 11. Gunakan ejaan bahasa Indonesia baku yang wajar (misal: keren, elegan, praktis, keju, beres) tanpa menambahkan tanda aksen é atau è.
+12. WAJIB 100% Bahasa Indonesia: DILARANG KERAS menyertakan tulisan/karakter China (Mandarin/Hanzi) di seluruh output (naskah, visual, scene, caption, prompt).
 
 Return strict JSON in this format:
 {
@@ -636,7 +640,7 @@ Return strict JSON in this format:
   ],
   "voiceoverScript": "[00:00] Masih repot marut keju pakai alat lama?\\n[00:05] Kenalin parutan serbaguna ini...\\n[00:30] Cek produk di bawah sekarang!",
   "aiStudioPrompt": "Scene\\nStudio dapur modern...\\n\\nSample Context\\nDurasi voice over 30 detik. Iklan affiliate viral...\\n\\nSpeaker 1\\n[00:00] [intrigue] Masih repot...\\n[00:05] [excited] Kenalin...\\n[00:30] [excited] Cek produk di bawah sekarang!",
-  "caption": "Teks caption lengkap dengan link pembelian dan hashtag..."
+  "caption": "Teks caption lengkap dengan hook, manfaat, ajakan cek bio, dan hashtag viral..."
 }`;
 
   const messageContent = [
@@ -754,15 +758,24 @@ Return strict JSON in this format:
   }
 
   let caption = (parsed.caption || '').trim();
-  // Strictly strip any accidental URLs, Shopee links, or "Link Produk: https://..." from caption
+  // Strictly strip URLs, Shopee links, Chinese characters (朋友们), and unwanted comment CTAs
   caption = caption
     .replace(/(?:🛒\s*)?(?:link\s+(?:produk|shopee|pembelian)?\s*:\s*)?https?:\/\/[^\s]+/gi, '')
     .replace(/(?:🛒\s*)?(?:link\s+(?:produk|shopee|pembelian)?\s*:\s*)?shope\.ee\/[^\s]+/gi, '')
+    .replace(/(?:🛒\s*)?(?:cek\s+selengkapnya\s+)?(?:cek\s+)?(?:link\s+)?(?:di\s+)?(?:kolom\s+)?komentar\s+(?:pertama|ke-1|1|pin|bawah)?(?:\s+ya)?(?:\s*[,!?. -]*[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+)*(?:\s*[,!?. -])*/gi, '')
+    .replace(/cek\s+selengkapnya\s+di\s+komentar(?:\s*[,!?.])?/gi, '')
+    .replace(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+/gu, '')
+    .replace(/^[ \t]*[,!?. -]+[ \t]*$/gm, '')
+    .replace(/^[ \t]*[,!?. -]+(?=\s*#)/gm, '')
+    .replace(/,\s*([!?.])/g, '$1')
+    .replace(/,\s*,+/g, ',')
+    .replace(/[ \t]+([,!?.])/g, '$1')
+    .replace(/[ \t]{2,}/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
   if (!caption) {
-    caption = `🔥 Racun Belanja Viral: ${effectiveTitle}!\n\n${effectiveDesc ? effectiveDesc + '\n\n' : ''}Buruan checkout sekarang mumpung lagi diskon spesial!\n\n🛒 Link produk cek di bio / komentar ya!\n\n#racunbelanja #racuntiktok #reelsviral #affiliateindonesia #spillracun`;
+    caption = `🔥 Racun Belanja Viral: ${effectiveTitle}!\n\n${effectiveDesc ? effectiveDesc + '\n\n' : ''}Buruan checkout sekarang mumpung lagi diskon spesial!\n\n🛒 Cek produk di bio sekarang ya!\n\n#racunbelanja #racuntiktok #reelsviral #affiliateindonesia #spillracun`;
   }
 
   let aiStudioPrompt = (parsed.aiStudioPrompt || '').trim();
@@ -822,6 +835,9 @@ Return strict JSON in this format:
 export function sanitizeScriptVocabulary(text) {
   if (!text || typeof text !== 'string') return '';
   return text
+    // 0. Hapus karakter China/Mandarin/Hanzi (misal dari minimax):
+    .replace(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+/gu, '')
+
     // 1. Tulis persis keju=keju dan beres=beres tanpa tanda aksen kecil di atas huruf e:
     .replace(/\b(?:kéju|kèju|kêju)\b/gi, 'keju')
     .replace(/\b(?:bérés|bèrès|bêrês)\b/gi, 'beres')

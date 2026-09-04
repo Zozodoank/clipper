@@ -306,14 +306,24 @@ app.get('/api/health', async (req, res) => {
   });
 });
 
-function stripShopeeLinkFromCaption(caption = '') {
-  if (!caption) return '';
+function sanitizeCaptionText(caption = '') {
+  if (!caption || typeof caption !== 'string') return '';
   return caption
     .replace(/(?:🛒\s*)?(?:link\s+(?:produk|shopee|pembelian)?\s*:\s*)?https?:\/\/[^\s]+/gi, '')
     .replace(/(?:🛒\s*)?(?:link\s+(?:produk|shopee|pembelian)?\s*:\s*)?shope\.ee\/[^\s]+/gi, '')
+    .replace(/(?:🛒\s*)?(?:cek\s+selengkapnya\s+)?(?:cek\s+)?(?:link\s+)?(?:di\s+)?(?:kolom\s+)?komentar\s+(?:pertama|ke-1|1|pin|bawah)?(?:\s+ya)?(?:\s*[,!?. -]*[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+)*(?:\s*[,!?. -])*/gi, '')
+    .replace(/cek\s+selengkapnya\s+di\s+komentar(?:\s*[,!?.])?/gi, '')
+    .replace(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+/gu, '')
+    .replace(/^[ \t]*[,!?. -]+[ \t]*$/gm, '')
+    .replace(/^[ \t]*[,!?. -]+(?=\s*#)/gm, '')
+    .replace(/,\s*([!?.])/g, '$1')
+    .replace(/,\s*,+/g, ',')
+    .replace(/[ \t]+([,!?.])/g, '$1')
+    .replace(/[ \t]{2,}/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
+const stripShopeeLinkFromCaption = sanitizeCaptionText;
 
 // 2. Get all jobs history
 app.get('/api/jobs', (req, res) => {
@@ -1953,7 +1963,7 @@ app.get('/api/jobs/:jobId/script.txt', (req, res) => {
     job.aiStudioPrompt || '(Belum ada prompt AI Studio)',
     `\n------------------------------------------------------\n`,
     `--- 3. CAPTION & HASHTAGS REELS / TIKTOK ---`,
-    job.caption || '(Belum ada caption)',
+    sanitizeCaptionText(job.caption || '') || '(Belum ada caption)',
     `\n------------------------------------------------------\n`,
     `--- 4. KOTAK SCENE BREAKDOWN (5 DETIK) ---`,
     ...(Array.isArray(job.scenes) ? job.scenes.map(s => `[Scene ${s.sceneNumber}] (${s.timeRange || s.startTime + ' - ' + s.endTime})\nVisual: ${s.visualDescription}\nNarasi: "${s.voiceover}"\nNotes : ${s.adAdvisorNotes || '-'}\n`) : ['-']),

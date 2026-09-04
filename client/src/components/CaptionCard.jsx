@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Copy,
   Check,
@@ -94,10 +94,30 @@ function parseAiStudioSections(promptText, sampleContext, voiceoverScript, video
   return { scene, context, speaker };
 }
 
+function cleanCaptionText(caption = '') {
+  if (!caption || typeof caption !== 'string') return '';
+  return caption
+    .replace(/(?:🛒\s*)?(?:link\s+(?:produk|shopee|pembelian)?\s*:\s*)?https?:\/\/[^\s]+/gi, '')
+    .replace(/(?:🛒\s*)?(?:link\s+(?:produk|shopee|pembelian)?\s*:\s*)?shope\.ee\/[^\s]+/gi, '')
+    .replace(/(?:🛒\s*)?(?:cek\s+selengkapnya\s+)?(?:cek\s+)?(?:link\s+)?(?:di\s+)?(?:kolom\s+)?komentar\s+(?:pertama|ke-1|1|pin|bawah)?(?:\s+ya)?(?:\s*[,!?. -]*[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+)*(?:\s*[,!?. -])*/gi, '')
+    .replace(/cek\s+selengkapnya\s+di\s+komentar(?:\s*[,!?.])?/gi, '')
+    .replace(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+/gu, '')
+    .replace(/^[ \t]*[,!?. -]+[ \t]*$/gm, '')
+    .replace(/^[ \t]*[,!?. -]+(?=\s*#)/gm, '')
+    .replace(/,\s*([!?.])/g, '$1')
+    .replace(/,\s*,+/g, ',')
+    .replace(/[ \t]+([,!?.])/g, '$1')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export default function CaptionCard({ result }) {
   // 'scenes' | 'script' | 'context' | 'aistudio' | 'caption'
   const [activeTab, setActiveTab] = useState('scenes');
   const [copiedField, setCopiedField] = useState(null);
+
+  const cleanedCaption = useMemo(() => cleanCaptionText(result?.caption || ''), [result?.caption]);
 
   if (!result) return null;
 
@@ -208,7 +228,7 @@ export default function CaptionCard({ result }) {
             if (activeTab === 'script') copyToClipboard(result.voiceoverScript, 'script');
             if (activeTab === 'context') copyToClipboard(contextText, 'context');
             if (activeTab === 'aistudio') copyToClipboard(fullAiStudioPrompt, 'aistudio');
-            if (activeTab === 'caption') copyToClipboard(result.caption, 'caption');
+            if (activeTab === 'caption') copyToClipboard(cleanedCaption, 'caption');
           }}
           className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition-all active:scale-95 shadow-sm ml-auto"
           title="Salin isi tab yang sedang aktif"
@@ -472,7 +492,7 @@ export default function CaptionCard({ result }) {
           <div className="relative flex-1 flex flex-col">
             <textarea
               readOnly
-              value={result.caption}
+              value={cleanedCaption}
               rows={13}
               className="w-full flex-1 min-h-[280px] bg-slate-950/90 border border-slate-800 rounded-xl p-4 text-xs text-slate-200 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-rose-500/50 resize-none select-all"
             />

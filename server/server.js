@@ -173,6 +173,7 @@ function resolveOutputVideoPath(filename) {
 const activeJobs = new Map();
 const jobProgress = new Map();
 const autoRuns = new Map();
+const autoRetryRuns = new Map();
 
 /** Load jobs from disk into memory */
 function loadJobsFromDisk() {
@@ -347,6 +348,7 @@ app.get('/api/jobs', (req, res) => {
       highlight: job.highlight || null,
       productHook: job.productHook || '',
       videoTitle: job.videoTitle || job.productTitle || '',
+      isAutoRetrying: autoRetryRuns.get(jobId)?.status === 'running',
     });
   }
 
@@ -495,6 +497,255 @@ app.post('/api/jobs/:jobId/retry', async (req, res) => {
   })();
 
   res.json({ success: true, jobId, message: 'Job sedang di-generate ulang dengan source video 1080p baru & voiceover baru.' });
+});
+
+// ─── 3c. Auto Retry Engine for Exact Product Match ───────────────────────────
+
+function publicAutoRetryState(run) {
+  if (!run) return { status: 'idle' };
+  return {
+    jobId: run.jobId,
+    status: run.status,
+    attemptCount: run.attemptCount || 0,
+    currentVideoTitle: run.currentVideoTitle || '',
+    message: run.message || '',
+    startedAt: run.startedAt,
+    updatedAt: run.updatedAt,
+  };
+}
+
+async function runAutoRetryWorker(jobId, run) {
+  try {
+    const job = activeJobs.get(jobId);
+    if (!job || !job.productTitle) {
+      run.status = 'error';
+      run.message = 'Job tidak memiliki judul produk yang valid.';
+      run.updatedAt = new Date().toISOString();
+      updateJobProgress(jobId, { step: 'error', status: 'error', error: run.message, isAutoRetrying: false });
+      return;
+    }
+
+    const targetTitle = job.productTitle;
+    console.log(`[AutoRetry ${jobId}] Memulai Auto Retry pencarian video persis untuk "${targetTitle}"...`);
+    updateJobProgress(jobId, {
+      step: 'auto_retry_start',
+      message: `[Auto Retry] Memulai pencarian video yang cocok persis & faceless untuk "${targetTitle.slice(0, 30)}..."`,
+      progress: 5,
+      status: 'running',
+      isAutoRetrying: true,
+      attemptCount: 0,
+    });
+
+    const usedVids = getAllUsedYouTubeVideoIds();
+    const oldVid = extractVideoId(job.youtubeUrl);
+    if (oldVid) usedVids.add(oldVid);
+
+    let foundSuccess = false;
+
+    while (run.status === 'running') {
+      if (run.attemptCount >= 60) {
+        run.status = 'error';
+        run.message = 'Mencapai batas maksimal 60 percobaan pencarian video.';
+        run.updatedAt = new Date().toISOString();
+        break;
+      }
+
+      run.message = `[Percobaan ke-${run.attemptCount + 1}] Mencari video YouTube cocok persis untuk "${targetTitle.slice(0, 30)}..."`;
+      run.updatedAt = new Date().toISOString();
+      updateJobProgress(jobId, {
+        step: 'auto_youtube_search',
+        message: run.message,
+        progress: 8,
+        status: 'running',
+        isAutoRetrying: true,
+        attemptCount: run.attemptCount + 1,
+      });
+
+      const candidates = await discoverYouTubeCandidatesForProduct({
+        productTitle: targetTitle,
+        productDescription: job.productDescription,
+        limit: 8,
+        excludeVideoIds: usedVids,
+        searchIteration: run.searchIteration,
+        onProgress: (p) => updateJobProgress(jobId, { ...p, status: 'running', isAutoRetrying: true }),
+      });
+      run.searchIteration++;
+
+      if (!candidates || candidates.length === 0) {
+        run.message = `Tidak ada kandidat baru pada pencarian ini. Mencoba variasi kata kunci lain...`;
+        updateJobProgress(jobId, { step: 'auto_retry_wait', message: run.message, progress: 10, status: 'running', isAutoRetrying: true });
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        continue;
+      }
+
+      for (const candidate of candidates) {
+        if (run.status === 'stopping' || run.status === 'stopped') break;
+
+        const candVid = extractVideoId(candidate.url) || candidate.id;
+        if (candVid) usedVids.add(candVid);
+
+        run.attemptCount++;
+        run.currentVideoTitle = candidate.title || '';
+        run.message = `[Percobaan ke-${run.attemptCount}] Menguji video: "${(candidate.title || targetTitle).slice(0, 35)}..."`;
+        run.updatedAt = new Date().toISOString();
+
+        updateJobProgress(jobId, {
+          step: 'download',
+          message: run.message,
+          progress: 12,
+          status: 'running',
+          isAutoRetrying: true,
+          attemptCount: run.attemptCount,
+        });
+
+        // Clean any old outputs / temp files before testing this candidate
+        deleteJobFiles(jobId, outputDir, tempDir);
+
+        try {
+          job.youtubeUrl = candidate.url;
+          activeJobs.set(jobId, job);
+          persistJob(jobId, job);
+
+          await runStage1Pipeline({
+            jobId,
+            youtubeUrl: candidate.url,
+            shopeeLink: job.shopeeLink,
+            productTitle: targetTitle,
+            productDescription: job.productDescription,
+            apiKey: undefined,
+            options: { aiProvider: 'openrouter' },
+            requireCleanGeminiPlan: true,
+            onProgress: (p) => updateJobProgress(jobId, {
+              ...p,
+              status: 'running',
+              isAutoRetrying: true,
+              attemptCount: run.attemptCount,
+              message: `[Percobaan ke-${run.attemptCount}] ${p.message || ''}`
+            }),
+          });
+
+          foundSuccess = true;
+          run.status = 'completed';
+          run.message = `✅ Auto Retry berhasil pada percobaan ke-${run.attemptCount}! Video cocok persis & 100% faceless selesai.`;
+          run.updatedAt = new Date().toISOString();
+          console.log(`[AutoRetry ${jobId}] BERHASIL pada percobaan ke-${run.attemptCount} dengan video: ${candidate.url}`);
+          break;
+        } catch (candErr) {
+          console.warn(`[AutoRetry ${jobId}] Kandidat ke-${run.attemptCount} (${candidate.url}) ditolak/gagal: ${candErr.message}`);
+          deleteJobFiles(jobId, outputDir, tempDir);
+          updateJobProgress(jobId, {
+            step: 'auto_retry_next',
+            message: `[Percobaan ke-${run.attemptCount} Ditolak] ${candErr.message.slice(0, 80)}... Mencoba kandidat berikutnya...`,
+            progress: 10,
+            status: 'running',
+            isAutoRetrying: true,
+            attemptCount: run.attemptCount,
+          });
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+      }
+
+      if (foundSuccess) break;
+      if (run.status === 'stopping' || run.status === 'stopped') break;
+
+      // Jitter delay between search query batches to prevent YouTube scraping blocks
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+
+    if (run.status === 'stopping' || run.status === 'stopped') {
+      run.status = 'stopped';
+      run.message = `Auto Retry dihentikan oleh pengguna setelah ${run.attemptCount} percobaan.`;
+      run.updatedAt = new Date().toISOString();
+      console.log(`[AutoRetry ${jobId}] Dihentikan oleh user.`);
+      updateJobProgress(jobId, {
+        step: 'auto_retry_stopped',
+        message: run.message,
+        progress: 100,
+        status: 'completed',
+        isAutoRetrying: false,
+      });
+    } else if (foundSuccess) {
+      updateJobProgress(jobId, {
+        step: 'completed',
+        message: `🎉 Video Final 9:16 + Voiceover Gadis Indonesia & Subtitle Selesai (Auto Retry Berhasil)!`,
+        progress: 100,
+        status: 'completed',
+        isAutoRetrying: false,
+        result: activeJobs.get(jobId),
+      });
+    } else if (run.status === 'error') {
+      updateJobProgress(jobId, {
+        step: 'error',
+        message: run.message,
+        progress: 100,
+        status: 'error',
+        error: run.message,
+        isAutoRetrying: false,
+      });
+    }
+  } catch (workerErr) {
+    console.error(`[AutoRetry ${jobId}] Fatal worker error:`, workerErr);
+    run.status = 'error';
+    run.message = workerErr.message;
+    run.updatedAt = new Date().toISOString();
+    updateJobProgress(jobId, {
+      step: 'error',
+      message: `Auto Retry gagal: ${workerErr.message}`,
+      status: 'error',
+      error: workerErr.message,
+      isAutoRetrying: false,
+    });
+  }
+}
+
+app.post('/api/jobs/:jobId/auto-retry/start', async (req, res) => {
+  reloadEnvironment();
+  const { jobId } = req.params;
+  const job = activeJobs.get(jobId);
+  if (!job) {
+    return res.status(404).json({ error: `Job ${jobId} tidak ditemukan.` });
+  }
+
+  const existingRun = autoRetryRuns.get(jobId);
+  if (existingRun && existingRun.status === 'running') {
+    return res.json({ success: true, autoRetry: publicAutoRetryState(existingRun) });
+  }
+
+  const run = {
+    jobId,
+    status: 'running',
+    attemptCount: 0,
+    searchIteration: 0,
+    currentVideoTitle: '',
+    message: `Memulai Auto Retry untuk "${job.productTitle}"...`,
+    startedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  autoRetryRuns.set(jobId, run);
+
+  // Trigger continuous auto-retry worker in background
+  runAutoRetryWorker(jobId, run);
+
+  res.json({ success: true, jobId, autoRetry: publicAutoRetryState(run) });
+});
+
+app.post('/api/jobs/:jobId/auto-retry/stop', (req, res) => {
+  const { jobId } = req.params;
+  const run = autoRetryRuns.get(jobId);
+  if (run && run.status === 'running') {
+    run.status = 'stopping';
+    run.message = 'Menghentikan Auto Retry...';
+    run.updatedAt = new Date().toISOString();
+    autoRetryRuns.set(jobId, run);
+    return res.json({ success: true, autoRetry: publicAutoRetryState(run) });
+  }
+  res.json({ success: true, autoRetry: publicAutoRetryState(run) });
+});
+
+app.get('/api/jobs/:jobId/auto-retry/status', (req, res) => {
+  const { jobId } = req.params;
+  const run = autoRetryRuns.get(jobId);
+  res.json({ autoRetry: publicAutoRetryState(run) });
 });
 
 // 4. SSE endpoint for live job progress streaming

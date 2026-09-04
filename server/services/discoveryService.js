@@ -507,6 +507,7 @@ export async function discoverYouTubeCandidatesForProduct({
   productDescription = '',
   limit = 10,
   excludeVideoIds = new Set(),
+  searchIteration = 0,
   onProgress = () => {},
 } = {}) {
   const excludeSet = excludeVideoIds instanceof Set ? excludeVideoIds : new Set(excludeVideoIds || []);
@@ -514,27 +515,23 @@ export async function discoverYouTubeCandidatesForProduct({
   const productWords = normalizeText(coreTitle).split(' ').filter((word) => word.length >= 3);
   const compactTitle = productWords.slice(0, 5).join(' ');
 
-  // Targeted search modifiers to find specific hands-on demonstration and review videos of this exact product
-  const searchModifiers = [
-    'review cara pakai',
-    'demo peragaan fungsi',
-    'tes fungsi cara pakai',
-    'review produk pemakaian',
-    'unboxing review cara pakai',
-    'demonstrasi cara kerja',
-  ];
-
-  // Randomize modifier order slightly so distinct queries are attempted across multiple jobs
-  const shuffledModifiers = [...searchModifiers].sort(() => Math.random() - 0.5);
-
-  const queryCandidates = [
+  // Dynamic search query candidate sets depending on searchIteration for deeper retry diversity
+  const baseQueryCandidates = [
     `"${compactTitle}" review cara pakai`,
     `${compactTitle} demo cara pakai`,
     `"${compactTitle}" tes fungsi peragaan`,
     `${compactTitle} review pemakaian`,
-    coreTitle,
+    `"${compactTitle}" demonstrasi cara kerja`,
+    `"${compactTitle}" tutorial pemakaian`,
+    `"${compactTitle}" cara penggunaan`,
+    `"${compactTitle}" review produk`,
+    `${coreTitle} review`,
     compactTitle,
   ].filter(Boolean);
+
+  // Rotate query order based on searchIteration so consecutive auto retry attempts hit fresh queries first
+  const offset = searchIteration % baseQueryCandidates.length;
+  const queryCandidates = [...baseQueryCandidates.slice(offset), ...baseQueryCandidates.slice(0, offset)];
 
   let candidates = [];
   let usedQuery = queryCandidates[0];
@@ -825,6 +822,9 @@ export function isLikelyCleanYouTubeCandidate(candidate, productWords = []) {
     'vlog', 'daily vlog', 'a day in my life', 'cerita', 'bincang', 'talkshow', 'ngobrol',
     'cara belanja', 'cara checkout', 'daftar akun', 'tutorial aplikasi', 'cara jualan', 'cara live',
     'shopee affiliate tutorial', 'aplikasi shopee',
+    // Creator/face-centric and person-focused videos
+    'muka', 'wajah', 'facecam', 'webcam', 'selfie', 'grwm', 'get ready with me',
+    'try on haul', 'try on', 'outfit', 'ootd', 'mukbang', 'skincare routine', 'makeup tutorial',
     // Compilation / multi-product videos (cause mismatch with single Shopee link)
     'top 10', 'top 5', 'top 7', 'top 3', '5 alat', '10 alat', '7 alat', 'rekomendasi barang',
     'racun shopee haul', 'haul shopee', 'haul tiktok', 'unboxing haul', 'berbagai alat', 'kumpulan gadget',

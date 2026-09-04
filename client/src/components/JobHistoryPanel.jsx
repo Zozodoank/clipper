@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import {
   History, RefreshCw, Trash2, Film, CheckCircle2, AlertCircle,
   Clock, Download, Music, ChevronRight, X, Info, FolderOpen, ExternalLink,
-  Sparkles, Volume2, AlertTriangle, Loader2, Search
+  Sparkles, Volume2, AlertTriangle, Loader2, Search, Zap, Square
 } from 'lucide-react';
 
 const STAGE_CONFIG = {
@@ -34,6 +34,7 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
   const [retryingId, setRetryingId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('all'); // 'all' | 'completed' | 'tts' | 'failed'
+  const [autoRetryingJobs, setAutoRetryingJobs] = useState(new Set());
 
   // TTS processing state
   const [processingTtsId, setProcessingTtsId] = useState(null);
@@ -55,7 +56,15 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
       const res = await fetch('/api/jobs');
       if (res.ok) {
         const data = await res.json();
-        setJobs(data.jobs || []);
+        const loadedJobs = data.jobs || [];
+        setJobs(loadedJobs);
+        
+        // Sync active auto retrying jobs
+        const activeRetrySet = new Set();
+        loadedJobs.forEach(j => {
+          if (j.isAutoRetrying) activeRetrySet.add(j.jobId);
+        });
+        setAutoRetryingJobs(activeRetrySet);
       }
     } catch (err) {
       console.warn('Could not fetch job history:', err.message);
@@ -120,6 +129,15 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
 
     return () => clearInterval(interval);
   }, [batchStatus.isRunning]);
+
+  // Active polling while any job is in Auto Retry mode
+  useEffect(() => {
+    if (autoRetryingJobs.size === 0) return;
+    const interval = setInterval(() => {
+      fetchJobs();
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [autoRetryingJobs.size]);
 
   const handleOpenFolder = async (e, filename) => {
     e.stopPropagation();
@@ -235,6 +253,63 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
       }
     } else {
       onSelectJob(job);
+    }
+  };
+
+  const handleStartAutoRetry = async (e, job) => {
+    e.stopPropagation();
+    if (autoRetryingJobs.has(job.jobId)) return;
+
+    if (!confirm(`Mulai Auto Retry untuk "${job.productTitle || job.jobId}"?\n\nSistem akan mencari video YouTube secara terus-menerus yang cocok persis dengan produk ini dan 100% bebas wajah/manusia hingga selesai, atau sampai Anda menekan tombol Stop Auto Retry.`)) {
+      return;
+    }
+
+    try {
+      setAutoRetryingJobs((prev) => new Set(prev).add(job.jobId));
+      const res = await fetch(`/api/jobs/${job.jobId}/auto-retry/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        alert(`Gagal memulai Auto Retry: ${data.error || 'Terjadi kesalahan'}`);
+        setAutoRetryingJobs((prev) => {
+          const next = new Set(prev);
+          next.delete(job.jobId);
+          return next;
+        });
+        return;
+      }
+      if (onSelectJob) {
+        onSelectJob({ ...job, stage: 'running', isAutoRetrying: true });
+      }
+      fetchJobs();
+    } catch (err) {
+      console.error('Error starting auto retry:', err);
+      alert(`Gagal: ${err.message}`);
+      setAutoRetryingJobs((prev) => {
+        const next = new Set(prev);
+        next.delete(job.jobId);
+        return next;
+      });
+    }
+  };
+
+  const handleStopAutoRetry = async (e, job) => {
+    e.stopPropagation();
+    try {
+      await fetch(`/api/jobs/${job.jobId}/auto-retry/stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      setAutoRetryingJobs((prev) => {
+        const next = new Set(prev);
+        next.delete(job.jobId);
+        return next;
+      });
+      fetchJobs();
+    } catch (err) {
+      console.warn('Error stopping auto retry:', err);
     }
   };
 
@@ -499,6 +574,7 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
             const isAwaitingVoiceover = !job.hasFinalVideo && (job.stage === 'awaiting_voiceover' || job.hasSilentVideo);
             const isProcessingThis = processingTtsId === job.jobId || (batchStatus.isRunning && batchStatus.currentJobId === job.jobId);
             const isRetryingThis = retryingId === job.jobId;
+            const isAutoRetryingThis = autoRetryingJobs.has(job.jobId) || job.isAutoRetrying;
 
             // Determine button label and style
             const actionConfig = (() => {
@@ -514,6 +590,8 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
                 className={`group relative p-3.5 rounded-xl border transition-all cursor-pointer ${
                   isCurrent
                     ? 'border-shopee-500/50 bg-shopee-500/10 ring-1 ring-shopee-500/30'
+                    : isAutoRetryingThis
+                    ? 'border-amber-500/50 bg-amber-950/20 ring-1 ring-amber-500/40 animate-pulse'
                     : isAwaitingVoiceover
                     ? 'border-emerald-500/30 bg-emerald-950/10 hover:bg-emerald-950/20 ring-1 ring-emerald-500/20'
                     : isRetryable
@@ -538,6 +616,12 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
                     {/* Stage badge */}
                     <div className="mt-2 flex items-center gap-2 flex-wrap">
                       <StageBadge stage={job.stage} />
+                      {isAutoRetryingThis && (
+                        <span className="text-[10px] text-amber-300 font-bold bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/40 flex items-center gap-1 animate-pulse">
+                          <Zap className="w-2.5 h-2.5 fill-current text-amber-400" />
+                          Auto Retrying...
+                        </span>
+                      )}
                       {job.hasDownloadedVideo && (
                         <span className="text-[10px] text-blue-400 font-semibold bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20">
                           📥 Video Tersimpan
@@ -619,16 +703,40 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
                                 <FolderOpen className="w-3.5 h-3.5" />
                               </button>
 
-                              {/* PROMINENT RETRY BUTTON FOR COMPLETED JOBS */}
+                              {/* AUTO RETRY BUTTON FOR COMPLETED JOBS */}
+                              {isAutoRetryingThis ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleStopAutoRetry(e, job)}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 transition-all shadow-sm animate-pulse"
+                                  title="Hentikan pencarian Auto Retry untuk produk ini"
+                                >
+                                  <Square className="w-3 h-3 fill-current text-red-400" />
+                                  <span>Stop Auto Retry</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={isRetryingThis}
+                                  onClick={(e) => handleStartAutoRetry(e, job)}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-amber-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-300 border border-amber-500/40 transition-all shadow-sm hover:scale-[1.02] active:scale-[0.98]"
+                                  title="Auto Retry terus mencari video persis & faceless sampai selesai atau distop"
+                                >
+                                  <Zap className="w-3 h-3 text-amber-400 fill-amber-400/40" />
+                                  <span>Auto Retry</span>
+                                </button>
+                              )}
+
+                              {/* Single Retry Button */}
                               <button
                                 type="button"
-                                disabled={isRetryingThis}
-                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition-all shadow-sm"
-                                title="Generate ulang video 1080p & voiceover baru untuk produk ini"
+                                disabled={isRetryingThis || isAutoRetryingThis}
+                                className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/60 transition-all shadow-sm"
+                                title="Generate ulang 1x percobaan saja"
                                 onClick={(e) => handleRetryJob(e, job)}
                               >
                                 <RefreshCw className={`w-3 h-3 ${isRetryingThis ? 'animate-spin text-amber-400' : ''}`} />
-                                <span>{isRetryingThis ? 'Memproses...' : 'Retry'}</span>
+                                <span className="hidden xl:inline">{isRetryingThis ? '...' : 'Retry 1x'}</span>
                               </button>
                             </>
                           )}

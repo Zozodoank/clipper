@@ -1,7 +1,7 @@
 import React from 'react';
-import { Download, Film, Sparkles, Clapperboard, Layers, CheckCircle2, AlertCircle, Loader2, Music, RefreshCw, ExternalLink, Key, CreditCard } from 'lucide-react';
+import { Download, Film, Sparkles, Clapperboard, Layers, CheckCircle2, AlertCircle, Loader2, Music, RefreshCw, ExternalLink, Key, CreditCard, Zap, Square } from 'lucide-react';
 
-export default function ProgressCard({ progressState, onRetry, isLoading }) {
+export default function ProgressCard({ progressState, onRetry, onStopAutoRetry, isLoading }) {
   const { step, message, progress = 0, status, error, isQuotaError } = progressState;
 
   const steps = [
@@ -85,6 +85,41 @@ export default function ProgressCard({ progressState, onRetry, isLoading }) {
           <span className="text-2xl font-black text-white font-mono">{progress}%</span>
         </div>
       </div>
+
+      {/* Auto Retry Active Banner */}
+      {progressState.isAutoRetrying && (
+        <div className="mb-4 p-3 rounded-xl bg-gradient-to-r from-amber-950/60 via-slate-900/80 to-amber-950/60 border border-amber-500/40 flex items-center justify-between gap-3 text-xs text-amber-200 shadow-lg shadow-amber-950/30 animate-in fade-in">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-1.5 rounded-lg bg-amber-500/20 text-amber-400 flex-shrink-0 animate-pulse">
+              <Zap className="w-4 h-4 fill-current" />
+            </div>
+            <div className="min-w-0">
+              <div className="font-bold text-white flex items-center gap-1.5 flex-wrap">
+                <span>Auto Retry Mode Aktif</span>
+                {progressState.attemptCount ? (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono">
+                    Percobaan ke-{progressState.attemptCount}
+                  </span>
+                ) : null}
+              </div>
+              <p className="text-[11px] text-amber-200/80 truncate">
+                Mencari video YouTube yang cocok persis &amp; 100% bebas wajah/manusia...
+              </p>
+            </div>
+          </div>
+          {onStopAutoRetry && (
+            <button
+              type="button"
+              onClick={onStopAutoRetry}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 transition-all shadow-sm flex-shrink-0 hover:scale-[1.02] active:scale-[0.98]"
+              title="Hentikan pencarian otomatis"
+            >
+              <Square className="w-3.5 h-3.5 fill-current text-red-400" />
+              <span>Stop</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Main Progress Bar */}
       <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden mb-6 p-0.5 border border-slate-700/50">

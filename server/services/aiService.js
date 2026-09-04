@@ -64,12 +64,7 @@ function loadEnvFromDisk() {
 
 const defaultOpenRouterModels = [
   "minimax/minimax-m3:free",
-  "openrouter/auto",
-  "google/gemini-2.0-pro-exp-02-05:free",
-  "google/gemini-2.5-flash-free",
-  "google/lyria-3-clip-preview",
-  "qwen/qwen-vl-plus:free",
-  "meta-llama/llama-3.2-11b-vision-instruct:free"
+  "openrouter/auto"
 ];
 
 function getEffectiveOpenRouterModels() {
@@ -109,6 +104,7 @@ function getOpenRouterKeys(apiKeyOverride) {
 let currentOpenRouterKeyIndex = 0;
 
 const defaultGeminiDirectModels = [
+  'gemini-2.5-flash',
   'gemini-3.6-flash',
   'gemini-3.5-flash',
   'gemini-3.1-flash-lite',
@@ -263,7 +259,16 @@ CRITICAL RULE 1: EXACT PHYSICAL PRODUCT MATCH VERIFICATION
 - If rejected for wrong product, output:
   {"status": "reject", "detectedProduct": "<nama produk yang tampak di video>", "isExactProductMatch": false, "reason": "Produk di video (<nama produk>) tidak cocok dengan produk Shopee (${effectiveTitle})"}
 
-CRITICAL RULE 2: REJECTION CRITERIA:
+CRITICAL RULE 2: ABSOLUTE ZERO HUMAN FACES & ZERO HUMAN BODIES (STRICT FACELESS MANDATE):
+- The final video output MUST BE 100% FACELESS AND HUMAN-FREE!
+- DILARANG MENAMPILKAN WAJAH ATAU MANUSIA DALAM VIDEO OUTPUT!
+- The ONLY permitted human element is HANDS/FINGERS ONLY actively demonstrating, holding, pressing, or operating the product against a tabletop/neutral background (faceless close-up hands-only demonstration).
+- ZERO TOLERANCE FOR FACES: NEVER select any frame where a human face (front, side profile, looking down, background face, creator reaction), head, neck, torso, or whole person body is visible!
+- If a frame contains a face, head, or person's body, DO NOT SELECT THAT FRAME NUMBER.
+- If the entire video is person-centric, talking head, vlog, or does NOT contain at least 4 distinct, completely faceless product demonstration moments (spaced at least 5 seconds apart), REJECT THE VIDEO IMMEDIATELY:
+  {"status": "reject", "isExactProductMatch": false, "reason": "Video menampilkan wajah atau manusia. Video affiliate wajib 100% bebas dari wajah dan manusia (hanya peragaan tangan atau produk saja)."}
+
+CRITICAL RULE 3: OTHER REJECTION CRITERIA:
 1. AI-GENERATED / SYNTHETIC / CGI / ANIMATION:
    - REJECT if the video is AI-generated (e.g. Sora, Runway, Kling, Hailuo, synthetic video, 3D animated, CGI, cartoon, or computer-generated slop).
    - Footage MUST be REAL, AUTHENTIC PHYSICAL DEMONSTRATION with real human hands.
@@ -275,11 +280,11 @@ CRITICAL RULE 2: REJECTION CRITERIA:
 
 CRITERIA FOR ACCEPTANCE:
 - Video shows REAL, AUTHENTIC, PHYSICAL HANDS-ON DEMONSTRATION of the EXACT product: "${effectiveTitle}".
-- Faceless or product-focused, clean framing.
+- 100% FACELESS & HUMAN-FREE: Only hands demonstrating the product or pure product shots are visible.
 - STRICT ZERO WATERMARK/IDENTITY: NEVER select frames with channel watermarks, logos, or subtitles!
-- Select 4 to 7 frame indices (numbers 1 to ${frames.length}) showing the best distinct, watermark-free product demonstration moments (spaced at least 5 seconds apart).
+- Select 4 to 7 frame indices (numbers 1 to ${frames.length}) showing the best distinct, watermark-free, FACELESS product demonstration moments (spaced at least 5 seconds apart).
 - Output strict minimal JSON:
-{"status": "accept", "detectedProduct": "<nama produk di video>", "isExactProductMatch": true, "frames": [4, 8, 12, 16, 20], "productHook": "<hook pendek menarik dalam bahasa Indonesia>", "hasProductBrand": false}`;
+{"status": "accept", "detectedProduct": "<nama produk di video>", "isExactProductMatch": true, "hasFaceOrHumanInSelectedFrames": false, "frames": [4, 8, 12, 16, 20], "productHook": "<hook pendek menarik dalam bahasa Indonesia>", "hasProductBrand": false}`;
 
   const userPrompt = `Target Shopee Product: "${effectiveTitle}"
 ${effectiveDesc ? `Product Description: "${effectiveDesc}"` : ''}
@@ -288,12 +293,15 @@ Sampled Frames:
 ${frames.map((f, i) => `#${i + 1} (${f.timeFormatted})`).join(', ')}
 
 Review visual frames carefully:
-1. Visual Product Match: Does the physical item in the video match "${effectiveTitle}"?
+1. Visual Product Match: Does the physical item in the video match "${effectiveTitle}" exactly?
    - If DIFFERENT product or compilation: output {"status": "reject", "detectedProduct": "<nama produk>", "isExactProductMatch": false, "reason": "Produk di video tidak cocok dengan link Shopee"}
-2. Video Quality & Authenticity: Is it AI-generated, talking head without demo, or covered in watermarks?
+2. Strict Faceless & Human-Free QC: Does the video show human faces or people?
+   - Selected frames MUST NEVER contain any human face, head, or human body! Only hands or product shots allowed.
+   - If at least 4 clean faceless product shots cannot be found: output {"status": "reject", "isExactProductMatch": false, "reason": "Video menampilkan wajah atau manusia"}
+3. Video Quality & Authenticity: Is it AI-generated, talking head without demo, or covered in watermarks?
    - If YES: output {"status": "reject", "isExactProductMatch": false, "reason": "<alasan penolakan>"}
-3. If it is a clean, REAL hands-on demo of the EXACT product "${effectiveTitle}":
-   - Output {"status": "accept", "detectedProduct": "<nama produk>", "isExactProductMatch": true, "frames": [indices], "productHook": "...", "hasProductBrand": false}`;
+4. If it is a clean, REAL, 100% FACELESS hands-on demo of the EXACT product "${effectiveTitle}":
+   - Output {"status": "accept", "detectedProduct": "<nama produk>", "isExactProductMatch": true, "hasFaceOrHumanInSelectedFrames": false, "frames": [indices], "productHook": "...", "hasProductBrand": false}`;
 
   const messageContent = [
     { type: 'text', text: userPrompt },
@@ -352,8 +360,8 @@ Review visual frames carefully:
       console.log(`[AIService ${provider} ${activeModel}] Raw response:`, rawContent);
       let parsed = repairJson(rawContent);
 
-      if (parsed.status === 'reject' || parsed.isProductMatch === false || parsed.isExactProductMatch === false || parsed.isUsableSourceVideo === false) {
-        const rejectionMsg = parsed.reason || parsed.rejectionReason || 'Video ditolak oleh AI: Produk di video tidak cocok dengan link Shopee atau tidak fokus pada peragaan produk fisik asli.';
+      if (parsed.status === 'reject' || parsed.isProductMatch === false || parsed.isExactProductMatch === false || parsed.isUsableSourceVideo === false || parsed.hasFaceOrHumanInSelectedFrames === true) {
+        const rejectionMsg = parsed.reason || parsed.rejectionReason || (parsed.hasFaceOrHumanInSelectedFrames ? 'Video menampilkan wajah atau manusia.' : 'Video ditolak oleh AI: Produk di video tidak cocok dengan link Shopee atau tidak fokus pada peragaan produk fisik asli.');
         console.warn(`[AIService ${provider} ${activeModel}] ⛔ VIDEO RESMI DITOLAK OLEH AI: ${rejectionMsg}`);
         const rejectError = new Error(`Video ditolak oleh AI (${activeModel}): ${rejectionMsg}`);
         rejectError.isAiRejection = true;

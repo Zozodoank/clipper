@@ -187,6 +187,57 @@ export default function App() {
     setFormData(restoredForm);
     lastFormDataRef.current = restoredForm;
 
+    // If job is currently running or auto-retrying, connect to live progress SSE
+    if (job.isAutoRetrying || job.stage === 'running') {
+      setIsLoading(true);
+      setResult(null);
+      setProgressState({
+        step: 'auto_retry',
+        message: `Memantau pencarian video cocok persis untuk "${job.productTitle || job.jobId}"...`,
+        progress: 10,
+        status: 'running',
+        error: null,
+        isAutoRetrying: true,
+      });
+
+      if (eventSourceRef.current) eventSourceRef.current.close();
+      const sse = new EventSource(`/api/progress/${job.jobId}`);
+      eventSourceRef.current = sse;
+
+      sse.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          setProgressState((prev) => ({
+            ...prev,
+            step: data.step || prev.step,
+            message: data.message || prev.message,
+            progress: data.progress !== undefined ? data.progress : prev.progress,
+            status: data.status || prev.status,
+            error: data.error || null,
+            isQuotaError: data.isQuotaError || false,
+            canRetry: data.canRetry || false,
+            isAutoRetrying: data.isAutoRetrying !== undefined ? data.isAutoRetrying : prev.isAutoRetrying,
+            attemptCount: data.attemptCount || prev.attemptCount,
+          }));
+
+          if ((data.status === 'awaiting_voiceover' || data.status === 'completed') && data.result) {
+            setResult(data.result);
+            setIsLoading(false);
+            sse.close();
+            setHistoryRefreshSignal((v) => v + 1);
+          } else if (data.status === 'error') {
+            setIsLoading(false);
+            sse.close();
+            setHistoryRefreshSignal((v) => v + 1);
+          }
+        } catch (e) {
+          console.error('Error parsing SSE in handleSelectJob:', e);
+        }
+      };
+      sse.onerror = () => sse.close();
+      return;
+    }
+
     // If job is already done (awaiting_voiceover or completed), restore all data directly
     if (job.stage === 'completed' || job.stage === 'awaiting_voiceover') {
       setResult({
@@ -203,12 +254,29 @@ export default function App() {
           ? 'Video Final & seluruh data pemasaran siap digunakan untuk Reels.'
           : 'Kotak Scene & Naskah tersedia. Upload voiceover untuk finalisasi.',
         progress: 100, status: job.stage, error: null, canRetry: false,
+        isAutoRetrying: false,
       });
       return;
     }
 
     // Otherwise retry the pipeline
     runGeneratePipeline(job.jobId, restoredForm);
+  };
+
+  const handleStopCurrentAutoRetry = async () => {
+    const jobId = lastJobIdRef.current;
+    if (!jobId) return;
+    try {
+      await fetch(`/api/jobs/${jobId}/auto-retry/stop`, { method: 'POST' });
+      setProgressState((prev) => ({
+        ...prev,
+        isAutoRetrying: false,
+        message: 'Menghentikan Auto Retry...',
+      }));
+      setHistoryRefreshSignal((v) => v + 1);
+    } catch (err) {
+      console.warn('Could not stop auto retry:', err);
+    }
   };
 
   const handleRetryJob = async (job) => {
@@ -346,7 +414,12 @@ export default function App() {
             />
 
             {(isLoading || progressState.status !== 'idle') && (
-              <ProgressCard progressState={progressState} onRetry={handleRetry} isLoading={isLoading} />
+              <ProgressCard
+                progressState={progressState}
+                onRetry={handleRetry}
+                onStopAutoRetry={handleStopCurrentAutoRetry}
+                isLoading={isLoading}
+              />
             )}
 
             {result && result.jobId && (

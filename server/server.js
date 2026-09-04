@@ -404,40 +404,77 @@ app.post('/api/jobs/:jobId/retry', async (req, res) => {
   // Trigger regeneration asynchronously so SSE progress streams live to the frontend
   (async () => {
     try {
-      let targetYoutubeUrl = job.youtubeUrl;
-      if (forceNewCandidate && job.productTitle) {
-        const usedVids = getAllUsedYouTubeVideoIds();
-        const oldVid = extractVideoId(job.youtubeUrl);
-        if (oldVid) usedVids.add(oldVid);
+      let targetCandidates = [];
+      const usedVids = getAllUsedYouTubeVideoIds();
+      const oldVid = extractVideoId(job.youtubeUrl);
+      if (oldVid) usedVids.add(oldVid);
 
+      if (forceNewCandidate && job.productTitle) {
         updateJobProgress(jobId, { step: 'auto_youtube_search', message: `Mencari video 1080p baru untuk "${job.productTitle.slice(0, 30)}..."`, progress: 8, status: 'running' });
-        const freshCandidates = await discoverYouTubeCandidatesForProduct({
+        const fresh = await discoverYouTubeCandidatesForProduct({
           productTitle: job.productTitle,
           productDescription: job.productDescription,
           limit: 8,
           excludeVideoIds: usedVids,
           onProgress: (p) => updateJobProgress(jobId, { ...p, status: 'running' }),
         });
-
-        if (freshCandidates && freshCandidates.length > 0 && freshCandidates[0].url) {
-          targetYoutubeUrl = freshCandidates[0].url;
-          job.youtubeUrl = targetYoutubeUrl;
-          activeJobs.set(jobId, job);
-          persistJob(jobId, job);
-          console.log(`[Retry ${jobId}] Found fresh 1080p candidate: ${targetYoutubeUrl}`);
+        if (fresh && fresh.length > 0) {
+          targetCandidates = fresh;
         }
       }
 
-      await runStage1Pipeline({
-        jobId,
-        youtubeUrl: targetYoutubeUrl,
-        shopeeLink: job.shopeeLink,
-        productTitle: job.productTitle,
-        productDescription: job.productDescription,
-        apiKey: undefined,
-        options: { aiProvider: 'openrouter' },
-        requireCleanGeminiPlan: true,
-      });
+      // If no search candidates found or manual retry, fallback to the current job URL
+      if (!targetCandidates.length) {
+        targetCandidates = [{ url: job.youtubeUrl, title: job.productTitle || 'YouTube Video' }];
+      }
+
+      let retrySuccess = false;
+      let lastRetryErr = null;
+
+      for (let i = 0; i < targetCandidates.length; i++) {
+        const candidate = targetCandidates[i];
+        const candVid = extractVideoId(candidate.url) || candidate.id;
+        if (candVid) usedVids.add(candVid);
+
+        updateJobProgress(jobId, {
+          step: 'download',
+          message: targetCandidates.length > 1
+            ? `[Kandidat ${i + 1}/${targetCandidates.length}] Memproses video 1080p: "${(candidate.title || job.productTitle).slice(0, 30)}..."`
+            : `Memproses video 1080p baru: "${(candidate.title || job.productTitle).slice(0, 30)}..."`,
+          progress: 10 + Math.round((i / targetCandidates.length) * 15),
+          status: 'running',
+        });
+
+        try {
+          job.youtubeUrl = candidate.url;
+          activeJobs.set(jobId, job);
+          persistJob(jobId, job);
+
+          await runStage1Pipeline({
+            jobId,
+            youtubeUrl: candidate.url,
+            shopeeLink: job.shopeeLink,
+            productTitle: job.productTitle,
+            productDescription: job.productDescription,
+            apiKey: undefined,
+            options: { aiProvider: 'openrouter' },
+            requireCleanGeminiPlan: true,
+          });
+
+          retrySuccess = true;
+          console.log(`[Retry ${jobId}] Kandidat ${i + 1} (${candidate.url}) sukses di-generate 1080p!`);
+          break;
+        } catch (candErr) {
+          console.warn(`[Retry ${jobId}] Kandidat ${i + 1} (${candidate.url}) gagal: ${candErr.message}. Mencoba kandidat berikutnya...`);
+          lastRetryErr = candErr;
+          deleteJobFiles(jobId, outputDir, tempDir);
+        }
+      }
+
+      if (!retrySuccess) {
+        throw lastRetryErr || new Error('Tidak ada kandidat video YouTube yang dapat diunduh dalam kualitas 1080p Full HD.');
+      }
+
       console.log(`[Retry ${jobId}] Full regeneration completed successfully.`);
     } catch (retryErr) {
       console.error(`[Retry ${jobId}] Regeneration failed:`, retryErr.message);

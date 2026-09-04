@@ -57,7 +57,7 @@ function findCookiesFile() {
  * Base yt-dlp args used for all requests (search + download).
  * Stripped of --remote-components and --js-runtimes which break on Android/Termux.
  */
-function getYtDlpArgs(clientSpoof = 'android,ios,mweb,web') {
+function getYtDlpArgs(clientSpoof = 'tv_embedded,web_creator') {
   const residentialProxy = (process.env.RESIDENTIAL_PROXY || process.env.PROXY_URL || '').trim();
   const proxyArgs = residentialProxy ? ['--proxy', residentialProxy] : [];
 
@@ -68,14 +68,20 @@ function getYtDlpArgs(clientSpoof = 'android,ios,mweb,web') {
     console.log(`[Downloader] 🍪 Found active session cookies: ${foundCookies}`);
   }
 
-  return [
+  const args = [
     '--no-check-certificates',
     '--geo-bypass',
-    '--extractor-args', `youtube:player_client=${clientSpoof}`,
-    '--user-agent', 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro Build/UQ1A.240205.004) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36',
+    '--extractor-args', `youtube:player_client=${clientSpoof};formats=missing_pot`,
     ...cookiesArgs,
     ...proxyArgs
   ];
+
+  // Only supply custom Android User Agent if clientSpoof explicitly starts with android
+  if (clientSpoof.startsWith('android')) {
+    args.push('--user-agent', 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro Build/UQ1A.240205.004) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36');
+  }
+
+  return args;
 }
 
 /**
@@ -83,15 +89,15 @@ function getYtDlpArgs(clientSpoof = 'android,ios,mweb,web') {
  */
 function getFastArgs() {
   return [
-    ...getYtDlpArgs('android,mweb'),
+    ...getYtDlpArgs('tv_embedded,web_creator,mweb'),
     '--rm-cache-dir',
   ];
 }
 
 /**
- * Download args with gentle rate-limiting and Android/iOS client spoofing to avoid bot detection.
+ * Download args with gentle rate-limiting and anti-bot spoofing.
  */
-function getDownloadArgs(clientProfile = 'android,mweb') {
+function getDownloadArgs(clientProfile = 'tv_embedded,web_creator') {
   return [
     ...getYtDlpArgs(clientProfile),
     '--limit-rate', '6M',
@@ -559,12 +565,13 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
     }
   }
 
-  // Multi-profile rotation to bypass YouTube bot detection & 429/403 IP throttling
+  // Multi-profile rotation prioritizing clients without SABR restrictions (TV, Creator, iOS, Web)
   const clientProfiles = [
+    'tv_embedded,web_creator',
+    'tv,mweb',
+    'ios,mweb',
+    'web_creator,web',
     'android,mweb',
-    'ios,web',
-    'tv,android',
-    'web_embedded,android',
   ];
 
   let lastDownloadError = '';
@@ -584,7 +591,7 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
     // Resilient format selector: tries 360p preview for AI analysis vs True 1080p Full HD+ for final rendering
     const formatSelector = isPreview
       ? '18/bestvideo[height<=360]+bestaudio/best[height<=360]/bestvideo[height<=480]+bestaudio/best[height<=480]/worstvideo+worstaudio/worst/best'
-      : 'bestvideo[height>=1080]+bestaudio/bestvideo[width>=1080]+bestaudio/best[height>=1080]/best[width>=1080]';
+      : 'bestvideo[height>=1080]+bestaudio/bestvideo[width>=1080]+bestaudio/best[height>=1080]/best[width>=1080]/bestvideo[height>=1080]/bestvideo+bestaudio/best';
 
     const dlArgs = [
       '--ffmpeg-location',

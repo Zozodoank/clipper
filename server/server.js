@@ -670,13 +670,13 @@ export async function runStage1Pipeline({
         }
 
         const hdDims = await getVideoDimensions(hdDl.filePath);
-        const isRealHd = hdDims && (hdDims.is1080pOrHigher || hdDims.width >= 720 || hdDims.height >= 720);
-        if (!isRealHd) {
+        const isStrict1080p = hdDims && hdDims.is1080pOrHigher;
+        if (!isStrict1080p) {
           try { fs.unlinkSync(hdDl.filePath); } catch {}
-          throw new Error(`Resolusi video (${hdDims?.width}x${hdDims?.height}) kurang dari 1080p Full HD.`);
+          throw new Error(`Resolusi video YouTube (${hdDims?.width}x${hdDims?.height}) tidak memenuhi standar minimal 1080p Full HD ke atas.`);
         }
 
-        console.log(`[Job ${jobId}] ✅ Video 1080p Full HD asli berhasil diunduh (${hdDims.width}x${hdDims.height}). Menggantikan preview 360p.`);
+        console.log(`[Job ${jobId}] ✅ Video 1080p+ Full HD asli berhasil diunduh (${hdDims.width}x${hdDims.height}). Menggantikan preview 360p.`);
         rawVideoPath = hdDl.filePath;
 
         // Hapus file preview 360p agar tidak memakan ruang penyimpanan HP dan tidak tertukar

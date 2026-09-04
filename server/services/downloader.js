@@ -599,11 +599,11 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
 
     const dlBaseArgs = getDownloadArgs(clientType);
 
-    // Resilient format selector: 360p preview for AI analysis vs True 1080p Full HD+ for final rendering
-    // NOTE: 1080p selector strictly requires >=720p and never falls back to 360p/best.
+    // Resilient format selector: 360p preview for AI analysis vs STRICT 1080p+ Full HD for final rendering
+    // NOTE: Strictly requires >=1080p (no 720p, no 480p, no 360p).
     const formatSelector = isPreview
       ? '18/bestvideo[height<=360]+bestaudio/best[height<=360]/bestvideo[height<=480]+bestaudio/best[height<=480]/worstvideo+worstaudio/worst/best'
-      : 'bestvideo[height>=1080]+bestaudio/bestvideo[width>=1080]+bestaudio/bestvideo[height>=1080]/best[height>=1080]/bestvideo[height>=720]+bestaudio/bestvideo[height>=720]/best[height>=720]';
+      : 'bestvideo[height>=1080]+bestaudio/bestvideo[width>=1080]+bestaudio/bestvideo[height>=1080]/bestvideo[width>=1080]/best[height>=1080]/best[width>=1080]';
 
     const dlArgs = [
       '--ffmpeg-location',
@@ -677,14 +677,14 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
           const dims = await getVideoDimensions(downloadedFile, ffmpegPath);
           if (dims) {
             console.log(`[Downloader] Video resolution: ${dims.width}x${dims.height} (1080p+: ${dims.is1080pOrHigher})`);
-            const isHd = dims.is1080pOrHigher || dims.width >= 720 || dims.height >= 720;
-            if (isHd) {
-              console.log(`[Downloader] ✅ Resolusi ${dims.width}x${dims.height} memenuhi standar HD/Full HD. Siap di-render.`);
+            const isStrict1080p = dims.is1080pOrHigher;
+            if (isStrict1080p) {
+              console.log(`[Downloader] ✅ Resolusi ${dims.width}x${dims.height} memenuhi standar minimal 1080p Full HD ke atas. Siap di-render.`);
             } else {
-              // Video is below 720p (e.g. 360p). Reject and delete it so next profile can attempt to find 1080p!
-              console.warn(`[Downloader] ❌ Resolusi video (${dims.width}x${dims.height}) di bawah standar HD. Menolak video 360p dan mencoba profil lain untuk 1080p...`);
+              // Video is below 1080p (e.g. 720p, 480p, 360p). Strictly reject and delete it!
+              console.warn(`[Downloader] ❌ Resolusi video (${dims.width}x${dims.height}) di bawah 1080p Full HD. Menolak video dan mencoba profil lain untuk 1080p+...`);
               try { fs.unlinkSync(downloadedFile); } catch {}
-              lastDownloadError = `Resolusi video (${dims.width}x${dims.height}) terlalu rendah (360p). Memerlukan minimal 720p/1080p.`;
+              lastDownloadError = `Resolusi video (${dims.width}x${dims.height}) di bawah standar 1080p Full HD. Wajib minimal 1080p ke atas.`;
               continue;
             }
           }

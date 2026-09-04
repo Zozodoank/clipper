@@ -662,13 +662,14 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
 
       if (fs.existsSync(downloadedFile) && fs.statSync(downloadedFile).size > 100000) {
         if (!isPreview) {
-          // Strictly verify that the downloaded video meets minimal 1080p Full HD
           const dims = await getVideoDimensions(downloadedFile, ffmpegPath);
           if (dims) {
-            console.log(`[Downloader] Video resolution check: ${dims.width}x${dims.height} (1080p+: ${dims.is1080pOrHigher})`);
-            if (!dims.is1080pOrHigher) {
-              try { fs.unlinkSync(downloadedFile); } catch {}
-              throw new Error(`Resolusi video sumber (${dims.width}x${dims.height}) di bawah standar minimal 1080p Full HD. Video dilewati untuk menjaga kualitas konten.`);
+            console.log(`[Downloader] Video resolution: ${dims.width}x${dims.height} (1080p+: ${dims.is1080pOrHigher})`);
+            const isHd = dims.is1080pOrHigher || dims.width >= 720 || dims.height >= 720;
+            if (isHd) {
+              console.log(`[Downloader] ✅ Resolusi ${dims.width}x${dims.height} memenuhi standar HD/Full HD. Siap di-render.`);
+            } else {
+              console.warn(`[Downloader] Resolusi video (${dims.width}x${dims.height}) akan di-upscale ke 1080x1920 saat render.`);
             }
           }
         }

@@ -664,14 +664,20 @@ export async function runStage1Pipeline({
     // TAHAP 2 (Lolos Seleksi): Video lolos seleksi AI! Baru unduh video 1080p Full HD asli untuk proses render
     if (isLowDataMode && !cachedVideoPath) {
       updateProgress({ step: 'download_hd', message: '✅ Video lolos seleksi AI! Mengunduh kualitas 1080p Full HD...', progress: 55, status: 'running' });
-      const hdDl = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: '1080p', prefix: 'raw' });
-      // Hapus file preview 240p untuk menghemat ruang memori HP
       try {
-        if (fs.existsSync(rawVideoPath) && rawVideoPath !== hdDl.filePath) {
-          fs.unlinkSync(rawVideoPath);
+        const hdDl = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: '1080p', prefix: 'raw' });
+        if (hdDl && hdDl.filePath && fs.existsSync(hdDl.filePath)) {
+          // Hapus file preview 360p untuk menghemat ruang memori HP
+          try {
+            if (fs.existsSync(rawVideoPath) && rawVideoPath !== hdDl.filePath) {
+              fs.unlinkSync(rawVideoPath);
+            }
+          } catch {}
+          rawVideoPath = hdDl.filePath;
         }
-      } catch {}
-      rawVideoPath = hdDl.filePath;
+      } catch (hdErr) {
+        console.warn(`[Job ${jobId}] Gagal mengunduh stream terpisah 1080p: ${hdErr.message}. Menggunakan video yang ada untuk proses render.`);
+      }
 
       const updatedMeta = { ...jobMeta, downloadedVideoPath: rawVideoPath, stage: 'downloaded' };
       activeJobs.set(jobId, updatedMeta);

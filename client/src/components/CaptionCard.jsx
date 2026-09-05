@@ -15,7 +15,8 @@ import {
   Lightbulb,
   Terminal,
   Volume2,
-  Clock
+  Clock,
+  Bot
 } from 'lucide-react';
 import { copyToClipboardSafe } from '../utils/clipboard';
 
@@ -140,7 +141,7 @@ export default function CaptionCard({ result }) {
     : '';
 
   const contextText = result.sampleContext
-    ? `Produk: ${result.sampleContext.productName || result.videoTitle}\nDurasi Video: ${formattedDuration}\nTarget Audiens: ${result.sampleContext.targetAudience || '-'}\nMasalah Utama: ${result.sampleContext.coreProblem || '-'}\nKeunggulan Utama:\n${(result.sampleContext.keyFeatures || []).map((f) => `- ${f}`).join('\n')}\nTrigger Pembelian: ${result.sampleContext.buyingTrigger || '-'}`
+    ? `Produk: ${result.sampleContext.productName || result.videoTitle}\nDurasi Video: ${formattedDuration}\nTarget Audiens: ${result.sampleContext.targetAudience || '-'}\nMasalah Utama: ${result.sampleContext.coreProblem || '-'}\nKeunggulan Utama:\n${(Array.isArray(result.sampleContext.keyFeatures) ? result.sampleContext.keyFeatures : []).map((f) => `- ${f}`).join('\n')}\nTrigger Pembelian: ${result.sampleContext.buyingTrigger || '-'}`
     : '';
 
   const aiStudioSections = parseAiStudioSections(result.aiStudioPrompt, result.sampleContext, result.voiceoverScript, videoDuration);

@@ -9,6 +9,7 @@ import VoiceoverUploader from './components/VoiceoverUploader';
 import SettingsModal from './components/SettingsModal';
 import JobHistoryPanel from './components/JobHistoryPanel';
 import AutoModePanel from './components/AutoModePanel';
+import ErrorBoundary from './components/ErrorBoundary';
 import { Sparkles, Clapperboard } from 'lucide-react';
 
 export default function App() {
@@ -256,22 +257,45 @@ export default function App() {
       return;
     }
 
-    // If job is already done (awaiting_voiceover or completed), restore all data directly
-    if (job.stage === 'completed' || job.stage === 'awaiting_voiceover') {
+    // If job is already done or has clips/scenes, restore all data directly
+    const hasFinal = job.stage === 'completed' || Boolean(job.hasFinalVideo);
+    const hasSilent = job.stage === 'awaiting_voiceover' || Boolean(job.hasSilentVideo);
+    const hasContent = hasFinal || hasSilent || (Array.isArray(job.scenes) && job.scenes.length > 0);
+
+    if (hasContent) {
+      const activeStage = hasFinal ? 'completed' : 'awaiting_voiceover';
       setResult({
         ...job,
-        videoUrl: job.videoUrl || (job.stage === 'completed' ? `/api/video/final_clip_${job.jobId}.mp4` : null),
-        downloadUrl: job.downloadUrl || (job.stage === 'completed' ? `/api/download/final_clip_${job.jobId}.mp4` : null),
+        stage: activeStage,
+        videoUrl: job.videoUrl || job.finalVideoUrl || (hasFinal ? `/api/video/final_clip_${job.jobId}.mp4` : null),
+        downloadUrl: job.downloadUrl || job.finalVideoUrl || (hasFinal ? `/api/download/final_clip_${job.jobId}.mp4` : null),
         silentVideoUrl: job.silentVideoUrl || `/api/video/silent_clip_${job.jobId}.mp4`,
         finalLocalPath: job.finalLocalPath || `server/output/final_clip_${job.jobId}.mp4`,
         silentLocalPath: job.silentLocalPath || `server/output/silent_clip_${job.jobId}.mp4`,
       });
       setProgressState({
-        step: job.stage === 'completed' ? 'completed' : 'awaiting_voiceover',
-        message: job.stage === 'completed'
+        step: activeStage,
+        message: hasFinal
           ? 'Video Final & seluruh data pemasaran siap digunakan untuk Reels.'
           : 'Kotak Scene & Naskah tersedia. Upload voiceover untuk finalisasi.',
-        progress: 100, status: job.stage, error: null, canRetry: false,
+        progress: 100,
+        status: activeStage,
+        error: null,
+        canRetry: false,
+        isAutoRetrying: false,
+      });
+      return;
+    }
+
+    if (job.stage === 'error' || job.stage === 'interrupted') {
+      setResult(null);
+      setProgressState({
+        step: 'error',
+        message: job.lastError || `Job sebelumnya terhenti (${job.stage}). Klik tombol Retry untuk mencoba lagi.`,
+        progress: 100,
+        status: 'error',
+        error: job.lastError || `Job terhenti pada tahap: ${job.stage}`,
+        canRetry: true,
         isAutoRetrying: false,
       });
       return;
@@ -441,26 +465,29 @@ export default function App() {
             )}
 
             {result && result.jobId && (
-              <VoiceoverUploader
-                jobId={result.jobId}
-                result={result}
-                voiceoverScript={result.voiceoverScript}
-                aiStudioPrompt={result.aiStudioPrompt}
-                onUploadSuccess={handleVoiceoverUploadSuccess}
-                isUploading={isUploading}
-                setIsUploading={setIsUploading}
-              />
+              <ErrorBoundary>
+                <VoiceoverUploader
+                  jobId={result.jobId}
+                  result={result}
+                  voiceoverScript={result.voiceoverScript}
+                  aiStudioPrompt={result.aiStudioPrompt}
+                  onUploadSuccess={handleVoiceoverUploadSuccess}
+                  isUploading={isUploading}
+                  setIsUploading={setIsUploading}
+                />
+              </ErrorBoundary>
             )}
           </div>
 
           {/* Right Column */}
           <div className="lg:col-span-6 space-y-6">
-            {result ? (
-              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <VideoPlayer result={result} />
-                <CaptionCard result={result} />
-              </div>
-            ) : (
+            <ErrorBoundary>
+              {result ? (
+                <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <VideoPlayer result={result} />
+                  <CaptionCard result={result} />
+                </div>
+              ) : (
               <div className="glass-panel rounded-2xl p-8 text-center flex flex-col items-center justify-center min-h-[480px] border-dashed border-slate-800">
                 <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-shopee-500/20 via-orange-500/20 to-amber-500/20 border border-shopee-500/30 flex items-center justify-center text-shopee-500 mb-4 shadow-xl">
                   <Clapperboard className="w-8 h-8 stroke-[1.75]" />
@@ -490,6 +517,7 @@ export default function App() {
                 </div>
               </div>
             )}
+            </ErrorBoundary>
           </div>
 
         </div>

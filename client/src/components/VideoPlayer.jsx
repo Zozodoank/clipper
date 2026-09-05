@@ -12,9 +12,9 @@ export default function VideoPlayer({ result }) {
 
   if (!result) return null;
 
-  const isFinal = result.stage === 'completed' || !!result.finalFileName;
-  const currentVideoUrl = result.videoUrl || result.silentVideoUrl;
-  const currentDownloadUrl = result.downloadUrl || result.silentVideoUrl;
+  const isFinal = result.stage === 'completed' || result.hasFinalVideo || !!result.finalFileName;
+  const currentVideoUrl = result.videoUrl || result.finalVideoUrl || result.silentVideoUrl;
+  const currentDownloadUrl = result.downloadUrl || result.finalVideoUrl || result.videoUrl || result.silentVideoUrl;
   const currentLocalPath = result.finalLocalPath || result.silentLocalPath || result.localPath;
   const currentFilename = result.finalFileName || result.silentFileName || result.filename || 'affiliate_clip.mp4';
   const highlightClips = Array.isArray(result.highlight?.clips) ? result.highlight.clips : [];

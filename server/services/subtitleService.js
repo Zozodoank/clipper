@@ -152,24 +152,32 @@ export function generateAssSubtitles(scriptText, totalDurationSec, assOutputPath
     const chunk = rawPhrases[i];
     let startSec = currentCursor;
 
-    if (chunk.anchorSec !== null && chunk.anchorSec >= currentCursor && chunk.anchorSec < safeTotalDuration) {
+    // Anchor locking: snap strictly to scene timestamp [00:00], [00:03], [00:07], etc.
+    if (chunk.anchorSec !== null && chunk.anchorSec < safeTotalDuration) {
       startSec = chunk.anchorSec;
+      // Cap previous event's end time if it was extending past this anchor
+      if (events.length > 0 && currentCursor > startSec) {
+        events[events.length - 1].end = formatAssTime(startSec);
+      }
     }
 
     const nextAnchor = rawPhrases.slice(i + 1).find((c) => c.anchorSec !== null)?.anchorSec;
-    const remainingTime = (nextAnchor ? nextAnchor : safeTotalDuration) - startSec;
-    const nextAnchorIndex = nextAnchor ? rawPhrases.findIndex((c, ci) => ci > i && c.anchorSec === nextAnchor) : rawPhrases.length;
+    const remainingTime = (nextAnchor !== undefined && nextAnchor !== null ? nextAnchor : safeTotalDuration) - startSec;
+    const nextAnchorIndex = (nextAnchor !== undefined && nextAnchor !== null)
+      ? rawPhrases.findIndex((c, ci) => ci > i && c.anchorSec === nextAnchor)
+      : rawPhrases.length;
     const sliceWeights = weights.slice(i, nextAnchorIndex).reduce((sum, w) => sum + w, 0) || weights[i];
 
     const proportionalDuration = remainingTime > 0
       ? remainingTime * (weights[i] / sliceWeights)
       : safeTotalDuration * (weights[i] / totalWeight);
 
-    // Ensure minimum display duration so quick phrases are readable
-    const minDisplaySec = Math.min(1.2, safeTotalDuration / rawPhrases.length);
+    // Ensure minimum display duration so quick phrases are readable (0.8s)
+    const minDisplaySec = 0.8;
+    const maxBoundary = (nextAnchor !== undefined && nextAnchor !== null) ? nextAnchor : safeTotalDuration;
     const endSec = i === rawPhrases.length - 1
       ? safeTotalDuration
-      : Math.min(safeTotalDuration, startSec + Math.max(minDisplaySec, proportionalDuration));
+      : Math.min(maxBoundary, startSec + Math.max(minDisplaySec, proportionalDuration));
 
     currentCursor = endSec;
 

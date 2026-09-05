@@ -21,8 +21,9 @@ export default function App() {
   }));
 
   const [settings, setSettings] = useState({
-    aiProvider: 'openrouter',
+    aiProvider: 'gemini',
     sceneDuration: 3.3,
+    renderMode: 'square_stage',
     hflip: false,
     speedMultiplier: 1,
     enableSubtitles: true,
@@ -51,7 +52,16 @@ export default function App() {
     setCheckingEngine(true);
     try {
       const res = await fetch('/api/health');
-      if (res.ok) setEngineStatus(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setEngineStatus(data);
+        if (data.activeAiEngine && data.activeAiEngine !== 'none') {
+          setSettings((prev) => ({
+            ...prev,
+            aiProvider: prev.aiProvider || data.activeAiEngine,
+          }));
+        }
+      }
     } catch (err) {
       console.warn('Could not fetch backend health:', err.message);
     } finally {
@@ -70,11 +80,15 @@ export default function App() {
     setIsLoading(true);
     setResult(null);
 
+    const activeEngineName = (settings.aiProvider === 'gemini' || engineStatus?.activeAiEngine === 'gemini')
+      ? 'Google Gemini Direct'
+      : 'OpenRouter';
+
     setProgressState({
       step: 'start',
       message: isRetrying
         ? `Mencoba ulang dari tahap yang terhenti (Retry)...`
-        : `Memulai Tahap 1: Analisis AI (openrouter/free)...`,
+        : `Memulai Tahap 1: Analisis AI (${activeEngineName})...`,
       progress: 5, status: 'running', error: null, isQuotaError: false, canRetry: false,
     });
 
@@ -120,8 +134,11 @@ export default function App() {
           shopeeLink: currentForm.shopeeLink,
           productTitle: currentForm.productTitle,
           productDescription: currentForm.productDescription,
-          aiProvider: settings.activeAiEngine || 'openrouter',
-          options: settings,
+          aiProvider: settings.aiProvider || engineStatus?.activeAiEngine || 'gemini',
+          options: {
+            ...settings,
+            aiProvider: settings.aiProvider || engineStatus?.activeAiEngine || 'gemini',
+          },
         }),
       });
 
@@ -483,6 +500,7 @@ export default function App() {
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
         setSettings={setSettings}
+        engineStatus={engineStatus}
       />
 
       <footer className="border-t border-slate-800/60 py-4 bg-slate-950/40 text-center text-xs text-slate-500">

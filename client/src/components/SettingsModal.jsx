@@ -1,15 +1,16 @@
 import React from 'react';
-import { X, Shield, Sliders, Volume2, Film, RefreshCw, Check, Bot, Sparkles } from 'lucide-react';
+import { X, Shield, Sliders, Volume2, Film, RefreshCw, Check, Bot, Sparkles, Layers } from 'lucide-react';
 
-export default function SettingsModal({ isOpen, onClose, settings, setSettings }) {
+export default function SettingsModal({ isOpen, onClose, settings, setSettings, engineStatus }) {
   if (!isOpen) return null;
 
-  const currentProvider = settings.aiProvider || 'openrouter';
+  const currentProvider = settings.aiProvider || engineStatus?.activeAiEngine || 'gemini';
 
   const resetDefaults = () => {
     setSettings({
-      aiProvider: 'openrouter',
+      aiProvider: engineStatus?.activeAiEngine || 'gemini',
       sceneDuration: 3.3,
+      renderMode: 'square_stage',
       hflip: false,
       speedMultiplier: 1,
       enableSubtitles: true,
@@ -17,6 +18,9 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
       voice: 'alloy',
     });
   };
+
+  const isGeminiReady = Boolean(engineStatus?.geminiKeyConfigured);
+  const isOpenRouterReady = Boolean(engineStatus?.openRouterKeyConfigured);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
@@ -48,35 +52,96 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
                 <span>Mesin AI Vision &amp; Scripting</span>
               </span>
               <span className="text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                Active Engine
+                Pilih Engine Aktif
               </span>
             </div>
 
             <div className="grid grid-cols-1 gap-2.5 pt-1">
               
-              <div className="p-3 rounded-xl border text-left transition-all relative bg-emerald-950/40 border-emerald-500 text-white shadow-lg shadow-emerald-950/50 ring-1 ring-emerald-500/50">
+              {/* Option 1: Google Gemini Direct */}
+              <div
+                onClick={() => setSettings({ ...settings, aiProvider: 'gemini' })}
+                className={`p-3 rounded-xl border text-left cursor-pointer transition-all relative ${
+                  currentProvider === 'gemini'
+                    ? 'bg-blue-950/40 border-blue-500 text-white shadow-lg shadow-blue-950/50 ring-1 ring-blue-500/50'
+                    : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-850'
+                }`}
+              >
                 <div className="flex items-center justify-between mb-1">
-                  <span className="font-bold text-xs flex items-center gap-1">
+                  <span className="font-bold text-xs flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                    Google Gemini Direct (Primary / Fast)
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                      isGeminiReady
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                        : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                    }`}>
+                      {isGeminiReady ? 'READY IN .ENV' : 'MISSING KEY'}
+                    </span>
+                    {currentProvider === 'gemini' && (
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-blue-500/20 text-blue-300 border-blue-500/30">
+                        ACTIVE
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="text-[11px] font-mono font-semibold mb-1 text-blue-300">
+                  gemini-2.5-flash &bull; Direct Google AI
+                </div>
+                <p className="text-[10px] leading-tight opacity-80">
+                  Koneksi langsung ke Google Gemini API tanpa perantara. Jika video ditolak karena wajah atau produk salah, sistem otomatis mencari video YouTube baru.
+                </p>
+                {currentProvider === 'gemini' && (
+                  <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-blue-400 animate-ping" />
+                )}
+              </div>
+
+              {/* Option 2: OpenRouter Multi-Model */}
+              <div
+                onClick={() => setSettings({ ...settings, aiProvider: 'openrouter' })}
+                className={`p-3 rounded-xl border text-left cursor-pointer transition-all relative ${
+                  currentProvider === 'openrouter'
+                    ? 'bg-emerald-950/40 border-emerald-500 text-white shadow-lg shadow-emerald-950/50 ring-1 ring-emerald-500/50'
+                    : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-850'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold text-xs flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                    OpenRouter Free Tier
+                    OpenRouter Free Tier / Multi-Model
                   </span>
-                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-emerald-500/20 text-emerald-300 border-emerald-500/30">
-                    EXCLUSIVELY ACTIVE
-                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                      isOpenRouterReady
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                        : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                    }`}>
+                      {isOpenRouterReady ? 'READY IN .ENV' : 'MISSING KEY'}
+                    </span>
+                    {currentProvider === 'openrouter' && (
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-emerald-500/20 text-emerald-300 border-emerald-500/30">
+                        ACTIVE
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="text-[11px] font-mono font-semibold mb-1 text-emerald-300">
                   openrouter/free
                 </div>
                 <p className="text-[10px] leading-tight opacity-80">
-                  Menggunakan model gratis resmi <code className="text-emerald-400">openrouter/free</code> untuk seluruh proses potong video (vision OCR) &amp; susun naskah narasi.
+                  Gateway multi-model via OpenRouter dengan fallback model gratis.
                 </p>
-                <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                {currentProvider === 'openrouter' && (
+                  <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                )}
               </div>
 
             </div>
 
             <p className="text-[11px] text-slate-400 pt-1">
-              💡 <em>Pastikan kunci <code className="text-slate-300">OPENROUTER_API_KEY</code> telah disetel di berkas <code className="text-slate-300 font-mono">server/.env</code>.</em>
+              💡 <em>Kunci API dapat disetel di berkas <code className="text-slate-300 font-mono">server/.env</code> (<code className="text-slate-300">GEMINI_API_KEY</code> atau <code className="text-slate-300">OPENROUTER_API_KEY</code>).</em>
             </p>
           </div>
 
@@ -133,6 +198,46 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
                   >
                     <span className="text-xs font-bold">{item.label}</span>
                     <span className="text-[10px] text-amber-400 font-mono mt-0.5">{item.badge}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Video Framing & Anti-Crop Mode */}
+          <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-slate-200 flex items-center gap-1.5">
+                <Layers className="w-4 h-4 text-emerald-400" />
+                <span>Format Framing Video (Anti-Crop)</span>
+              </span>
+              <span className="font-mono text-xs font-bold text-emerald-400 px-2 py-0.5 bg-slate-800 rounded">
+                {(settings.renderMode || 'square_stage') === 'fit_canvas' ? 'Fit 16:9' : (settings.renderMode || 'square_stage') === 'vertical_crop' ? 'Full 9:16' : 'Smart Stage 1:1'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-400">
+              Mengontrol rasio video agar peragaan produk dan tangan tidak terpotong saat dirender ke 9:16 vertikal.
+            </p>
+            <div className="grid grid-cols-3 gap-2 pt-1">
+              {[
+                { value: 'square_stage', label: 'Smart Stage 1:1', badge: 'Rekomendasi (Metode 2)' },
+                { value: 'fit_canvas', label: 'Fit 16:9 Utuh', badge: 'No Crop (Metode 1)' },
+                { value: 'vertical_crop', label: 'Full 9:16', badge: 'Zoom Crop' }
+              ].map((item) => {
+                const isSelected = (settings.renderMode || 'square_stage') === item.value;
+                return (
+                  <button
+                    key={item.value}
+                    type="button"
+                    onClick={() => setSettings({ ...settings, renderMode: item.value })}
+                    className={`py-2 px-2.5 rounded-xl text-left border transition-all flex flex-col justify-between ${
+                      isSelected
+                        ? 'bg-emerald-500/20 border-emerald-500 text-white shadow-md shadow-emerald-500/20 ring-1 ring-emerald-500/50'
+                        : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="text-xs font-bold">{item.label}</span>
+                    <span className="text-[10px] text-emerald-400 font-mono mt-0.5">{item.badge}</span>
                   </button>
                 );
               })}

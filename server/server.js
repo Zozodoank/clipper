@@ -276,7 +276,19 @@ app.get('/api/health', async (req, res) => {
   ).trim().replace(/^["']|["']$/g, '');
   const geminiKeySet = Boolean(rawGeminiKey && !rawGeminiKey.startsWith('your_') && !rawGeminiKey.endsWith('_here'));
 
-  const activeAiEngine = openRouterKeySet ? 'openrouter' : (geminiKeySet ? 'gemini' : 'none');
+  const envActive = (process.env.ACTIVE_AI_ENGINE || '').trim().toLowerCase();
+  let activeAiEngine = 'none';
+  if (envActive === 'gemini' && geminiKeySet) {
+    activeAiEngine = 'gemini';
+  } else if (envActive === 'openrouter' && openRouterKeySet) {
+    activeAiEngine = 'openrouter';
+  } else if (geminiKeySet && !openRouterKeySet) {
+    activeAiEngine = 'gemini';
+  } else if (openRouterKeySet) {
+    activeAiEngine = 'openrouter';
+  } else if (geminiKeySet) {
+    activeAiEngine = 'gemini';
+  }
 
   const binaryCheck = await checkSystemDependencies();
 
@@ -293,7 +305,7 @@ app.get('/api/health', async (req, res) => {
     geminiKeyConfigured: geminiKeySet,
     geminiFallbackConfigured: geminiKeySet,
     activeAiEngine,
-    defaultAiProvider: 'openrouter',
+    defaultAiProvider: activeAiEngine !== 'none' ? activeAiEngine : 'openrouter',
     tts: {
       available: true,
       defaultVoice: 'RINDI (Fish Audio S2.1 Pro)',
@@ -469,6 +481,7 @@ app.post('/api/jobs/:jobId/retry', async (req, res) => {
           activeJobs.set(jobId, job);
           persistJob(jobId, job);
 
+          const effectiveAiProvider = job.aiProvider || req.body?.aiProvider || (process.env.ACTIVE_AI_ENGINE === 'gemini' ? 'gemini' : 'openrouter');
           await runStage1Pipeline({
             jobId,
             youtubeUrl: candidate.url,
@@ -476,7 +489,7 @@ app.post('/api/jobs/:jobId/retry', async (req, res) => {
             productTitle: job.productTitle,
             productDescription: job.productDescription,
             apiKey: undefined,
-            options: { aiProvider: 'openrouter' },
+            options: { aiProvider: effectiveAiProvider, autoSearchFallback: false },
             requireCleanGeminiPlan: true,
           });
 
@@ -616,6 +629,7 @@ async function runAutoRetryWorker(jobId, run) {
           activeJobs.set(jobId, job);
           persistJob(jobId, job);
 
+          const effectiveAiProvider = job.aiProvider || (process.env.ACTIVE_AI_ENGINE === 'gemini' ? 'gemini' : 'openrouter');
           await runStage1Pipeline({
             jobId,
             youtubeUrl: candidate.url,
@@ -623,7 +637,7 @@ async function runAutoRetryWorker(jobId, run) {
             productTitle: targetTitle,
             productDescription: job.productDescription,
             apiKey: undefined,
-            options: { aiProvider: 'openrouter' },
+            options: { aiProvider: effectiveAiProvider, autoSearchFallback: false },
             requireCleanGeminiPlan: true,
             onProgress: (p) => updateJobProgress(jobId, {
               ...p,
@@ -886,48 +900,240 @@ export async function runStage1Pipeline({
       }
     }
 
-    if (!rawVideoPath) {
-      // TAHAP 1: Unduh preview 360p ringan dari YouTube khusus untuk analisa visual AI
-      updateProgress({ step: 'download', message: 'Mengunduh preview video (360p) untuk analisa visual AI...', progress: 12, status: 'running' });
-      const previewDl = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: 'preview', prefix: 'preview' });
-      previewVideoPath = previewDl.filePath;
-      videoMeta = previewDl.metadata;
-
-      const realDuration = await getMediaDurationSec(previewVideoPath);
-      if (realDuration && realDuration > 5) {
-        videoMeta.duration = realDuration;
-      }
-      console.log(`[Job ${jobId}] Preview 360p siap untuk analisa AI: "${videoMeta.title}" duration=${videoMeta.duration}s file=${previewVideoPath}`);
-    }
-
-    const videoForFrames = previewVideoPath || rawVideoPath;
-    updateProgress({ step: 'frames_raw', message: 'Mengekstrak frame preview untuk analisa AI...', progress: 38, status: 'running' });
-    const { frames: rawFrames } = await extractFrames(videoForFrames, rawFramesDir, updateProgress, {
-      sampleIntervalSec: 1,
-      maxSampleFrames: 30,
-    });
-
-    const aiProvider = options.aiProvider || 'openrouter';
+    const envEngine = (process.env.ACTIVE_AI_ENGINE || '').trim().toLowerCase();
+    const rawGeminiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
+    const geminiKeySet = Boolean(rawGeminiKey && !rawGeminiKey.startsWith('your_') && !rawGeminiKey.endsWith('_here'));
+    const defaultProvider = envEngine === 'gemini' ? 'gemini' : (envEngine === 'openrouter' ? 'openrouter' : (geminiKeySet ? 'gemini' : 'openrouter'));
+    const aiProvider = options.aiProvider || jobMeta.aiProvider || defaultProvider;
     const sceneDuration = Number(options.sceneDuration) || 3.3;
 
-    console.log(`[Job ${jobId}] Mengirim ke AI: videoMeta.duration=${videoMeta.duration}s, ${rawFrames.length} frames, sceneDuration=${sceneDuration}s`);
-    updateProgress({ step: 'gemini_vision', message: 'AI menganalisa frame produk dan menentukan cuplikan terbaik...', progress: 48, status: 'running' });
-    const highlight = await selectHighlightWithAI({
-      apiKey,
-      aiProvider,
-      frames: rawFrames,
-      videoMetadata: videoMeta,
-      productTitle, productDescription, shopeeLink,
-      sceneDuration,
-      allowFallbackClips: !requireCleanGeminiPlan,
-      onProgress: updateProgress,
-    });
+    let currentYoutubeUrl = youtubeUrl;
+    let highlight = null;
+    let approved = false;
+    let lastRejectionError = null;
+
+    const usedVids = getAllUsedYouTubeVideoIds();
+    const initialVid = extractVideoId(currentYoutubeUrl);
+    if (initialVid) usedVids.add(initialVid);
+
+    // Helper untuk mengevaluasi satu kandidat video: download preview 360p, ekstrak frame, dan jalankan selectHighlightWithAI
+    const evaluateCandidate = async (targetUrl, candidateLabel = '') => {
+      // 1. Bersihkan preview lama & frames lama agar tidak tertumpuk
+      if (previewVideoPath && fs.existsSync(previewVideoPath) && previewVideoPath !== rawVideoPath) {
+        try { fs.unlinkSync(previewVideoPath); } catch {}
+      }
+      previewVideoPath = null;
+
+      if (fs.existsSync(rawFramesDir)) {
+        try {
+          const oldFiles = fs.readdirSync(rawFramesDir);
+          for (const f of oldFiles) {
+            try { fs.unlinkSync(path.join(rawFramesDir, f)); } catch {}
+          }
+        } catch {}
+      }
+
+      // 2. Unduh preview 360p
+      const dlMsg = candidateLabel
+        ? `[${candidateLabel}] Mengunduh preview 360p untuk analisa visual AI...`
+        : 'Mengunduh preview video (360p) untuk analisa visual AI...';
+      updateProgress({ step: 'download', message: dlMsg, progress: 12, status: 'running' });
+
+      const previewDl = await downloadYouTubeVideo(targetUrl, sessionTempDir, jobId, updateProgress, { quality: 'preview', prefix: 'preview' });
+      const candPreviewPath = previewDl.filePath;
+      const meta = previewDl.metadata || { title: productTitle || 'Product Video', duration: 60 };
+
+      const realDuration = await getMediaDurationSec(candPreviewPath);
+      if (realDuration && realDuration > 5) {
+        meta.duration = realDuration;
+      }
+
+      // 3. Ekstrak frame preview
+      const frameMsg = candidateLabel
+        ? `[${candidateLabel}] Mengekstrak frame untuk verifikasi produk & faceless QC...`
+        : 'Mengekstrak frame preview untuk analisa AI...';
+      updateProgress({ step: 'frames_raw', message: frameMsg, progress: 38, status: 'running' });
+
+      const { frames: rawFrames } = await extractFrames(candPreviewPath, rawFramesDir, updateProgress, {
+        sampleIntervalSec: 1,
+        maxSampleFrames: 30,
+      });
+
+      if (!rawFrames || rawFrames.length < 5) {
+        const frameErr = new Error(`Video tidak memiliki cukup frame visual (${rawFrames?.length || 0} frames).`);
+        frameErr.isAiRejection = true;
+        frameErr.rejectionReason = 'Frame video tidak mencukupi untuk dianalisa.';
+        throw frameErr;
+      }
+
+      // 4. Analisa visual AI
+      const visionMsg = candidateLabel
+        ? `[${candidateLabel}] AI (${aiProvider}) menganalisa frame produk dan QC bebas wajah...`
+        : `AI (${aiProvider}) menganalisa frame produk dan menentukan cuplikan terbaik...`;
+      updateProgress({ step: 'gemini_vision', message: visionMsg, progress: 48, status: 'running' });
+
+      const hl = await selectHighlightWithAI({
+        apiKey,
+        aiProvider,
+        frames: rawFrames,
+        videoMetadata: meta,
+        productTitle,
+        productDescription,
+        shopeeLink,
+        sceneDuration,
+        allowFallbackClips: !requireCleanGeminiPlan,
+        onProgress: updateProgress,
+      });
+
+      return { highlight: hl, videoMeta: meta, previewVideoPath: candPreviewPath };
+    };
+
+    // Evaluasi video dari cache jika tersedia
+    if (rawVideoPath) {
+      try {
+        updateProgress({ step: 'frames_raw', message: 'Mengekstrak frame video 1080p untuk analisa AI...', progress: 38, status: 'running' });
+        const { frames: rawFrames } = await extractFrames(rawVideoPath, rawFramesDir, updateProgress, {
+          sampleIntervalSec: 1,
+          maxSampleFrames: 30,
+        });
+        highlight = await selectHighlightWithAI({
+          apiKey,
+          aiProvider,
+          frames: rawFrames,
+          videoMetadata: videoMeta,
+          productTitle,
+          productDescription,
+          shopeeLink,
+          sceneDuration,
+          allowFallbackClips: !requireCleanGeminiPlan,
+          onProgress: updateProgress,
+        });
+        approved = true;
+      } catch (cacheEvalErr) {
+        if (cacheEvalErr.isAiRejection || String(cacheEvalErr?.message || '').toLowerCase().includes('ditolak')) {
+          console.warn(`[Job ${jobId}] Cached video 1080p ditolak AI: ${cacheEvalErr.message}. Menghapus cache dan mencoba online...`);
+          try { fs.unlinkSync(rawVideoPath); } catch {}
+          rawVideoPath = null;
+        } else {
+          throw cacheEvalErr;
+        }
+      }
+    }
+
+    // Evaluasi video YouTube awal jika belum disetujui dari cache
+    if (!approved && currentYoutubeUrl) {
+      try {
+        const initialRes = await evaluateCandidate(currentYoutubeUrl);
+        highlight = initialRes.highlight;
+        videoMeta = initialRes.videoMeta;
+        previewVideoPath = initialRes.previewVideoPath;
+        approved = true;
+      } catch (initErr) {
+        if (initErr.isAiRejection || String(initErr?.message || '').toLowerCase().includes('ditolak')) {
+          console.warn(`[Job ${jobId}] ⛔ Video awal (${currentYoutubeUrl}) ditolak AI: ${initErr.message}`);
+          lastRejectionError = initErr;
+          try { if (previewVideoPath && fs.existsSync(previewVideoPath)) fs.unlinkSync(previewVideoPath); } catch {}
+          previewVideoPath = null;
+        } else {
+          throw initErr;
+        }
+      }
+    }
+
+    // Jika video awal ditolak oleh AI: Jalankan Auto Search Fallback untuk mencari kandidat video baru!
+    if (!approved) {
+      const allowAutoSearch = options.autoSearchFallback !== false && Boolean(productTitle);
+      if (!allowAutoSearch) {
+        throw lastRejectionError || new Error('Video ditolak oleh AI.');
+      }
+
+      const engineName = aiProvider === 'gemini' ? 'Google Gemini Direct' : 'AI';
+      updateProgress({
+        step: 'auto_search_fallback',
+        message: `⛔ Video awal ditolak AI (${lastRejectionError?.rejectionReason || 'tidak cocok'}). ${engineName} mencari video YouTube baru untuk "${productTitle.slice(0, 30)}..."`,
+        progress: 15,
+        status: 'running',
+      });
+
+      console.log(`[Job ${jobId}] Memulai pencarian kandidat YouTube baru untuk "${productTitle}" karena video awal ditolak...`);
+
+      let searchIteration = 0;
+      let targetCandidates = [];
+
+      while (searchIteration < 2 && targetCandidates.length === 0) {
+        const fresh = await discoverYouTubeCandidatesForProduct({
+          productTitle,
+          productDescription,
+          limit: 8,
+          excludeVideoIds: usedVids,
+          searchIteration,
+          onProgress: (p) => updateProgress({ ...p, status: 'running' }),
+        });
+        if (fresh && fresh.length > 0) {
+          targetCandidates = fresh;
+        }
+        searchIteration++;
+      }
+
+      if (!targetCandidates || targetCandidates.length === 0) {
+        throw new Error(`Video awal ditolak AI (${lastRejectionError?.rejectionReason || 'tidak cocok'}), dan tidak ditemukan video YouTube pengganti baru untuk "${productTitle}".`);
+      }
+
+      console.log(`[Job ${jobId}] Menemukan ${targetCandidates.length} kandidat video YouTube baru. Menguji satu per satu...`);
+
+      for (let i = 0; i < targetCandidates.length; i++) {
+        const candidate = targetCandidates[i];
+        const candVid = extractVideoId(candidate.url) || candidate.id;
+        if (candVid) usedVids.add(candVid);
+
+        const candLabel = `Kandidat ${i + 1}/${targetCandidates.length}`;
+        updateProgress({
+          step: 'download',
+          message: `[${candLabel}] Menguji video pengganti: "${(candidate.title || productTitle).slice(0, 35)}..."`,
+          progress: 16 + Math.round((i / targetCandidates.length) * 20),
+          status: 'running',
+        });
+
+        try {
+          const candRes = await evaluateCandidate(candidate.url, candLabel);
+          highlight = candRes.highlight;
+          videoMeta = candRes.videoMeta;
+          previewVideoPath = candRes.previewVideoPath;
+          currentYoutubeUrl = candidate.url;
+          approved = true;
+
+          console.log(`[Job ${jobId}] ✅ ${candLabel} (${candidate.url}) DISETUJUI OLEH AI! Melanjutkan ke download 1080p...`);
+
+          // Update metadata job dengan link YouTube baru yang berhasil disetujui AI
+          jobMeta.youtubeUrl = currentYoutubeUrl;
+          jobMeta.videoTitle = candidate.title || videoMeta.title;
+          activeJobs.set(jobId, jobMeta);
+          persistJob(jobId, jobMeta);
+          break;
+        } catch (candErr) {
+          console.warn(`[Job ${jobId}] ❌ ${candLabel} (${candidate.url}) ditolak AI: ${candErr.message}`);
+          lastRejectionError = candErr;
+          try { if (previewVideoPath && fs.existsSync(previewVideoPath)) fs.unlinkSync(previewVideoPath); } catch {}
+          previewVideoPath = null;
+          updateProgress({
+            step: 'auto_search_next',
+            message: `⛔ ${candLabel} ditolak AI (${(candErr.rejectionReason || candErr.message).slice(0, 60)}...). Mencoba kandidat berikutnya...`,
+            progress: 18 + Math.round((i / targetCandidates.length) * 20),
+            status: 'running',
+          });
+        }
+      }
+
+      if (!approved) {
+        throw new Error(`Semua kandidat video YouTube (${targetCandidates.length} video) ditolak oleh AI untuk "${productTitle}": ${lastRejectionError?.rejectionReason || 'tidak memenuhi syarat faceless / produk tidak cocok'}.`);
+      }
+    }
 
     // TAHAP 2: AI telah menyetujui video! Backend langsung mengunduh video 1080p Full HD asli dari YouTube untuk rendering
     if (!rawVideoPath) {
       updateProgress({ step: 'download_hd', message: '✅ Video disetujui AI! Mengunduh kualitas 1080p Full HD langsung dari YouTube...', progress: 55, status: 'running' });
       try {
-        const hdDl = await downloadYouTubeVideo(youtubeUrl, sessionTempDir, jobId, updateProgress, { quality: '1080p', prefix: 'raw' });
+        const hdDl = await downloadYouTubeVideo(currentYoutubeUrl, sessionTempDir, jobId, updateProgress, { quality: '1080p', prefix: 'raw' });
         if (!hdDl || !hdDl.filePath || !fs.existsSync(hdDl.filePath)) {
           throw new Error('File video 1080p tidak ditemukan setelah download.');
         }
@@ -972,6 +1178,12 @@ export async function runStage1Pipeline({
       ? `Rendering ${highlight.clips.length} cuplikan produk (${highlight.duration.toFixed(1)}s) [Mirror H-Flip OFF: Merek "${highlight.detectedBrand || 'Terdeteksi'}"]...`
       : `Rendering ${highlight.clips.length} AI-selected fast product shots (${highlight.duration.toFixed(1)}s)...`;
 
+    const effectiveRenderMode = options.renderMode || highlight.reframe?.renderMode || 'square_stage';
+    const effectiveReframe = {
+      ...(highlight.reframe || {}),
+      renderMode: effectiveRenderMode,
+    };
+
     updateProgress({ step: 'render_silent', message: renderMessage, progress: 62, status: 'running' });
     await renderSilentAntiDetectionVideo({
       inputVideo: rawVideoPath, startTime: highlight.startTime,
@@ -979,7 +1191,7 @@ export async function runStage1Pipeline({
       clips: highlight.clips,
       hflip: effectiveHflip,
       speedMultiplier: options.speedMultiplier || 1,
-      reframe: highlight.reframe,
+      reframe: effectiveReframe,
       onProgress: updateProgress,
     });
 
@@ -992,7 +1204,7 @@ export async function runStage1Pipeline({
     updateProgress({ step: 'gpt_scripting', message: 'AI generating Kotak Scene, Context, Naskah...', progress: 80, status: 'running' });
     const scriptData = await generateAdAdvisorScriptWithAI({
       apiKey,
-      aiProvider: options.aiProvider || 'openrouter',
+      aiProvider,
       trimmedFrames,
       videoMetadata: videoMeta,
       productTitle,
@@ -1007,7 +1219,7 @@ export async function runStage1Pipeline({
     cleanupTempFiles([], [rawFramesDir, trimmedFramesDir]);
 
     // ─── TAHAP OTOMATIS: Voiceover TTS & Subtitle Burning ───────────────────────
-    const rawVoiceScript = scriptData.aiStudioPrompt || scriptData.voiceoverScript || '';
+    const rawVoiceScript = scriptData.voiceoverScript || scriptData.aiStudioPrompt || '';
     const voiceoverFileName = `voiceover_${jobId}.mp3`;
     const autoVoiceoverPath = path.join(uploadsDir, voiceoverFileName);
 
@@ -1022,7 +1234,7 @@ export async function runStage1Pipeline({
     let ttsResult = null;
     try {
       ttsResult = await generateVoiceoverTTS({
-        script: rawVoiceScript,
+        script: scriptData.voiceoverScript || rawVoiceScript,
         outputPath: autoVoiceoverPath,
         onProgress: (msg) => updateProgress({ step: 'tts_generating', message: `🎙️ ${msg}`, progress: 86, status: 'running' }),
         jobId,
@@ -1058,7 +1270,9 @@ export async function runStage1Pipeline({
           progress: 93,
           status: 'running',
         });
-        generateSrtSubtitles(ttsResult.cleanScript || rawVoiceScript, narrationDurationSec, srtPath);
+        // Pass structured timestamped script to guarantee synchronized subtitle timings
+        const scriptForSubtitles = scriptData.voiceoverScript || rawVoiceScript || ttsResult.cleanScript;
+        generateSrtSubtitles(scriptForSubtitles, narrationDurationSec, srtPath);
 
         updateProgress({
           step: 'render_final',
@@ -1395,7 +1609,7 @@ async function runAutoStage1Worker(run) {
             productTitle: product.title,
             productDescription: product.description,
             apiKey: undefined,
-            options: { ...run.options, aiProvider: run.options?.aiProvider || 'openrouter' },
+            options: { ...run.options, aiProvider: run.options?.aiProvider || (process.env.ACTIVE_AI_ENGINE === 'gemini' ? 'gemini' : 'openrouter'), autoSearchFallback: false },
             extraJobMeta: { autoRunId: run.runId, isAutoGenerated: true },
             requireCleanGeminiPlan: true,
             onProgress: (p) => {
@@ -1645,7 +1859,7 @@ async function processJobVoiceover(jobId, customScript = null) {
 
   let scriptToUse = (customScript && customScript.trim())
     ? customScript.trim()
-    : (job.aiStudioPrompt || job.voiceoverScript || '');
+    : (job.voiceoverScript || job.aiStudioPrompt || '');
 
   if (!scriptToUse && Array.isArray(job.scenes) && job.scenes.length > 0) {
     scriptToUse = job.scenes.map((s, idx) => `[00:${String(idx * 5).padStart(2, '0')}] ${s.voiceover || ''}`).join('\n');
@@ -1692,7 +1906,7 @@ async function processJobVoiceover(jobId, customScript = null) {
       : silentDurationSec;
 
     updateProgress({ step: 'subtitles', message: `Menyinkronkan subtitle narasi (${narrationDurationSec.toFixed(1)}s)...`, progress: 55, status: 'running' });
-    generateSrtSubtitles(ttsResult.cleanScript || scriptToUse, narrationDurationSec, srtPath);
+    generateSrtSubtitles(scriptToUse, narrationDurationSec, srtPath);
 
     updateProgress({ step: 'render_final', message: 'Rendering video final 9:16 dengan Voiceover & Subtitles...', progress: 75, status: 'running' });
     await mergeVoiceoverAndBurnSubtitles({
@@ -2131,11 +2345,24 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   reloadEnvironment();
+  const envActive = (process.env.ACTIVE_AI_ENGINE || '').trim().toLowerCase();
   const openRouterKey = process.env.OPENROUTER_API_KEY ? process.env.OPENROUTER_API_KEY.trim() : '';
   const geminiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
-  const activeProvider = (openRouterKey && openRouterKey !== 'your_openrouter_api_key_here')
-    ? `✨ OpenRouter (Primary)`
-    : (geminiKey && geminiKey !== 'your_gemini_api_key_here' ? `✨ Google Gemini Direct (Primary)` : '❌ None (Set OPENROUTER_API_KEY or GEMINI_API_KEY in server/.env)');
+  const openRouterOk = openRouterKey && openRouterKey !== 'your_openrouter_api_key_here';
+  const geminiOk = geminiKey && geminiKey !== 'your_gemini_api_key_here';
+
+  let activeProvider = '❌ None (Set OPENROUTER_API_KEY or GEMINI_API_KEY in server/.env)';
+  if (envActive === 'gemini' && geminiOk) {
+    activeProvider = '✨ Google Gemini Direct (Primary)';
+  } else if (envActive === 'openrouter' && openRouterOk) {
+    activeProvider = '✨ OpenRouter (Primary)';
+  } else if (geminiOk && !openRouterOk) {
+    activeProvider = '✨ Google Gemini Direct (Primary)';
+  } else if (openRouterOk) {
+    activeProvider = '✨ OpenRouter (Primary)';
+  } else if (geminiOk) {
+    activeProvider = '✨ Google Gemini Direct (Primary)';
+  }
 
   console.log(`\n======================================================`);
   console.log(`🎬 Local AI Affiliate Clipper Backend Server`);

@@ -48,9 +48,14 @@ export async function renderSilentAntiDetectionVideo({
     }
   }
 
+  const dims = await getVideoDimensions(targetVideo, ffmpegPath);
+  const isSourceVertical = Boolean(dims && dims.height > dims.width);
+
   onProgress({
     step: 'render_silent',
-    message: 'Rendering Gemini-selected faceless full-product 9:16 shots (Muted, No Subtitles)...',
+    message: isSourceVertical
+      ? 'Rendering 9:16 vertical product shots (Muted, No Subtitles)...'
+      : 'Rendering Smart Stage 1:1 anti-crop product shots (Muted, No Subtitles)...',
     progress: 60
   });
 
@@ -72,6 +77,7 @@ export async function renderSilentAntiDetectionVideo({
         reframe: clip.reframe,
         hflip,
         ptsFactor,
+        isSourceVertical,
       })
     );
 
@@ -147,18 +153,16 @@ export async function mergeVoiceoverAndBurnSubtitles({
   const audioDuration = await getMediaDurationSec(voiceoverAudioPath, ffmpegPath);
   
   // Natural audio tempo constraint:
-  // If audio duration is close to video duration (within ~15%), gently adjust tempo (0.88 - 1.2).
-  // If audio is noticeably shorter, NEVER slow it down into a weird slow-motion drag.
-  // Keep the speaking voice 100% natural (tempo 1.0) and pad silence at the end cleanly with apad.
-  let atempoFactor = 1;
+  // Voiceover must sound 100% natural, clear, and relaxed - NEVER like a rushed auctioneer or slow drag.
+  // If audio is shorter than video, keep tempo 1.0 (natural) and pad the final 1-2s silence with apad.
+  // If audio is slightly longer, allow at most an imperceptible 1.05x tempo adjustment.
+  let atempoFactor = 1.0;
   if (audioDuration && videoDuration) {
     const rawRatio = audioDuration / videoDuration;
-    if (rawRatio >= 0.88 && rawRatio <= 1.2) {
-      atempoFactor = rawRatio;
-    } else if (rawRatio > 1.2) {
-      atempoFactor = Math.min(1.3, rawRatio);
+    if (rawRatio > 1.02 && rawRatio <= 1.15) {
+      atempoFactor = Math.min(1.05, rawRatio); // Max 5% speedup: natural, retains human cadence
     } else {
-      atempoFactor = 1.0; // Preserve 100% natural human speaking tempo
+      atempoFactor = 1.0; // 100% natural speaking tempo
     }
   }
 
@@ -258,14 +262,16 @@ export async function mergeVoiceoverAndBurnSubtitles({
   });
 }
 
-function buildClipFilter({ inputIndex, outputLabel, reframe = {}, hflip, ptsFactor }) {
+function buildClipFilter({ inputIndex, outputLabel, reframe = {}, hflip, ptsFactor, isSourceVertical = false }) {
   const isFlipDisabled = reframe.allowHflip === false || reframe.hasProductBrand === true;
   const clipHflip = isFlipDisabled ? false : (reframe.hflip !== undefined ? reframe.hflip : hflip);
-  const renderMode = reframe.renderMode === 'vertical_crop' ? 'vertical_crop' : 'preserve_full_product';
+  const rawMode = reframe.renderMode;
+  const renderMode = (rawMode === 'vertical_crop' || rawMode === 'fit_canvas') ? rawMode : 'square_stage';
   const preFlip = clipHflip ? 'hflip,' : '';
   const finish = `setsar=1,setpts=${ptsFactor}*PTS,eq=contrast=1.05:saturation=1.05:brightness=0.01,unsharp=5:5:0.8:5:5:0.0`;
 
-  if (renderMode === 'vertical_crop') {
+  // 1. If source video is already vertical (9:16) or user explicitly requested vertical crop
+  if (isSourceVertical || renderMode === 'vertical_crop') {
     const focusX = clampNumber(reframe.focusX, 0, 1, 0.5).toFixed(3);
     const focusY = clampNumber(reframe.focusY, 0, 1, 0.55).toFixed(3);
     return [
@@ -273,14 +279,27 @@ function buildClipFilter({ inputIndex, outputLabel, reframe = {}, hflip, ptsFact
     ];
   }
 
+  // 2. Metode 1: Fit 16:9 Full Width (0% Crop) over 9:16 blurred background
+  if (renderMode === 'fit_canvas') {
+    return [
+      `[${inputIndex}:v]${preFlip}split=2[bgsrc${inputIndex}][fgsrc${inputIndex}]`,
+      `[bgsrc${inputIndex}]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,boxblur=24:12,eq=brightness=-0.15:saturation=0.85[bg${inputIndex}]`,
+      `[fgsrc${inputIndex}]scale=1080:-2:flags=lanczos,setsar=1[fg${inputIndex}]`,
+      `[bg${inputIndex}][fg${inputIndex}]overlay=(W-w)/2:(H-h)/2,${finish}[${outputLabel}]`,
+    ];
+  }
+
+  // 3. Metode 2 (Default & Recommended): Smart Stage 1:1 Square (1080x1080)
+  // Preserves wide product demonstration (hands, tools, workspace) without extreme 3.16x zoom,
+  // while positioning the product stage cleanly in the upper-middle center (y: 420-1500)
+  // and leaving bottom blurred area safe for dual-color subtitles & Shopee Yellow Basket.
   const focusX = clampNumber(reframe.focusX, 0, 1, 0.5).toFixed(3);
   const focusY = clampNumber(reframe.focusY, 0, 1, 0.55).toFixed(3);
 
-  // Put the source into a larger central square stage, matching the visible product area users expect.
   return [
     `[${inputIndex}:v]${preFlip}split=2[bgsrc${inputIndex}][fgsrc${inputIndex}]`,
-    `[bgsrc${inputIndex}]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,boxblur=24:12,eq=brightness=-0.12:saturation=0.85[bg${inputIndex}]`,
-    `[fgsrc${inputIndex}]scale=1080:1560:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1560:(iw-1080)*${focusX}:(ih-1560)*${focusY},setsar=1[fg${inputIndex}]`,
+    `[bgsrc${inputIndex}]scale=1080:1920:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1920,boxblur=24:12,eq=brightness=-0.15:saturation=0.85[bg${inputIndex}]`,
+    `[fgsrc${inputIndex}]scale=1080:1080:force_original_aspect_ratio=increase:flags=lanczos,crop=1080:1080:(iw-1080)*${focusX}:(ih-1080)*${focusY},setsar=1[fg${inputIndex}]`,
     `[bg${inputIndex}][fg${inputIndex}]overlay=(W-w)/2:(H-h)/2,${finish}[${outputLabel}]`,
   ];
 }
@@ -299,12 +318,15 @@ function normalizeRenderClips(clips, fallbackStartTime, fallbackEndTime, fallbac
       const clipDuration = Number(clip?.duration) || (Number.isFinite(endSeconds) && endSeconds > startSeconds ? (endSeconds - startSeconds) : defaultClipLength);
       if (clipDuration < 1.5) continue;
 
+      const effectiveRenderMode = fallbackReframe?.renderMode || clip?.reframe?.renderMode || 'square_stage';
+
       normalized.push({
         startSeconds,
         duration: clipDuration,
         reframe: {
-          ...(fallbackReframe || {}),
+          renderMode: effectiveRenderMode,
           ...(clip?.reframe || {}),
+          ...(fallbackReframe?.renderMode ? { renderMode: fallbackReframe.renderMode } : {}),
           allowHflip: clip?.allowHflip !== undefined ? clip.allowHflip : clip?.reframe?.allowHflip,
           hasProductBrand: clip?.hasProductBrand !== undefined ? clip.hasProductBrand : clip?.reframe?.hasProductBrand,
         },

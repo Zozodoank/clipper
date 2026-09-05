@@ -138,9 +138,10 @@ export function getDirectGeminiClientConfig({ apiKeyOverride } = {}) {
 function getAiClientConfig({ apiKeyOverride, aiProvider } = {}) {
   loadEnvFromDisk();
 
-  // If Gemini is explicitly requested or passed as override, prioritize Gemini Direct
-  const directGeminiKey = getDirectGeminiApiKey(apiKeyOverride);
-  if (apiKeyOverride?.startsWith('AIzaSy') || aiProvider === 'gemini' || process.env.ACTIVE_AI_ENGINE === 'gemini') {
+  // If Gemini is explicitly requested or configured, prioritize Gemini Direct
+  const reqProvider = (aiProvider || '').trim().toLowerCase();
+  const envEngine = (process.env.ACTIVE_AI_ENGINE || '').trim().toLowerCase();
+  if (apiKeyOverride?.startsWith('AIzaSy') || reqProvider === 'gemini' || envEngine === 'gemini') {
     const geminiConf = getDirectGeminiClientConfig({ apiKeyOverride });
     if (geminiConf) {
       console.log(`[AIService] Initialize Direct Google Gemini Client (${geminiConf.models[0]})...`);
@@ -186,7 +187,7 @@ const DEFAULT_REFRAME = {
   focusX: 0.5,
   focusY: 0.5,
   cropStrategy: 'faceless_product_hands_avoid_creator_text',
-  renderMode: 'vertical_crop',
+  renderMode: 'square_stage',
   avoidTextZones: [],
   avoidFaceZones: ['top', 'upper_middle'],
   faceSafety: true,
@@ -369,8 +370,13 @@ Review visual frames carefully:
       console.log(`[AIService ${provider} ${activeModel}] Raw response:`, rawContent);
       let parsed = repairJson(rawContent);
 
-      if (parsed.status === 'reject' || parsed.isProductMatch === false || parsed.isExactProductMatch === false || parsed.isUsableSourceVideo === false || parsed.hasFaceOrHumanInSelectedFrames === true) {
-        const rejectionMsg = parsed.reason || parsed.rejectionReason || (parsed.hasFaceOrHumanInSelectedFrames ? 'Video menampilkan wajah atau manusia.' : 'Video ditolak oleh AI: Produk di video tidak cocok dengan link Shopee atau tidak fokus pada peragaan produk fisik asli.');
+      const rawStatus = String(parsed.status || '').toLowerCase().trim();
+      const isRejectStatus = rawStatus === 'reject' || rawStatus === 'rejected' || rawStatus === 'ditolak';
+      const isMatchFalse = parsed.isProductMatch === false || parsed.isExactProductMatch === false || parsed.isUsableSourceVideo === false;
+      const hasFace = parsed.hasFaceOrHumanInSelectedFrames === true;
+
+      if (isRejectStatus || isMatchFalse || hasFace) {
+        const rejectionMsg = parsed.reason || parsed.rejectionReason || (hasFace ? 'Video menampilkan wajah atau manusia.' : 'Video ditolak oleh AI: Produk di video tidak cocok dengan link Shopee atau tidak fokus pada peragaan produk fisik asli.');
         console.warn(`[AIService ${provider} ${activeModel}] ⛔ VIDEO RESMI DITOLAK OLEH AI: ${rejectionMsg}`);
         const rejectError = new Error(`Video ditolak oleh AI (${activeModel}): ${rejectionMsg}`);
         rejectError.isAiRejection = true;
@@ -400,7 +406,7 @@ Review visual frames carefully:
             hasProductBrand: Boolean(parsed.hasProductBrand),
             reframe: {
               ...DEFAULT_REFRAME,
-              renderMode: 'vertical_crop',
+              renderMode: 'square_stage',
             }
           });
         }
@@ -438,8 +444,13 @@ Review visual frames carefully:
         clips,
       };
     } catch (err) {
-      if (err.isAiRejection) {
+      if (err.isAiRejection || String(err?.message || '').toLowerCase().includes('ditolak oleh ai') || String(err?.message || '').toLowerCase().includes('ai menolak video')) {
         clearInterval(heartbeat);
+        err.isAiRejection = true;
+        if (!err.rejectionReason) {
+          err.rejectionReason = err.message || 'Video ditolak oleh AI';
+        }
+        console.warn(`[AIService ${provider}] Menghentikan model fallback karena video ditolak isi/kontennya: ${err.message}`);
         throw err;
       }
       lastError = err;
@@ -518,9 +529,12 @@ export async function generateAdAdvisorScriptWithAI({
   const targetDuration = Math.max(18, Math.min(32, Math.round(Number(segmentDuration) || 24)));
   const effectiveSceneSec = Math.max(2.5, Math.min(4.5, Number(sceneDuration) || 3.3));
   const sceneCount = Math.max(5, Math.min(8, Math.round(targetDuration / effectiveSceneSec)));
-  const targetWords = Math.round(targetDuration * 2.6);
-  const minWords = Math.round(targetDuration * 2.3);
-  const maxWords = Math.round(targetDuration * 2.8);
+  // Natural Indonesian commercial speaking rate: ~1.7 - 1.9 words per second (~105 - 115 WPM)
+  // For a 24s video: min ~36 words, ideal ~42 words, max ~48 words (~5-6 words per scene).
+  // AVOID overly long scripts that force the voiceover to speak unnaturally fast!
+  const targetWords = Math.round(targetDuration * 1.8);
+  const minWords = Math.round(targetDuration * 1.5);
+  const maxWords = Math.round(targetDuration * 2.0);
 
   const systemPrompt = `You are a Senior Creative Director and Ad Advisor specializing in Indonesian Short-Form Affiliate Video Marketing (Shopee Video, TikTok Shop, Instagram Reels).
 
@@ -552,8 +566,9 @@ CRITICAL 4-BEAT SHOPEE FYP FORMULA:
 
 CRITICAL DURATION & WORD-COUNT TIMING RULES:
 - The final video duration is EXACTLY ${targetDuration} seconds (${sceneCount} fast scenes of ~${effectiveSceneSec.toFixed(1)}s each).
-- Total voiceover script MUST contain between ${minWords} and ${maxWords} words (Target ideal: exactly ~${targetWords} words, ~8-10 words per 3.3s beat).
-- DO NOT make the script too short (fewer than ${minWords} words) or too long (more than ${maxWords} words).
+- Total voiceover script MUST contain between ${minWords} and ${maxWords} words (Target ideal: exactly ~${targetWords} words, only ~5-6 punchy words per ~${effectiveSceneSec.toFixed(1)}s scene).
+- DILARANG MEMBUAT NASKAH TERLALU PANJANG! Naskah yang terlalu panjang akan memaksa narator berbicara terlalu cepat seperti terburu-buru dan tidak enak didengar.
+- Jaga agar setiap kalimat singkat, padat, lugas, santai, dan to-the-point (~5-6 kata per adegan).
 
 1. 'sampleContext':
    - 'productName': Explicit product name.
@@ -569,7 +584,7 @@ CRITICAL DURATION & WORD-COUNT TIMING RULES:
      * 'sceneNumber': integer (1, 2, 3... up to ${sceneCount})
      * 'timeRange': exact range e.g. "00:00 - 00:03", "00:03 - 00:07", etc.
      * 'visualDescription': Satisfying visual action happening in Indonesian.
-     * 'voiceover': Spoken narration line for this scene (~8-10 words).
+     * 'voiceover': Spoken narration line for this scene (hanya ~5-6 kata pendek, padat, dan jelas).
      * 'adAdvisorNotes': Director notes for sound effects (SFX), visual text overlays (yellow/white text), or emotional pacing.
 
 3. 'voiceoverScript' (Naskah Voiceover Lengkap dengan Penanda Waktu & Tag Emosi):
@@ -761,13 +776,13 @@ Return strict JSON in this format:
     voiceoverScript = scenes.map(s => `[${s.timeRange ? s.timeRange.split(' - ')[0] : '00:00'}] ${s.voiceover}`).join('\n');
   }
   if (!voiceoverScript) {
-    voiceoverScript = `[00:00] [excited] Kalau masih pakai cara lama atau kain biasa, fix kurang maksimal!
-[00:03] [emphasis] Untung sekarang ada ${effectiveTitle} yang serbaguna ini.
-[00:07] [soft] ${effectiveDesc ? effectiveDesc.slice(0, 80) : 'Busa melimpah, praktis banget dipakai, dan bikin pekerjaan beres lebih cepat.'}
-[00:11] [emphasis] Menjangkau semua sela-sela dengan bersih tuntas tanpa bikin baret atau lecet.
-[00:15] [soft] Bahannya berkualitas, awet tahan lama, dan mudah banget dicuci.
-[00:18] [excited] Harganya murah meriah banget, gak bikin kantong jebol!
-[00:21] [excited] Buruan cek keranjang pojok kiri bawah sekarang sebelum kehabisan!`;
+    voiceoverScript = `[00:00] [excited] Nyuci motor pakai kain biasa? Fix kurang maksimal!
+[00:03] [emphasis] Untung ada ${effectiveTitle} yang praktis ini.
+[00:07] [soft] Busa melimpah, kotoran tebal langsung rontok seketika.
+[00:11] [emphasis] Menjangkau sela-sela sempit bersih tuntas tanpa baret.
+[00:15] [soft] Bahannya super lembut, awet dipakai berkali-kali.
+[00:18] [excited] Harganya murah meriah banget, ramah di kantong!
+[00:21] [excited] Cek keranjang pojok kiri bawah sekarang juga!`;
   }
 
   let caption = (parsed.caption || '').trim();
@@ -961,10 +976,13 @@ function normalizeReframe(reframe = {}) {
     ? reframe.avoidFaceZones.filter(Boolean).map((zone) => zone.toString().slice(0, 40))
     : DEFAULT_REFRAME.avoidFaceZones;
 
+  const validRenderModes = ['square_stage', 'fit_canvas', 'vertical_crop'];
+  const renderMode = validRenderModes.includes(reframe.renderMode) ? reframe.renderMode : 'square_stage';
+
   return {
     focusX,
     focusY,
-    renderMode: reframe.renderMode === 'vertical_crop' ? 'vertical_crop' : 'preserve_full_product',
+    renderMode,
     cropStrategy: (reframe.cropStrategy || DEFAULT_REFRAME.cropStrategy).toString().slice(0, 80),
     avoidTextZones,
     avoidFaceZones,
@@ -1076,7 +1094,10 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, fram
   }
 
   if (!allowFallback) {
-    throw new Error('AI menolak video ini: tidak ditemukan minimal 5 potongan video bersih dari watermark, subtitle terjemahan, nama channel mengambang, wajah, atau proses unboxing.');
+    const cleanErr = new Error('AI menolak video ini: tidak ditemukan minimal 5 potongan video bersih dari watermark, subtitle terjemahan, nama channel mengambang, wajah, atau proses unboxing.');
+    cleanErr.isAiRejection = true;
+    cleanErr.rejectionReason = 'Tidak ditemukan minimal 5 potongan video bersih dari watermark, subtitle terjemahan, nama channel, wajah, atau proses unboxing.';
+    throw cleanErr;
   }
 
   // Fallback: build 6 to 8 evenly spaced clips (around 20 to 26 seconds total, exactly clipLength per clip)

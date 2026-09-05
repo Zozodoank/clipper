@@ -10,8 +10,14 @@ export default function InputCard({
   engineStatus,
   onOpenSettings
 }) {
-  const selectedProviderReady = Boolean(engineStatus?.openRouterKeyConfigured);
-  const selectedProviderLabel = `OpenRouter: ${selectedProviderReady ? '.env Active' : 'Missing in .env'}`;
+  const selectedProvider = settings?.aiProvider || engineStatus?.activeAiEngine || 'gemini';
+  const isGemini = selectedProvider === 'gemini';
+  const selectedProviderReady = isGemini
+    ? Boolean(engineStatus?.geminiKeyConfigured)
+    : Boolean(engineStatus?.openRouterKeyConfigured);
+  const selectedProviderLabel = isGemini
+    ? `Gemini Direct (Flash): ${selectedProviderReady ? '.env Active' : 'Missing in .env'}`
+    : `OpenRouter: ${selectedProviderReady ? '.env Active' : 'Missing in .env'}`;
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -136,6 +142,9 @@ export default function InputCard({
             <span className="px-2 py-0.5 rounded bg-slate-800/80 border border-slate-700/60 font-mono text-slate-200">
               Subtitle: Kuning &amp; Putih
             </span>
+            <span className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 font-mono text-emerald-300 font-bold">
+              Framing: {(settings.renderMode || 'square_stage') === 'fit_canvas' ? 'Fit 16:9' : (settings.renderMode || 'square_stage') === 'vertical_crop' ? 'Full 9:16' : 'Smart Stage 1:1'}
+            </span>
             <span className="px-2 py-0.5 rounded bg-slate-800/80 border border-slate-700/60 font-mono text-slate-300">
               9:16 (1080x1920)
             </span>
@@ -151,7 +160,7 @@ export default function InputCard({
 
           <div className={`flex items-center gap-1 px-2.5 py-0.5 rounded-full border font-medium text-[10px] ${
             selectedProviderReady
-              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+              ? (isGemini ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400')
               : 'bg-amber-500/10 border-amber-500/20 text-amber-300'
           }`}>
             <Key className="w-3 h-3" />

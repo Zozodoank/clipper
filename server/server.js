@@ -901,9 +901,15 @@ export async function runStage1Pipeline({
     }
 
     const envEngine = (process.env.ACTIVE_AI_ENGINE || '').trim().toLowerCase();
+    const rawOpenRouterKey = (process.env.OPENROUTER_API_KEY || '').trim();
+    const openRouterKeySet = Boolean(rawOpenRouterKey && !rawOpenRouterKey.startsWith('your_') && !rawOpenRouterKey.endsWith('_here'));
     const rawGeminiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
     const geminiKeySet = Boolean(rawGeminiKey && !rawGeminiKey.startsWith('your_') && !rawGeminiKey.endsWith('_here'));
-    const defaultProvider = envEngine === 'gemini' ? 'gemini' : (envEngine === 'openrouter' ? 'openrouter' : (geminiKeySet ? 'gemini' : 'openrouter'));
+    const defaultProvider = envEngine === 'openrouter'
+      ? 'openrouter'
+      : envEngine === 'gemini'
+        ? 'gemini'
+        : (openRouterKeySet ? 'openrouter' : (geminiKeySet ? 'gemini' : 'openrouter'));
     const aiProvider = options.aiProvider || jobMeta.aiProvider || defaultProvider;
     const sceneDuration = Number(options.sceneDuration) || 3.3;
 

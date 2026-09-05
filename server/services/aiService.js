@@ -63,8 +63,10 @@ function loadEnvFromDisk() {
 }
 
 const defaultOpenRouterModels = [
-  "minimax/minimax-m3:free",
-  "openrouter/auto"
+  "google/gemma-4-26b-a4b-it:free",
+  "google/gemma-4-31b-it:free",
+  "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+  "openrouter/free"
 ];
 
 function getEffectiveOpenRouterModels() {
@@ -104,11 +106,11 @@ function getOpenRouterKeys(apiKeyOverride) {
 let currentOpenRouterKeyIndex = 0;
 
 const defaultGeminiDirectModels = [
-  'gemini-2.5-flash',
+  'gemini-flash-latest',
   'gemini-3.6-flash',
-  'gemini-3.5-flash',
-  'gemini-3.1-flash-lite',
   'gemini-flash-lite-latest',
+  'gemini-3.1-flash-lite-preview',
+  'gemini-2.5-flash',
 ];
 
 function getDirectGeminiApiKey(apiKeyOverride) {
@@ -138,10 +140,13 @@ export function getDirectGeminiClientConfig({ apiKeyOverride } = {}) {
 function getAiClientConfig({ apiKeyOverride, aiProvider } = {}) {
   loadEnvFromDisk();
 
-  // If Gemini is explicitly requested or configured, prioritize Gemini Direct
   const reqProvider = (aiProvider || '').trim().toLowerCase();
   const envEngine = (process.env.ACTIVE_AI_ENGINE || '').trim().toLowerCase();
-  if (apiKeyOverride?.startsWith('AIzaSy') || reqProvider === 'gemini' || envEngine === 'gemini') {
+  const openRouterKeys = getOpenRouterKeys(apiKeyOverride);
+
+  // If Gemini Direct is explicitly requested (e.g. forced via API key starting with AIzaSy or gemini_direct provider without OpenRouter keys)
+  const forceGeminiDirect = (apiKeyOverride?.startsWith('AIzaSy') || reqProvider === 'gemini_direct' || (reqProvider === 'gemini' && openRouterKeys.length === 0));
+  if (forceGeminiDirect) {
     const geminiConf = getDirectGeminiClientConfig({ apiKeyOverride });
     if (geminiConf) {
       console.log(`[AIService] Initialize Direct Google Gemini Client (${geminiConf.models[0]})...`);
@@ -149,12 +154,12 @@ function getAiClientConfig({ apiKeyOverride, aiProvider } = {}) {
     }
   }
 
-  const openRouterKeys = getOpenRouterKeys(apiKeyOverride);
+  // Priority 1: OpenRouter (high quality free vision models: Gemma 4 26B, Gemma 4 31B, Nemotron 30B, openrouter/free)
   if (openRouterKeys.length > 0) {
     const safeIndex = currentOpenRouterKeyIndex % openRouterKeys.length;
     currentOpenRouterKeyIndex++; 
 
-    console.log(`[AIService] Initialize OpenRouter Client: Key=${openRouterKeys[safeIndex].substring(0, 10)}...`);
+    console.log(`[AIService] Initialize OpenRouter Client: Key=${openRouterKeys[safeIndex].substring(0, 10)}... (Models: ${getEffectiveOpenRouterModels().join(', ')})`);
 
     return {
       client: new OpenAI({
@@ -173,7 +178,7 @@ function getAiClientConfig({ apiKeyOverride, aiProvider } = {}) {
     };
   }
 
-  // Fallback to direct Gemini API if OpenRouter keys are not available
+  // Priority 2: Direct Google Gemini API fallback
   const directGemini = getDirectGeminiClientConfig({ apiKeyOverride });
   if (directGemini) {
     console.log(`[AIService] Initialize Direct Google Gemini Client (${directGemini.models[0]})...`);
@@ -254,47 +259,78 @@ export async function selectHighlightWithAI({
   const systemPrompt = `You are an expert Short-Form Affiliate Video QC Director specializing in Shopee Video FYP Algorithms.
 Evaluate the ${frames.length} sampled frames of the source video for the target Shopee product: "${effectiveTitle}".
 
-CRITICAL RULE 1: EXACT PHYSICAL PRODUCT MATCH VERIFICATION
-- Identify what physical product is being demonstrated in these visual frames.
-- Compare it directly with the target Shopee product: "${effectiveTitle}".
-- The product in the video MUST be the EXACT same product type, function, and model as "${effectiveTitle}".
-- REJECT IMMEDIATELY if the video shows a DIFFERENT product (for example: target is an electric mini chopper, but video shows a vegetable slicer, knife set, oil bottle, or unrelated item).
-- REJECT IMMEDIATELY if the video is a compilation / haul video showing multiple random gadgets instead of specifically demonstrating this product.
-- If rejected for wrong product, output:
-  {"status": "reject", "detectedProduct": "<nama produk yang tampak di video>", "isExactProductMatch": false, "reason": "Produk di video (<nama produk>) tidak cocok dengan produk Shopee (${effectiveTitle})"}
+CRITICAL MANDATORY RULES (ZERO TOLERANCE QC):
 
-CRITICAL RULE 2: ABSOLUTE ZERO HUMAN FACES & ZERO HUMAN BODIES (STRICT FACELESS MANDATE):
+RULE 1: ABSOLUTE ZERO HARDCODED SUBTITLES & ZERO BURNED-IN TEXT (STRICT SUBTITLE BAN):
+- DILARANG KERAS MENERIMA VIDEO YANG MEMILIKI SUBTITLE / TEKS CAPTION BAWAAN!
+- Inspect the bottom, middle, and top areas of every frame.
+- If frames contain hardburned subtitles, speech captions, lyric bars, translated text (Chinese, English, Indonesian, etc.), running text, or text boxes describing speech:
+  YOU MUST REJECT THE ENTIRE VIDEO IMMEDIATELY!
+- Reason: The affiliate clipper generates and burns its own clean, animated Indonesian subtitles. Any source video with existing burned-in subtitles causes terrible overlapping double-subtitles and is unwatchable!
+- If rejected for subtitles/text:
+  {"status": "reject", "hasSubtitlesOrBurnedText": true, "isExactProductMatch": true, "reason": "Video ditolak: Mengandung subtitle / teks caption bawaan pada video asli (dilarang karena bertabrakan dengan subtitle baru)."}
+
+RULE 2: EXACT PHYSICAL PRODUCT MATCH VERIFICATION:
+- Compare the physical product demonstrated in the frames directly with the target Shopee product: "${effectiveTitle}".
+- It MUST be the EXACT same physical product type, model, and function as "${effectiveTitle}".
+- REJECT IMMEDIATELY if the video shows a DIFFERENT product (e.g. target is electric mini chopper, but video shows manual grater, knives, oil dispenser, or random gadgets).
+- REJECT IMMEDIATELY if it is a compilation / haul video showing multiple random gadgets instead of demonstrating this single product.
+- If rejected for wrong product:
+  {"status": "reject", "detectedProduct": "<nama produk yang tampak>", "isExactProductMatch": false, "reason": "Produk di video (<nama produk>) tidak cocok dengan produk Shopee (${effectiveTitle})"}
+
+RULE 3: ABSOLUTE ZERO HUMAN FACES & ZERO HUMAN BODIES (STRICT FACELESS MANDATE):
 - The final video output MUST BE 100% FACELESS AND HUMAN-FREE!
 - DILARANG MENAMPILKAN WAJAH ATAU MANUSIA DALAM VIDEO OUTPUT!
-- The ONLY permitted human element is HANDS/FINGERS ONLY actively demonstrating, holding, pressing, or operating the product against a tabletop/neutral background (faceless close-up hands-only demonstration).
-- ZERO TOLERANCE FOR FACES: NEVER select any frame where a human face (front, side profile, looking down, background face, creator reaction), head, neck, torso, or whole person body is visible!
-- If a frame contains a face, head, or person's body, DO NOT SELECT THAT FRAME NUMBER.
-- If the entire video is person-centric, talking head, vlog, or does NOT contain at least 5 distinct, completely faceless product demonstration moments (spaced at least 3 seconds apart), REJECT THE VIDEO IMMEDIATELY:
-  {"status": "reject", "isExactProductMatch": false, "reason": "Video menampilkan wajah atau manusia. Video affiliate wajib 100% bebas dari wajah dan manusia (hanya peragaan tangan atau produk saja)."}
+- ZERO TOLERANCE FOR FACES: Never select any frame where a human face (front, side profile, looking down, background face, creator reaction), head, neck, torso, or whole person body is visible.
+- The ONLY permitted human element is HANDS/FINGERS ONLY actively demonstrating, holding, pressing, or operating the product against a tabletop/neutral background.
+- If the video contains human faces/people, or does NOT contain at least 5 distinct faceless product demonstration moments:
+  {"status": "reject", "hasFaceOrHumanInSelectedFrames": true, "reason": "Video menampilkan wajah atau manusia. Video affiliate wajib 100% bebas dari wajah dan manusia (hanya peragaan tangan atau produk saja)."}
 
-CRITICAL RULE 3: OTHER REJECTION CRITERIA:
-1. AI-GENERATED / SYNTHETIC / CGI / ANIMATION:
-   - REJECT if the video is AI-generated (e.g. Sora, Runway, Kling, Hailuo, synthetic video, 3D animated, CGI, cartoon, or computer-generated slop).
-   - Footage MUST be REAL, AUTHENTIC PHYSICAL DEMONSTRATION with real human hands.
-2. TALKING HEADS & NON-PRODUCT FOOTAGE:
-   - REJECT if it is a person talking to camera / vlog / talking head with no direct hands-on product demonstration.
-   - REJECT if it is pure parcel unboxing / bubble wrap with no actual product in action.
-3. DIRTY / WATERMARKED / CHANNEL LOGOS:
-   - REJECT if the video is dominated by channel watermarks, channel logos, creator handles (@username), or floating subtitles that cannot be avoided.
+RULE 4: REAL AUTHENTIC PHYSICAL FOOTAGE (NO AI/CGI SLOP, NO TALKING HEADS):
+- REJECT if AI-generated / synthetic / CGI / 3D animated / cartoon video.
+- REJECT if pure talking-head / vlog without direct hands-on product demonstration.
+- REJECT if pure parcel unboxing / bubble wrap without active product demonstration.
 
-CRITICAL RULE 4: PRIORITIZE SATISFYING ACTION DEMONSTRATIONS (VISUAL PROOF):
-- Shopee video audiences buy 'solutions', not just static products. Audiences love satisfying visual transformations!
-- PRIORITIZE frames showing active, satisfying demonstration: rich foam/busa melimpah, instant stain removal/cleaning, smooth cutting/chopping, water spraying, mechanism operating, or before/after transformation.
-- AVOID static/idle shots where nothing is actively happening.
+RULE 5: ZERO HEAVY WATERMARKS, CHANNEL LOGOS, OR CREATOR HANDLES:
+- REJECT if frames are dominated by large channel watermarks, @username handles, broadcast logos, timestamps, or promotional banners from other platforms.
 
-CRITERIA FOR ACCEPTANCE:
-- Video shows REAL, AUTHENTIC, SATISFYING PHYSICAL HANDS-ON DEMONSTRATION of the EXACT product: "${effectiveTitle}".
-- 100% FACELESS & HUMAN-FREE: Only hands demonstrating the product or pure product shots are visible.
-- STRICT ZERO WATERMARK/IDENTITY: NEVER select frames with channel watermarks, logos, or subtitles!
-- Select 6 to 8 frame indices (numbers 1 to ${frames.length}) showing the best distinct, satisfying, watermark-free, FACELESS product action moments (spaced ~3 to 4 seconds apart).
-- productHook: Write a powerful 3-second PROBLEM-BASED HOOK in Indonesian following this exact formula: "Kalau [kebiasaan/cara lama pakai alat biasa], fix [masalah fatal/kurang maksimal]!" (e.g. "Kalau nyuci motor masih pakai kain biasa, fix kurang maksimal!")
-- Output strict minimal JSON:
-{"status": "accept", "detectedProduct": "<nama produk di video>", "isExactProductMatch": true, "hasFaceOrHumanInSelectedFrames": false, "frames": [4, 8, 12, 16, 20, 24], "productHook": "<hook masalah 3 detik>", "hasProductBrand": false}`;
+RULE 6: SATISFYING ACTION DEMONSTRATIONS (VISUAL PROOF):
+- Audiences buy solutions! Prioritize frames showing active, satisfying demonstration: rich foam/busa melimpah, instant stain removal, smooth cutting/chopping, water spraying, mechanism operating, or before/after transformation.
+
+CRITERIA FOR ACCEPTANCE (ALL MUST BE TRUE):
+1. Exactly matches target Shopee product: "${effectiveTitle}".
+2. 100% Faceless & Human-Free (hands only).
+3. 100% Subtitle-Free & Burned-Text-Free (clean video without speech captions).
+4. Clean from heavy watermarks, logos, and creator handles.
+5. Real authentic physical demonstration.
+
+Output strictly valid JSON with this exact schema:
+If ACCEPTED:
+{
+  "status": "accept",
+  "detectedProduct": "<nama produk di video>",
+  "isExactProductMatch": true,
+  "hasSubtitlesOrBurnedText": false,
+  "hasFaceOrHumanInSelectedFrames": false,
+  "hasHeavyWatermarkOrLogos": false,
+  "isAiGeneratedOrSynthetic": false,
+  "frames": [4, 8, 12, 16, 20, 24],
+  "productHook": "Kalau [kebiasaan lama], fix [masalah fatal / kurang maksimal]!",
+  "hasProductBrand": false,
+  "detectedBrand": "none"
+}
+
+If REJECTED:
+{
+  "status": "reject",
+  "detectedProduct": "<nama produk di video>",
+  "isExactProductMatch": false,
+  "hasSubtitlesOrBurnedText": true,
+  "hasFaceOrHumanInSelectedFrames": false,
+  "hasHeavyWatermarkOrLogos": false,
+  "isAiGeneratedOrSynthetic": false,
+  "reason": "<alasan penolakan yang jelas dalam bahasa Indonesia>"
+}`;
 
   const userPrompt = `Target Shopee Product: "${effectiveTitle}"
 ${effectiveDesc ? `Product Description: "${effectiveDesc}"` : ''}
@@ -302,16 +338,18 @@ Total Duration: ${totalDuration}s
 Sampled Frames:
 ${frames.map((f, i) => `#${i + 1} (${f.timeFormatted})`).join(', ')}
 
-Review visual frames carefully:
-1. Visual Product Match: Does the physical item in the video match "${effectiveTitle}" exactly?
+Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
+1. Subtitle & Text QC: Do ANY of the frames contain hardcoded subtitles, speech captions, translated text, lyric bars, or running text?
+   - If YES: REJECT IMMEDIATELY! output {"status": "reject", "hasSubtitlesOrBurnedText": true, "reason": "Video ditolak: Mengandung subtitle / teks caption bawaan pada video asli."}
+2. Exact Product Match: Does the physical item in the video match "${effectiveTitle}" exactly?
    - If DIFFERENT product or compilation: output {"status": "reject", "detectedProduct": "<nama produk>", "isExactProductMatch": false, "reason": "Produk di video tidak cocok dengan link Shopee"}
-2. Strict Faceless & Human-Free QC: Does the video show human faces or people?
-   - Selected frames MUST NEVER contain any human face, head, or human body! Only hands or product shots allowed.
-   - If at least 4 clean faceless product shots cannot be found: output {"status": "reject", "isExactProductMatch": false, "reason": "Video menampilkan wajah atau manusia"}
-3. Video Quality & Authenticity: Is it AI-generated, talking head without demo, or covered in watermarks?
-   - If YES: output {"status": "reject", "isExactProductMatch": false, "reason": "<alasan penolakan>"}
-4. If it is a clean, REAL, 100% FACELESS hands-on demo of the EXACT product "${effectiveTitle}":
-   - Output {"status": "accept", "detectedProduct": "<nama produk>", "isExactProductMatch": true, "hasFaceOrHumanInSelectedFrames": false, "frames": [indices], "productHook": "...", "hasProductBrand": false}`;
+3. Faceless QC: Does the video show human faces, heads, or bodies?
+   - Selected frames MUST NEVER contain any face or human body! Only hands-on product demonstration allowed.
+   - If human faces/people are visible: output {"status": "reject", "hasFaceOrHumanInSelectedFrames": true, "reason": "Video menampilkan wajah atau manusia"}
+4. Quality & Authenticity: Is it AI-generated, talking head without demo, or covered in watermarks?
+   - If YES: output {"status": "reject", "reason": "<alasan penolakan>"}
+5. If and ONLY IF it passes ALL criteria (clean, real, 100% faceless, NO subtitles, exact product match):
+   - Output {"status": "accept", "detectedProduct": "<nama produk>", "isExactProductMatch": true, "hasSubtitlesOrBurnedText": false, "hasFaceOrHumanInSelectedFrames": false, "frames": [indices], "productHook": "Kalau ..., fix ...!", "hasProductBrand": false}`;
 
   const messageContent = [
     { type: 'text', text: userPrompt },
@@ -374,9 +412,29 @@ Review visual frames carefully:
       const isRejectStatus = rawStatus === 'reject' || rawStatus === 'rejected' || rawStatus === 'ditolak';
       const isMatchFalse = parsed.isProductMatch === false || parsed.isExactProductMatch === false || parsed.isUsableSourceVideo === false;
       const hasFace = parsed.hasFaceOrHumanInSelectedFrames === true;
+      const hasSubtitles = parsed.hasSubtitlesOrBurnedText === true || parsed.hasBurnedText === true || parsed.hasSubtitles === true;
+      const hasWatermark = parsed.hasHeavyWatermarkOrLogos === true;
+      const isSynthetic = parsed.isAiGeneratedOrSynthetic === true;
 
-      if (isRejectStatus || isMatchFalse || hasFace) {
-        const rejectionMsg = parsed.reason || parsed.rejectionReason || (hasFace ? 'Video menampilkan wajah atau manusia.' : 'Video ditolak oleh AI: Produk di video tidak cocok dengan link Shopee atau tidak fokus pada peragaan produk fisik asli.');
+      const reasonText = String(parsed.reason || parsed.rejectionReason || '').trim();
+      const reasonLower = reasonText.toLowerCase();
+      const mentionsSubtitlesInReason = reasonLower.includes('subtitle') || reasonLower.includes('caption') || reasonLower.includes('teks berjalan') || reasonLower.includes('terjemahan');
+
+      if (isRejectStatus || isMatchFalse || hasFace || hasSubtitles || hasWatermark || isSynthetic || mentionsSubtitlesInReason) {
+        let rejectionMsg = reasonText;
+        if (!rejectionMsg) {
+          if (hasSubtitles || mentionsSubtitlesInReason) {
+            rejectionMsg = 'Video ditolak: Mengandung subtitle / teks caption bawaan pada video asli (dilarang karena bertabrakan dengan subtitle baru).';
+          } else if (hasFace) {
+            rejectionMsg = 'Video ditolak: Menampilkan wajah atau manusia (wajib 100% faceless, hanya peragaan tangan atau produk saja).';
+          } else if (hasWatermark) {
+            rejectionMsg = 'Video ditolak: Mengandung watermark tebal, logo channel, atau overlay teks promosi.';
+          } else if (isSynthetic) {
+            rejectionMsg = 'Video ditolak: Terdeteksi video AI / animasi / CGI, bukan demonstrasi fisik nyata.';
+          } else {
+            rejectionMsg = 'Video ditolak oleh AI: Produk di video tidak cocok dengan link Shopee atau tidak memenuhi syarat affiliate.';
+          }
+        }
         console.warn(`[AIService ${provider} ${activeModel}] ⛔ VIDEO RESMI DITOLAK OLEH AI: ${rejectionMsg}`);
         const rejectError = new Error(`Video ditolak oleh AI (${activeModel}): ${rejectionMsg}`);
         rejectError.isAiRejection = true;

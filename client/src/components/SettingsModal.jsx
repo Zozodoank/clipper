@@ -88,10 +88,10 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings, 
                   </div>
                 </div>
                 <div className="text-[11px] font-mono font-semibold mb-1 text-blue-300">
-                  gemini-2.5-flash &bull; Direct Google AI
+                  gemini-flash-latest &bull; gemini-3.6-flash
                 </div>
                 <p className="text-[10px] leading-tight opacity-80">
-                  Koneksi langsung ke Google Gemini API tanpa perantara. Jika video ditolak karena wajah atau produk salah, sistem otomatis mencari video YouTube baru.
+                  Direct Google Gemini API. Dipakai sebagai secondary fallback otomatis jika OpenRouter limit, atau saat dipilih langsung.
                 </p>
                 {currentProvider === 'gemini' && (
                   <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-blue-400 animate-ping" />
@@ -110,7 +110,7 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings, 
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-bold text-xs flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                    OpenRouter Free Tier / Multi-Model
+                    OpenRouter Free Tier (Utama)
                   </span>
                   <div className="flex items-center gap-1">
                     <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
@@ -128,10 +128,10 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings, 
                   </div>
                 </div>
                 <div className="text-[11px] font-mono font-semibold mb-1 text-emerald-300">
-                  openrouter/free
+                  Gemma 4 26B &bull; Gemma 4 31B &bull; Nemotron 30B
                 </div>
                 <p className="text-[10px] leading-tight opacity-80">
-                  Gateway multi-model via OpenRouter dengan fallback model gratis.
+                  Prioritas utama model vision gratis berkualitas tinggi tanpa watermark &amp; bebas subtitle bawaan. Otomatis fallback ke Gemini Direct.
                 </p>
                 {currentProvider === 'openrouter' && (
                   <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />

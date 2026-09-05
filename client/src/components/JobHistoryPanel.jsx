@@ -35,6 +35,7 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('all'); // 'all' | 'completed' | 'tts' | 'failed'
   const [autoRetryingJobs, setAutoRetryingJobs] = useState(new Set());
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // TTS processing state
   const [processingTtsId, setProcessingTtsId] = useState(null);
@@ -50,26 +51,44 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
     isQuotaExhausted: false,
   });
 
-  const fetchJobs = async () => {
-    setLoading(true);
+  const fetchJobs = async (silent = false) => {
+    if (!silent) {
+      setIsRefreshing(true);
+      if (jobs.length === 0) {
+        setLoading(true);
+      }
+    }
     try {
       const res = await fetch('/api/jobs');
       if (res.ok) {
         const data = await res.json();
         const loadedJobs = data.jobs || [];
-        setJobs(loadedJobs);
-        
+        setJobs((prevJobs) => {
+          if (JSON.stringify(prevJobs) === JSON.stringify(loadedJobs)) {
+            return prevJobs;
+          }
+          return loadedJobs;
+        });
+
         // Sync active auto retrying jobs
         const activeRetrySet = new Set();
         loadedJobs.forEach(j => {
           if (j.isAutoRetrying) activeRetrySet.add(j.jobId);
         });
-        setAutoRetryingJobs(activeRetrySet);
+        setAutoRetryingJobs((prevSet) => {
+          if (prevSet.size === activeRetrySet.size && [...activeRetrySet].every(id => prevSet.has(id))) {
+            return prevSet;
+          }
+          return activeRetrySet;
+        });
       }
     } catch (err) {
       console.warn('Could not fetch job history:', err.message);
     } finally {
       setLoading(false);
+      if (!silent) {
+        setIsRefreshing(false);
+      }
     }
   };
 
@@ -113,7 +132,7 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
               setProcessingTtsId(data.batch.currentJobId);
             } else {
               setProcessingTtsId(null);
-              fetchJobs();
+              fetchJobs(true);
               if (data.batch.isQuotaExhausted) {
                 alert(`⚠️ Kuota Fish Audio S2.1 Pro telah habis setelah menyelesaikan ${data.batch.successfulJobs} job. Sisanya dapat dilanjutkan besok ketika kuota direset.`);
               } else if (data.batch.successfulJobs > 0) {
@@ -130,11 +149,11 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
     return () => clearInterval(interval);
   }, [batchStatus.isRunning]);
 
-  // Active polling while any job is in Auto Retry mode
+  // Active polling while any job is in Auto Retry mode (silent in background without resetting UI)
   useEffect(() => {
     if (autoRetryingJobs.size === 0) return;
     const interval = setInterval(() => {
-      fetchJobs();
+      fetchJobs(true);
     }, 3000);
     return () => clearInterval(interval);
   }, [autoRetryingJobs.size]);
@@ -283,7 +302,7 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
       if (onSelectJob) {
         onSelectJob({ ...job, stage: 'running', isAutoRetrying: true });
       }
-      fetchJobs();
+      fetchJobs(true);
     } catch (err) {
       console.error('Error starting auto retry:', err);
       alert(`Gagal: ${err.message}`);
@@ -307,7 +326,7 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
         next.delete(job.jobId);
         return next;
       });
-      fetchJobs();
+      fetchJobs(true);
     } catch (err) {
       console.warn('Error stopping auto retry:', err);
     }
@@ -396,11 +415,12 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
             <span className="hidden sm:inline">Buka Folder</span>
           </button>
           <button
-            onClick={fetchJobs}
-            disabled={loading}
+            onClick={() => fetchJobs(false)}
+            disabled={isRefreshing}
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+            title="Refresh riwayat"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
           </button>
           <button
             onClick={() => setIsOpen(false)}

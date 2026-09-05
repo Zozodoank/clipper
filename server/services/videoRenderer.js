@@ -182,7 +182,7 @@ export async function mergeVoiceoverAndBurnSubtitles({
         // If the source ASS is 720p, subtitles filter will scale it up automatically for 1080p.
         filterChains.push(`[0:v]subtitles='${sanitizedSrt}'[v]`);
       } else {
-        const subtitleStyle = 'FontName=Arial,FontSize=42,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=4.2,Shadow=2.2,Bold=1,Alignment=2,MarginV=172,MarginL=38,MarginR=38';
+        const subtitleStyle = 'FontName=Arial,FontSize=48,PrimaryColour=&H0000FFFF,SecondaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=4.5,Shadow=2.2,Bold=1,Alignment=2,MarginV=220,MarginL=40,MarginR=40';
         filterChains.push(`[0:v]subtitles='${sanitizedSrt}':force_style='${subtitleStyle}'[v]`);
       }
       mapArgs.push('-map', '[v]');
@@ -286,7 +286,7 @@ function buildClipFilter({ inputIndex, outputLabel, reframe = {}, hflip, ptsFact
 }
 
 function normalizeRenderClips(clips, fallbackStartTime, fallbackEndTime, fallbackReframe = {}) {
-  const clipLength = 5;
+  const defaultClipLength = 3.3;
   const sourceClips = Array.isArray(clips) ? clips : [];
   const normalized = [];
 
@@ -295,11 +295,13 @@ function normalizeRenderClips(clips, fallbackStartTime, fallbackEndTime, fallbac
       const startSeconds = parseTimeToSeconds(clip?.startSeconds ?? clip?.startTime);
       const endSeconds = parseTimeToSeconds(clip?.endSeconds ?? clip?.endTime);
       if (!Number.isFinite(startSeconds) || startSeconds < 0) continue;
-      if (Number.isFinite(endSeconds) && endSeconds - startSeconds < 4.9) continue;
+
+      const clipDuration = Number(clip?.duration) || (Number.isFinite(endSeconds) && endSeconds > startSeconds ? (endSeconds - startSeconds) : defaultClipLength);
+      if (clipDuration < 1.5) continue;
 
       normalized.push({
         startSeconds,
-        duration: clipLength,
+        duration: clipDuration,
         reframe: {
           ...(fallbackReframe || {}),
           ...(clip?.reframe || {}),
@@ -307,7 +309,7 @@ function normalizeRenderClips(clips, fallbackStartTime, fallbackEndTime, fallbac
           hasProductBrand: clip?.hasProductBrand !== undefined ? clip.hasProductBrand : clip?.reframe?.hasProductBrand,
         },
       });
-      if (normalized.length === 7) break; // Max 7 clips (35s)
+      if (normalized.length === 8) break; // Max 8 clips (support up to ~26s)
     }
   }
 
@@ -315,8 +317,9 @@ function normalizeRenderClips(clips, fallbackStartTime, fallbackEndTime, fallbac
 
   const fallbackStart = parseTimeToSeconds(fallbackStartTime);
   const fallbackEnd = parseTimeToSeconds(fallbackEndTime);
-  const fallbackDuration = fallbackEnd > fallbackStart ? fallbackEnd - fallbackStart : (clipLength * 6);
-  const clipCount = Math.max(4, Math.min(7, Math.floor(fallbackDuration / clipLength)));
+  const clipLength = defaultClipLength;
+  const fallbackDuration = fallbackEnd > fallbackStart ? fallbackEnd - fallbackStart : (clipLength * 7);
+  const clipCount = Math.max(5, Math.min(8, Math.floor(fallbackDuration / clipLength)));
 
   for (let index = 0; index < clipCount; index++) {
     normalized.push({

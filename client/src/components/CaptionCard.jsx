@@ -113,16 +113,14 @@ function cleanCaptionText(caption = '') {
 }
 
 export default function CaptionCard({ result }) {
-  // 'scenes' | 'script' | 'context' | 'aistudio' | 'caption'
   const [activeTab, setActiveTab] = useState('scenes');
   const [copiedField, setCopiedField] = useState(null);
 
   const cleanedCaption = useMemo(() => cleanCaptionText(result?.caption || ''), [result?.caption]);
 
   if (!result) return null;
-
-  const videoDuration = result.highlight?.duration || (result.sampleContext?.videoDuration ? parseInt(result.sampleContext.videoDuration, 10) : (Array.isArray(result.scenes) && result.scenes.length > 0 ? result.scenes.length * 5 : 30));
-  const formattedDuration = result.sampleContext?.videoDuration || `${videoDuration} detik`;
+  const videoDuration = result.highlight?.duration || (result.sampleContext?.videoDuration ? parseInt(result.sampleContext.videoDuration, 10) : (Array.isArray(result.scenes) && result.scenes.length > 0 ? Math.round(result.scenes.length * 3.3) : 24));
+  const formattedDuration = result.sampleContext?.videoDuration || `${typeof videoDuration === 'number' ? videoDuration.toFixed(1) : videoDuration} detik`;
 
   const copyToClipboard = async (text, fieldName) => {
     await copyToClipboardSafe(text);
@@ -148,6 +146,14 @@ export default function CaptionCard({ result }) {
   const aiStudioSections = parseAiStudioSections(result.aiStudioPrompt, result.sampleContext, result.voiceoverScript, videoDuration);
   const fullAiStudioPrompt = `Scene\n${aiStudioSections.scene}\n\nSample Context\n${aiStudioSections.context}\n\nSpeaker 1\n${aiStudioSections.speaker}`;
 
+  const getSceneBeatBadge = (sceneNum, totalScenes) => {
+    if (sceneNum === 1) return { label: '🔥 Hook Masalah (0-3s)', color: 'bg-red-500/20 text-red-300 border-red-500/30' };
+    if (sceneNum === 2) return { label: '💡 Hero Solution', color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' };
+    if (sceneNum === totalScenes) return { label: '🛒 CTA Keranjang Bawah', color: 'bg-amber-500/20 text-amber-300 border-amber-500/30' };
+    if (sceneNum === totalScenes - 1) return { label: '💰 Psikologi Harga', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' };
+    return { label: '✨ Satisfying Demo', color: 'bg-sky-500/20 text-sky-300 border-sky-500/30' };
+  };
+
   return (
     <div className="glass-panel rounded-2xl p-6 shadow-xl flex flex-col h-full">
       
@@ -155,7 +161,6 @@ export default function CaptionCard({ result }) {
       <div className="flex items-center justify-between border-b border-slate-800 pb-3.5 mb-4 flex-wrap gap-2">
         <div className="flex items-center gap-1.5 flex-wrap">
           
-          {/* Kotak Scene Tab */}
           <button
             onClick={() => setActiveTab('scenes')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
@@ -168,7 +173,6 @@ export default function CaptionCard({ result }) {
             <span>Kotak Scene</span>
           </button>
 
-          {/* Voiceover Script Tab */}
           <button
             onClick={() => setActiveTab('script')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
@@ -178,10 +182,9 @@ export default function CaptionCard({ result }) {
             }`}
           >
             <FileText className="w-3.5 h-3.5" />
-            <span>Script Voiceover (ID)</span>
+            <span>Naskah Voiceover (ID)</span>
           </button>
 
-          {/* Sample Context Tab */}
           <button
             onClick={() => setActiveTab('context')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
@@ -190,53 +193,49 @@ export default function CaptionCard({ result }) {
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
             }`}
           >
-            <Target className="w-3.5 h-3.5" />
+            <Sparkles className="w-3.5 h-3.5" />
             <span>Sample Context</span>
           </button>
 
-          {/* AI Studio / Gemini Prompt Tab */}
           <button
             onClick={() => setActiveTab('aistudio')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
               activeTab === 'aistudio'
-                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25'
+                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/25'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
             }`}
           >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>AI Studio Prompt (3 Kotak)</span>
+            <Bot className="w-3.5 h-3.5" />
+            <span>Prompt Google AI Studio</span>
           </button>
 
-          {/* Caption Reels Tab */}
           <button
             onClick={() => setActiveTab('caption')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
               activeTab === 'caption'
-                ? 'bg-rose-600 text-white shadow-md shadow-rose-600/25'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
             }`}
           >
-            <MessageSquare className="w-3.5 h-3.5" />
-            <span>Caption & Tag</span>
+            <Tag className="w-3.5 h-3.5" />
+            <span>Reels Caption</span>
           </button>
         </div>
 
-        {/* Global Copy Button for Active Tab */}
         <button
           onClick={() => {
-            if (activeTab === 'scenes') copyToClipboard(scenesText, 'scenes');
-            if (activeTab === 'script') copyToClipboard(result.voiceoverScript, 'script');
-            if (activeTab === 'context') copyToClipboard(contextText, 'context');
-            if (activeTab === 'aistudio') copyToClipboard(fullAiStudioPrompt, 'aistudio');
-            if (activeTab === 'caption') copyToClipboard(cleanedCaption, 'caption');
+            if (activeTab === 'scenes') copyToClipboard(scenesText, 'tab_scenes');
+            else if (activeTab === 'script') copyToClipboard(result.voiceoverScript || '', 'tab_script');
+            else if (activeTab === 'context') copyToClipboard(contextText, 'tab_context');
+            else if (activeTab === 'aistudio') copyToClipboard(fullAiStudioPrompt, 'tab_aistudio');
+            else if (activeTab === 'caption') copyToClipboard(cleanedCaption, 'tab_caption');
           }}
-          className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition-all active:scale-95 shadow-sm ml-auto"
-          title="Salin isi tab yang sedang aktif"
+          className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all border border-slate-700 flex items-center gap-1.5"
         >
-          {copiedField === activeTab ? (
+          {copiedField?.startsWith('tab_') ? (
             <>
               <Check className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="text-emerald-400">Tersalin!</span>
+              <span className="text-emerald-400">Copied Tab!</span>
             </>
           ) : (
             <>
@@ -247,64 +246,69 @@ export default function CaptionCard({ result }) {
         </button>
       </div>
 
-      {/* Tab Contents Area */}
       <div className="flex-1 overflow-y-auto pr-1">
         
         {/* 1. KOTAK SCENE (TIMELINE BREAKDOWN) */}
         {activeTab === 'scenes' && (
           <div className="space-y-3">
             {Array.isArray(result.scenes) && result.scenes.length > 0 ? (
-              result.scenes.map((scene) => (
-                <div
-                  key={scene.sceneNumber || Math.random()}
-                  className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/80 hover:border-slate-700 transition-all flex flex-col gap-2 relative group"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded bg-shopee-500/20 text-shopee-400 font-bold text-[11px] border border-shopee-500/30">
-                        SCENE {scene.sceneNumber}
-                      </span>
-                      <span className="text-[11px] font-mono text-slate-400">{scene.timeRange}</span>
-                    </div>
-
-                    <button
-                      onClick={() =>
-                        copyToClipboard(
-                          `[SCENE ${scene.sceneNumber} (${scene.timeRange})]\nVisual: ${scene.visualDescription}\nVoiceover: "${scene.voiceover}"\nNotes: ${scene.adAdvisorNotes || '-'}`,
-                          `scene_${scene.sceneNumber}`
-                        )
-                      }
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-slate-400 hover:text-white flex items-center gap-1 bg-slate-800 px-2 py-0.5 rounded border border-slate-700"
-                    >
-                      {copiedField === `scene_${scene.sceneNumber}` ? (
-                        <Check className="w-3 h-3 text-emerald-400" />
-                      ) : (
-                        <Copy className="w-3 h-3" />
-                      )}
-                      <span>Copy</span>
-                    </button>
-                  </div>
-
-                  <div className="space-y-1.5 text-xs">
-                    <div>
-                      <span className="text-slate-400 font-semibold">Visual Shot: </span>
-                      <span className="text-slate-200">{scene.visualDescription}</span>
-                    </div>
-
-                    <div className="p-2 rounded-lg bg-slate-900/90 border border-indigo-950/60">
-                      <span className="text-indigo-400 font-semibold block mb-0.5">Voiceover Narasi:</span>
-                      <p className="text-indigo-100 italic">"{scene.voiceover}"</p>
-                    </div>
-
-                    {scene.adAdvisorNotes && (
-                      <div className="text-[11px] text-amber-300/90 flex items-start gap-1">
-                        <span className="font-semibold text-amber-400">💡 Notes:</span>
-                        <span>{scene.adAdvisorNotes}</span>
+              result.scenes.map((scene) => {
+                const beat = getSceneBeatBadge(scene.sceneNumber, result.scenes.length);
+                return (
+                  <div
+                    key={scene.sceneNumber || Math.random()}
+                    className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/80 hover:border-slate-700 transition-all flex flex-col gap-2 relative group"
+                  >
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded bg-shopee-500/20 text-shopee-400 font-bold text-[11px] border border-shopee-500/30">
+                          SCENE {scene.sceneNumber}
+                        </span>
+                        <span className="text-[11px] font-mono text-slate-400">{scene.timeRange}</span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${beat.color}`}>
+                          {beat.label}
+                        </span>
                       </div>
-                    )}
+
+                      <button
+                        onClick={() =>
+                          copyToClipboard(
+                            `[SCENE ${scene.sceneNumber} (${scene.timeRange})]\nVisual: ${scene.visualDescription}\nVoiceover: "${scene.voiceover}"\nNotes: ${scene.adAdvisorNotes || '-'}`,
+                            `scene_${scene.sceneNumber}`
+                          )
+                        }
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-slate-400 hover:text-white flex items-center gap-1 bg-slate-800 px-2 py-0.5 rounded border border-slate-700"
+                      >
+                        {copiedField === `scene_${scene.sceneNumber}` ? (
+                          <Check className="w-3 h-3 text-emerald-400" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                        <span>Copy</span>
+                      </button>
+                    </div>
+
+                    <div className="space-y-1.5 text-xs">
+                      <div>
+                        <span className="text-slate-400 font-semibold">Visual Shot: </span>
+                        <span className="text-slate-200">{scene.visualDescription}</span>
+                      </div>
+
+                      <div className="p-2 rounded-lg bg-slate-900/90 border border-indigo-950/60">
+                        <span className="text-indigo-400 font-semibold block mb-0.5">Voiceover Narasi:</span>
+                        <p className="text-indigo-100 italic">"{scene.voiceover}"</p>
+                      </div>
+
+                      {scene.adAdvisorNotes && (
+                        <div className="text-[11px] text-amber-300/90 flex items-start gap-1">
+                          <span className="font-semibold text-amber-400">💡 Notes:</span>
+                          <span>{scene.adAdvisorNotes}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             ) : (
               <p className="text-xs text-slate-400">Tidak ada data kotak scene.</p>
             )}
@@ -314,9 +318,15 @@ export default function CaptionCard({ result }) {
         {/* 2. VOICEOVER SCRIPT (AD ADVISOR FORMAT) */}
         {activeTab === 'script' && (
           <div className="relative flex-1 flex flex-col">
-            <div className="mb-2 text-[11px] text-slate-400 flex items-center gap-1">
-              <span>Struktur Ad Advisor:</span>
-              <span className="text-indigo-300 font-medium">[HOOK 0-3s] → [DEMO & BENEFIT] → [CTA SHOPEE]</span>
+            <div className="mb-2 text-[11px] text-slate-400 flex items-center gap-1 flex-wrap">
+              <span>Formula Shopee FYP:</span>
+              <span className="text-amber-300 font-bold">[HOOK MASALAH 0-3s]</span>
+              <span>→</span>
+              <span className="text-indigo-300 font-bold">[HERO SOLUTION]</span>
+              <span>→</span>
+              <span className="text-sky-300 font-bold">[DEMO SATISFYING]</span>
+              <span>→</span>
+              <span className="text-emerald-300 font-bold">[HARGA &amp; CTA KERANJANG]</span>
             </div>
             <textarea
               readOnly

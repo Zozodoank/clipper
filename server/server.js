@@ -908,8 +908,9 @@ export async function runStage1Pipeline({
     });
 
     const aiProvider = options.aiProvider || 'openrouter';
+    const sceneDuration = Number(options.sceneDuration) || 3.3;
 
-    console.log(`[Job ${jobId}] Mengirim ke AI: videoMeta.duration=${videoMeta.duration}s, ${rawFrames.length} frames`);
+    console.log(`[Job ${jobId}] Mengirim ke AI: videoMeta.duration=${videoMeta.duration}s, ${rawFrames.length} frames, sceneDuration=${sceneDuration}s`);
     updateProgress({ step: 'gemini_vision', message: 'AI menganalisa frame produk dan menentukan cuplikan terbaik...', progress: 48, status: 'running' });
     const highlight = await selectHighlightWithAI({
       apiKey,
@@ -917,6 +918,7 @@ export async function runStage1Pipeline({
       frames: rawFrames,
       videoMetadata: videoMeta,
       productTitle, productDescription, shopeeLink,
+      sceneDuration,
       allowFallbackClips: !requireCleanGeminiPlan,
       onProgress: updateProgress,
     });
@@ -967,8 +969,8 @@ export async function runStage1Pipeline({
     }
 
     const renderMessage = isBrandDetected
-      ? `Rendering ${highlight.clips.length} cuplikan produk (${highlight.duration}s) [Mirror H-Flip OFF: Merek "${highlight.detectedBrand || 'Terdeteksi'}"]...`
-      : `Rendering ${highlight.clips.length} AI-selected 5-second full-product shots (${highlight.duration}s)...`;
+      ? `Rendering ${highlight.clips.length} cuplikan produk (${highlight.duration.toFixed(1)}s) [Mirror H-Flip OFF: Merek "${highlight.detectedBrand || 'Terdeteksi'}"]...`
+      : `Rendering ${highlight.clips.length} AI-selected fast product shots (${highlight.duration.toFixed(1)}s)...`;
 
     updateProgress({ step: 'render_silent', message: renderMessage, progress: 62, status: 'running' });
     await renderSilentAntiDetectionVideo({
@@ -998,6 +1000,7 @@ export async function runStage1Pipeline({
       shopeeLink,
       productHook: highlight.productHook,
       segmentDuration: highlight.duration,
+      sceneDuration,
       onProgress: updateProgress,
     });
 

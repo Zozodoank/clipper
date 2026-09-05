@@ -180,11 +180,19 @@ export function generateAssSubtitles(scriptText, totalDurationSec, assOutputPath
     });
   }
 
+  // 3. Format phrases with 2-Tone Shopee Viral Subtitle Styling (Kuning & Putih):
+  // Important keywords (problems, satisfying actions, benefits, price & Shopee CTA) are highlighted in bright yellow (&H0000FFFF&),
+  // while connecting words remain crisp white (&H00FFFFFF&) with a thick black outline.
+  const formattedEvents = events.map((e, idx) => {
+    const coloredText = colorizeShopeeSubtitle(e.text, idx);
+    return `Dialogue: 0,${e.start},${e.end},Default,,0,0,0,,${coloredText}`;
+  });
+
   // Native ASS (Advanced SubStation Alpha) Header with exact 1080x1920 coordinate system
-  // Fontsize: 50, Outline: 4.2, Shadow: 2.2, Alignment: 2 (Bottom-Center), MarginV: 172
-  // This places bold, highly legible text centered inside the bottom area (y: 1680-1760).
+  // Fontsize: 52, Outline: 4.5, Shadow: 2.2, Alignment: 2 (Bottom-Center), MarginV: 220
+  // MarginV 220 ensures subtitles sit safely in the viewing zone above the Shopee Keranjang Kuning UI and captions.
   const assContent = `[Script Info]
-Title: TikTok/Reels Affiliate Subtitles
+Title: Shopee Viral Affiliate Subtitles (Yellow & White)
 ScriptType: v4.00+
 WrapStyle: 0
 ScaledBorderAndShadow: yes
@@ -194,16 +202,53 @@ PlayResY: 1920
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,50,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,4.2,2.2,2,60,60,172,1
+Style: Default,Arial,52,&H00FFFFFF,&H0000FFFF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,4.5,2.2,2,60,60,220,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-${events.map((e) => `Dialogue: 0,${e.start},${e.end},Default,,0,0,0,,${e.text}`).join('\n')}
+${formattedEvents.join('\n')}
 `;
 
   fs.writeFileSync(assOutputPath, assContent, 'utf8');
-  console.log(`[SubtitleService] Generated ${events.length} native ASS subtitle blocks synchronized to ${safeTotalDuration.toFixed(1)}s audio at ${assOutputPath}`);
+  console.log(`[SubtitleService] Generated ${events.length} Shopee 2-tone (Yellow & White) ASS subtitles synchronized to ${safeTotalDuration.toFixed(1)}s audio at ${assOutputPath}`);
   return assOutputPath;
+}
+
+/**
+ * Highlights punchy keywords in bright yellow (\\c&H0000FFFF&) and base text in white (\\c&H00FFFFFF&).
+ * If no specific keyword is matched, alternates highlighting on punchy words to guarantee visual engagement.
+ */
+function colorizeShopeeSubtitle(text, index = 0) {
+  if (!text || typeof text !== 'string') return '';
+
+  const clean = text.trim();
+  const yellow = '{\\c&H0000FFFF&}';
+  const white = '{\\c&H00FFFFFF&}';
+
+  // Keyword patterns for high-converting Shopee Affiliate narration
+  const viralKeywordsPattern = /\b(fix|kurang maksimal|kain biasa|alat biasa|masalah|rusak|gagal|capek|ribet|baret|lecet|kotor|solusi|sarung tangan|cendol|busa|melimpah|praktis|serbaguna|bersih|kinclong|tuntas|mudah|cepat|lembut|kokoh|awet|rapi|ampuh|otomatis|murah meriah|murah|diskon|promo|hemat|worth it|terjangkau|keranjang|pojok kiri bawah|keranjang kuning|sekarang|buruan|cek|klik|checkout|sebelum kehabisan)\b/gi;
+
+  if (viralKeywordsPattern.test(clean)) {
+    // Reset regex index
+    viralKeywordsPattern.lastIndex = 0;
+    const highlighted = clean.replace(viralKeywordsPattern, (match) => `${yellow}${match}${white}`);
+    return `${white}${highlighted}`.replace(/\{\\c&H00FFFFFF&\}\{\\c&H00FFFFFF&\}/g, '{\\c&H00FFFFFF&}');
+  }
+
+  // Fallback: highlight the last 1-2 words (or punchy segment) in yellow for visual pacing
+  const words = clean.split(/\s+/);
+  if (words.length <= 2) {
+    return `${yellow}${clean}`;
+  }
+
+  // Highlight the latter half / punchy words
+  const splitPoint = Math.max(1, Math.floor(words.length / 2));
+  const firstPart = words.slice(0, splitPoint).join(' ');
+  const secondPart = words.slice(splitPoint).join(' ');
+
+  return index % 2 === 0
+    ? `${white}${firstPart} ${yellow}${secondPart}${white}`
+    : `${yellow}${firstPart}${white} ${secondPart}`;
 }
 
 // Backward compatibility alias

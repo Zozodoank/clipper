@@ -9,9 +9,10 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
   const resetDefaults = () => {
     setSettings({
       aiProvider: 'openrouter',
+      sceneDuration: 3.3,
       hflip: false,
       speedMultiplier: 1,
-      enableSubtitles: false,
+      enableSubtitles: true,
       enableTts: false,
       voice: 'alloy',
     });
@@ -98,6 +99,46 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
             </p>
           </div>
 
+          {/* Scene Duration / Pacing - Shopee FYP Formula */}
+          <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-slate-200 flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span>Pacing Adegan (Shopee FYP Formula)</span>
+              </span>
+              <span className="font-mono text-xs font-bold text-amber-400 px-2 py-0.5 bg-slate-800 rounded">
+                {(settings.sceneDuration || 3.3)}s / scene
+              </span>
+            </div>
+            <p className="text-xs text-slate-400">
+              Tempo cepat 3 - 3.5 detik per scene memaksimalkan retensi (completion rate) audiens Shopee untuk menembus batas 200 views.
+            </p>
+            <div className="grid grid-cols-3 gap-2 pt-1">
+              {[
+                { value: 3.3, label: '3.3s (FYP Formula)', badge: 'Recommended' },
+                { value: 3.0, label: '3.0s (Ultra Fast)', badge: '~21s' },
+                { value: 5.0, label: '5.0s (Klasik)', badge: '~35s' }
+              ].map((item) => {
+                const isSelected = (settings.sceneDuration || 3.3) === item.value;
+                return (
+                  <button
+                    key={item.value}
+                    type="button"
+                    onClick={() => setSettings({ ...settings, sceneDuration: item.value })}
+                    className={`py-2 px-2.5 rounded-xl text-left border transition-all flex flex-col justify-between ${
+                      isSelected
+                        ? 'bg-shopee-500/20 border-shopee-500 text-white shadow-md shadow-shopee-500/20 ring-1 ring-shopee-500/50'
+                        : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="text-xs font-bold">{item.label}</span>
+                    <span className="text-[10px] text-amber-400 font-mono mt-0.5">{item.badge}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Horizontal Flip Filter */}
           <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-950/60 border border-slate-800">
             <div>
@@ -129,7 +170,7 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              Keep 1.00x for precise 5-second product shots. Higher speeds are optional.
+              Keep 1.00x for precise product shots. Higher speeds are optional.
             </p>
             <div className="grid grid-cols-4 gap-2 pt-1">
               {[1.00, 1.03, 1.05, 1.08].map((spd) => (
@@ -152,9 +193,11 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings }
           {/* Optional Burn Subtitles */}
           <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-950/60 border border-slate-800">
             <div>
-              <div className="font-semibold text-slate-200">Burn Subtitles on Video</div>
+              <div className="font-semibold text-slate-200 flex items-center gap-1.5">
+                <span>Burn Subtitles 2-Warna (Kuning &amp; Putih)</span>
+              </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Burn yellow/white script subtitles directly onto the rendered video frame.
+                Membakar subtitle kontras tinggi (kuning Shopee &amp; putih) dengan outline tebal agar video tetap menjual saat ditonton tanpa suara (mute mode).
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">

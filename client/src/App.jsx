@@ -21,7 +21,8 @@ export default function App() {
   }));
 
   const [settings, setSettings] = useState({
-    aiProvider: 'gemini',
+    aiProvider: 'openrouter',
+    sceneDuration: 3.3,
     hflip: false,
     speedMultiplier: 1,
     enableSubtitles: true,

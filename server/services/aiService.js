@@ -230,6 +230,7 @@ export async function selectHighlightWithAI({
   productTitle,
   productDescription,
   shopeeLink,
+  sceneDuration = 3.3,
   allowFallbackClips = false,
   onProgress = () => {}
 }) {
@@ -237,9 +238,11 @@ export async function selectHighlightWithAI({
   let { client, models: modelFallbackList, provider } = activeConfig;
   let activeModel = modelFallbackList[0];
 
+  const clipSec = Math.max(2.5, Math.min(5.0, Number(sceneDuration) || 3.3));
+
   onProgress({
     step: 'gemini_vision',
-    message: `Analyzing full video frames with ${provider} (${activeModel}) to plan 5-second product shots...`,
+    message: `Analyzing full video frames with ${provider} (${activeModel}) to plan fast ${clipSec}s product shots...`,
     progress: 45
   });
 
@@ -247,7 +250,7 @@ export async function selectHighlightWithAI({
   const effectiveTitle = productTitle || videoMetadata?.title || 'Product Showcase Video';
   const effectiveDesc = productDescription || videoMetadata?.description || '';
 
-  const systemPrompt = `You are an expert Short-Form Affiliate Video QC Director.
+  const systemPrompt = `You are an expert Short-Form Affiliate Video QC Director specializing in Shopee Video FYP Algorithms.
 Evaluate the ${frames.length} sampled frames of the source video for the target Shopee product: "${effectiveTitle}".
 
 CRITICAL RULE 1: EXACT PHYSICAL PRODUCT MATCH VERIFICATION
@@ -265,7 +268,7 @@ CRITICAL RULE 2: ABSOLUTE ZERO HUMAN FACES & ZERO HUMAN BODIES (STRICT FACELESS 
 - The ONLY permitted human element is HANDS/FINGERS ONLY actively demonstrating, holding, pressing, or operating the product against a tabletop/neutral background (faceless close-up hands-only demonstration).
 - ZERO TOLERANCE FOR FACES: NEVER select any frame where a human face (front, side profile, looking down, background face, creator reaction), head, neck, torso, or whole person body is visible!
 - If a frame contains a face, head, or person's body, DO NOT SELECT THAT FRAME NUMBER.
-- If the entire video is person-centric, talking head, vlog, or does NOT contain at least 4 distinct, completely faceless product demonstration moments (spaced at least 5 seconds apart), REJECT THE VIDEO IMMEDIATELY:
+- If the entire video is person-centric, talking head, vlog, or does NOT contain at least 5 distinct, completely faceless product demonstration moments (spaced at least 3 seconds apart), REJECT THE VIDEO IMMEDIATELY:
   {"status": "reject", "isExactProductMatch": false, "reason": "Video menampilkan wajah atau manusia. Video affiliate wajib 100% bebas dari wajah dan manusia (hanya peragaan tangan atau produk saja)."}
 
 CRITICAL RULE 3: OTHER REJECTION CRITERIA:
@@ -278,13 +281,19 @@ CRITICAL RULE 3: OTHER REJECTION CRITERIA:
 3. DIRTY / WATERMARKED / CHANNEL LOGOS:
    - REJECT if the video is dominated by channel watermarks, channel logos, creator handles (@username), or floating subtitles that cannot be avoided.
 
+CRITICAL RULE 4: PRIORITIZE SATISFYING ACTION DEMONSTRATIONS (VISUAL PROOF):
+- Shopee video audiences buy 'solutions', not just static products. Audiences love satisfying visual transformations!
+- PRIORITIZE frames showing active, satisfying demonstration: rich foam/busa melimpah, instant stain removal/cleaning, smooth cutting/chopping, water spraying, mechanism operating, or before/after transformation.
+- AVOID static/idle shots where nothing is actively happening.
+
 CRITERIA FOR ACCEPTANCE:
-- Video shows REAL, AUTHENTIC, PHYSICAL HANDS-ON DEMONSTRATION of the EXACT product: "${effectiveTitle}".
+- Video shows REAL, AUTHENTIC, SATISFYING PHYSICAL HANDS-ON DEMONSTRATION of the EXACT product: "${effectiveTitle}".
 - 100% FACELESS & HUMAN-FREE: Only hands demonstrating the product or pure product shots are visible.
 - STRICT ZERO WATERMARK/IDENTITY: NEVER select frames with channel watermarks, logos, or subtitles!
-- Select 4 to 7 frame indices (numbers 1 to ${frames.length}) showing the best distinct, watermark-free, FACELESS product demonstration moments (spaced at least 5 seconds apart).
+- Select 6 to 8 frame indices (numbers 1 to ${frames.length}) showing the best distinct, satisfying, watermark-free, FACELESS product action moments (spaced ~3 to 4 seconds apart).
+- productHook: Write a powerful 3-second PROBLEM-BASED HOOK in Indonesian following this exact formula: "Kalau [kebiasaan/cara lama pakai alat biasa], fix [masalah fatal/kurang maksimal]!" (e.g. "Kalau nyuci motor masih pakai kain biasa, fix kurang maksimal!")
 - Output strict minimal JSON:
-{"status": "accept", "detectedProduct": "<nama produk di video>", "isExactProductMatch": true, "hasFaceOrHumanInSelectedFrames": false, "frames": [4, 8, 12, 16, 20], "productHook": "<hook pendek menarik dalam bahasa Indonesia>", "hasProductBrand": false}`;
+{"status": "accept", "detectedProduct": "<nama produk di video>", "isExactProductMatch": true, "hasFaceOrHumanInSelectedFrames": false, "frames": [4, 8, 12, 16, 20, 24], "productHook": "<hook masalah 3 detik>", "hasProductBrand": false}`;
 
   const userPrompt = `Target Shopee Product: "${effectiveTitle}"
 ${effectiveDesc ? `Product Description: "${effectiveDesc}"` : ''}
@@ -378,13 +387,15 @@ Review visual frames carefully:
           if (isNaN(idx) || idx < 1 || idx > frames.length) continue;
           const frameObj = frames[idx - 1];
           const ts = frameObj ? frameObj.timestamp : (idx * (totalDuration / frames.length));
-          const startSec = Math.max(0, Math.min(totalDuration - 5, Math.round(ts)));
+          const startSec = Math.max(0, Math.min(totalDuration - clipSec, Math.round(ts * 10) / 10));
+          const endSec = Math.round((startSec + clipSec) * 10) / 10;
           candidateClips.push({
             startSeconds: startSec,
-            endSeconds: startSec + 5,
+            endSeconds: endSec,
+            duration: clipSec,
             startTime: formatSeconds(startSec),
-            endTime: formatSeconds(startSec + 5),
-            reason: `Frame #${idx} peragaan produk di detik ${formatSeconds(startSec)}`,
+            endTime: formatSeconds(endSec),
+            reason: `Frame #${idx} peragaan memuaskan di detik ${formatSeconds(startSec)}`,
             isCleanAffiliateShot: true,
             hasProductBrand: Boolean(parsed.hasProductBrand),
             reframe: {
@@ -403,12 +414,13 @@ Review visual frames carefully:
         allowFallback: allowFallbackClips,
         hasProductBrand,
         allowHflip,
+        sceneDuration: clipSec,
       });
       const duration = clips.reduce((total, clip) => total + (clip.endSeconds - clip.startSeconds), 0);
       
       onProgress({
         step: 'gemini_vision',
-        message: `${provider} (${activeModel}) selected ${clips.length} clean 5-second product shots (${duration}s total).`,
+        message: `${provider} (${activeModel}) selected ${clips.length} clean ${clipSec}s product shots (${duration.toFixed(1)}s total).`,
         progress: 55
       });
 
@@ -418,7 +430,7 @@ Review visual frames carefully:
         startSeconds: clips[0].startSeconds,
         endSeconds: clips[clips.length - 1].endSeconds,
         duration,
-        productHook: parsed.productHook || 'Racun Belanja Viral Wajib Punya!',
+        productHook: parsed.productHook || 'Kalau masih pakai cara lama, fix kurang maksimal!',
         hasProductBrand,
         detectedBrand,
         allowHflip,
@@ -487,7 +499,8 @@ export async function generateAdAdvisorScriptWithAI({
   productDescription,
   shopeeLink,
   productHook,
-  segmentDuration = 45,
+  segmentDuration = 24,
+  sceneDuration = 3.3,
   onProgress = () => {}
 }) {
   let activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
@@ -496,100 +509,94 @@ export async function generateAdAdvisorScriptWithAI({
 
   onProgress({
     step: 'gpt_scripting',
-    message: `Analyzing trimmed video frames with ${provider} (${activeModel}) for Kotak Scene & Ad Advisor Naskah...`,
+    message: `Analyzing trimmed video frames with ${provider} (${activeModel}) for Shopee FYP Kotak Scene & Naskah...`,
     progress: 75
   });
 
   const effectiveTitle = (productTitle || '').trim() || videoMetadata?.title || 'Produk Viral Shopee';
   const effectiveDesc = (productDescription || '').trim();
-  const targetDuration = Math.max(20, Math.min(35, Math.round(Number(segmentDuration) || 30)));
-  const sceneCount = Math.round(targetDuration / 5);
+  const targetDuration = Math.max(18, Math.min(32, Math.round(Number(segmentDuration) || 24)));
+  const effectiveSceneSec = Math.max(2.5, Math.min(4.5, Number(sceneDuration) || 3.3));
+  const sceneCount = Math.max(5, Math.min(8, Math.round(targetDuration / effectiveSceneSec)));
   const targetWords = Math.round(targetDuration * 2.6);
   const minWords = Math.round(targetDuration * 2.3);
   const maxWords = Math.round(targetDuration * 2.8);
 
-  const systemPrompt = `You are a Senior Creative Director and Ad Advisor specializing in Indonesian Short-Form Affiliate Video Marketing (TikTok Shop, Shopee Video, Instagram Reels).
+  const systemPrompt = `You are a Senior Creative Director and Ad Advisor specializing in Indonesian Short-Form Affiliate Video Marketing (Shopee Video, TikTok Shop, Instagram Reels).
 
-You will receive the explicit Product Title, Product Description, and the sampled frames of a ${targetDuration}-second video clip. Use this precise product knowledge together with the visual frames to generate 5 high-converting marketing assets without making incorrect assumptions:
+You will receive the explicit Product Title, Product Description, and the sampled frames of a ${targetDuration}-second video clip (${sceneCount} fast scenes of ~${effectiveSceneSec.toFixed(1)}s each).
 
-CRITICAL DURATION & WORD-COUNT TIMING RULES (MANDATORY):
-- The final video duration is EXACTLY ${targetDuration} seconds (${sceneCount} scenes of 5 seconds each).
-- In standard, engaging Indonesian voiceover tempo (2.5 - 2.8 words/second), the TOTAL voiceover script MUST contain between ${minWords} and ${maxWords} words (Target ideal: exactly ~${targetWords} words).
-- DO NOT make the script too short (fewer than ${minWords} words)! A short script will leave dead silence or force the backend to unnaturally slow down audio playback.
-- DO NOT make the script too long (more than ${maxWords} words)! A script that is too long will be cut off before the video finishes.
-- Distribute narration evenly across scenes: For every 5-second scene beat, write approximately 12 to 14 words of spoken narration so the voiceover flows continuously from second 00:00 to second ${targetDuration}.
+Use the proven SHOPEE FYP 4-BEAT FORMULA engineered to break past the initial 200-views testing pool through high watch-time completion rate and maximum Keranjang Kuning conversions:
+
+CRITICAL 4-BEAT SHOPEE FYP FORMULA:
+1. [00:00] BEAT 1: THE 3-SECOND PROBLEM HOOK (00:00 - 00:03)
+   - MUST immediately state a specific everyday problem / frustration caused by the old way or conventional tool!
+   - MANDATORY FORMULA: "Kalau [kebiasaan/cara lama pakai alat biasa], fix [masalah fatal / kurang maksimal / bikin capek]!"
+   - DILARANG KERAS menggunakan sapaan basi seperti: "Stop scroll!", "Halo guys!", "Siapa disini yang...", "Racun Shopee wajib punya!", atau pembukaan yang bertele-tele!
+   - Contoh tepat: "Kalau nyuci motor masih pakai kain biasa, fix kurang maksimal!" atau "Masih sering capek ngulek bumbu pakai cobek lama, tangan pegal dan lama beres?"
+
+2. BEAT 2: HERO SOLUTION & VALUE INTRODUCTION (00:03 - 00:07)
+   - Introduce the product as the hero solution that immediately eliminates the pain point.
+   - Audiences buy "solutions", not just static items.
+   - Contoh: "Untung sekarang ada ${effectiveTitle} ini, sekali usap langsung beres tanpa ribet!"
+
+3. BEAT 3: SATISFYING VISUAL DEMONSTRATION & CORE BENEFITS (00:07 - 00:17)
+   - Describe the satisfying visual proof seen in the video frames: rich foam (busa melimpah), cleaning hard-to-reach crevices (menjangkau sela-sela), smooth effortless cutting, hands protected from scratches/cuts (tangan aman gak lecet).
+   - Satisfying demonstrations keep viewers glued to the screen (high completion watch-time).
+
+4. BEAT 4: PRICE PSYCHOLOGY & SHOPEE KERANJANG POJOK KIRI BAWAH CTA (00:17 - ${formatSeconds(targetDuration)})
+   - Voiceover MUST state the price appeal: "Harganya murah meriah..." or "Harganya murah meriah banget, gak bikin kantong jebol!"
+   - Direct viewers with urgent FOMO to the Shopee Keranjang Kuning at the bottom-left corner:
+     "Buruan cek keranjang pojok kiri bawah sebelum kehabisan!" or "Langsung checkout di keranjang pojok kiri bawah mumpung lagi promo!"
+   - The Shopee algorithm prioritizes clicks on the yellow shopping bag icon at the bottom-left. Calling out "keranjang pojok kiri bawah" is essential for conversion!
+
+CRITICAL DURATION & WORD-COUNT TIMING RULES:
+- The final video duration is EXACTLY ${targetDuration} seconds (${sceneCount} fast scenes of ~${effectiveSceneSec.toFixed(1)}s each).
+- Total voiceover script MUST contain between ${minWords} and ${maxWords} words (Target ideal: exactly ~${targetWords} words, ~8-10 words per 3.3s beat).
+- DO NOT make the script too short (fewer than ${minWords} words) or too long (more than ${maxWords} words).
 
 1. 'sampleContext':
    - 'productName': Explicit product name.
    - 'videoDuration': "${targetDuration} detik"
    - 'targetAudience': Specific target audience profile in Indonesia.
-   - 'coreProblem': The primary pain point this product solves based on description & visual.
+   - 'coreProblem': The primary pain point from the old way/conventional tool.
    - 'keyFeatures': List of 3-4 key USPs (Unique Selling Propositions).
-   - 'buyingTrigger': Psychological trigger (FOMO, convenience, discount, viral trend).
+   - 'buyingTrigger': Psychological trigger (Problem-Solution relief, FOMO, harga murah meriah).
 
-2. 'scenes' (Kotak Scene / Scene-by-Scene Breakdown):
-   - Break the ${targetDuration}-second video into EXACTLY ${sceneCount} scenes of 5 seconds each (Scene 1: 00:00 - 00:05, Scene 2: 00:05 - 00:10, ..., Scene ${sceneCount}).
-   - Produce exactly ${sceneCount} scenes, each exactly 5 seconds long.
+2. 'scenes' (Kotak Scene / Fast Scene Breakdown):
+   - Break into EXACTLY ${sceneCount} fast scenes (~${effectiveSceneSec.toFixed(1)}s each).
    - For each scene provide:
      * 'sceneNumber': integer (1, 2, 3... up to ${sceneCount})
-     * 'timeRange': e.g. "00:00 - 00:05", "00:05 - 00:10", etc.
-     * 'visualDescription': What is happening visually in Indonesian.
-     * 'voiceover': The exact spoken narration line for this scene (around 12-14 words per 5-second scene).
-     * 'adAdvisorNotes': Director notes for sound effects (SFX), visual text overlays, or emotional pacing.
+     * 'timeRange': exact range e.g. "00:00 - 00:03", "00:03 - 00:07", etc.
+     * 'visualDescription': Satisfying visual action happening in Indonesian.
+     * 'voiceover': Spoken narration line for this scene (~8-10 words).
+     * 'adAdvisorNotes': Director notes for sound effects (SFX), visual text overlays (yellow/white text), or emotional pacing.
 
 3. 'voiceoverScript' (Naskah Voiceover Lengkap dengan Penanda Waktu & Tag Emosi):
-   - A complete Indonesian spoken narration (${minWords} - ${maxWords} words total).
+   - Complete Indonesian spoken narration (${minWords} - ${maxWords} words total).
    - Use dynamic emotional tone & pacing tags so the AI voiceover (Fish Audio S2.1 Pro) sounds lively, expressive, and NEVER monotone:
-     * [excited] for energetic hooks, surprise moments, and closing Call To Action.
+     * [excited] for energetic Problem Hooks, surprise moments, and closing CTA.
      * [emphasis] to place strong vocal stress on key product features and instant benefits.
      * [soft] for empathetic problem statements.
      * [pause] for natural human breathing pauses between sentences.
-   - Each line MUST start with an exact timestamp corresponding to each 5-second scene (e.g. [00:00], [00:05], [00:10], up to [${formatSeconds(targetDuration - 5)}]), followed by the emotion tag and spoken line, e.g.:
-     [00:00] [excited] Wah, racun yang satu ini wajib banget kamu punya! [pause]
-     [00:05] [soft] Masih sering capek marut kelapa atau keju pakai alat lama?
-     [00:10] [emphasis] Pakai parutan serbaguna ini, [pause] hasilnya rapi dan praktis banget!
-     ...
-     [${formatSeconds(targetDuration - 5)}] [excited] Yuk, langsung checkout produk di bawah sekarang sebelum promo habis!
+   - Each line MUST start with an exact timestamp corresponding to each scene (e.g. [00:00], [00:03], [00:07], up to the closing CTA), followed by the emotion tag and spoken line.
+   - Closing line MUST have the price appeal ("murah meriah") and direct CTA to "keranjang pojok kiri bawah".
 
-STRICT RULES FOR VOICE OVER & CALL TO ACTION:
-- NEVER mention unboxing, opening packaging, bubble wrap, or cardboard boxes in the narration. Focus 100% on the product's practical features, active demonstration, and problem-solving benefits like a top pro affiliate creator.
+STRICT RULES FOR VOICE OVER:
+- NEVER mention unboxing, packaging, bubble wrap, or cardboard. Focus 100% on product action and problem-solving.
 - Write in natural, engaging conversational Indonesian.
-- DILARANG KERAS menggunakan kata "kece" dalam naskah voiceover! Gunakan kata alternatif seperti "keren", "elegan", "praktis", "cakep", atau "bagus".
-- DILARANG KERAS menggunakan kata "kangen"! Jangan pernah gunakan kata "kangen" di naskah voiceover maupun caption.
-- HINDARI KATA SLANG / AWALAN INFORMAL "ng" (seperti: nggak, ngasih, ngeliat, ngerasain, ngapain, ngerepotin, ngiris, ngupas, ngatur, dll). Selalu gunakan kata baku bahasa Indonesia (seperti: tidak, tanpa, memberi, melihat, merasakan, mengiris, mengupas, dll).
-- KATA "keju" DAN "beres" WAJIB DITULIS PERSIS SEPERTI INI: "keju" dan "beres" (keju=keju, beres=beres) TANPA tanda kecil atau aksen di atas huruf e (JANGAN PERNAH tulis kéju atau bérés)!
-- DILARANG KERAS menyebutkan nama platform media sosial maupun marketplace apa pun dalam narasi suara (DILARANG menyebut: TikTok, Shopee, Instagram, YouTube, Facebook, Reels, Tokopedia, medsos, dll).
-- DILARANG mengatakan "racun TikTok", "racun Shopee", "viral di TikTok", atau "viral di medsos". Cukup gunakan "racun belanja", "barang viral", atau "produk viral".
-- NEVER say "link di bio" or "klik link di bio".
-- ALWAYS use direct calls like "Cek produk di bawah sekarang", "Klik produk di bawah", "Checkout produk di bawah mumpung promo", or "Cek selengkapnya di bawah".
-- Gunakan ejaan bahasa Indonesia baku yang wajar dan bersih tanpa menggunakan tanda aksen é/è.
+- DILARANG KERAS menggunakan kata "kece" dan "kangen".
+- HINDARI KATA SLANG "ng" (nggak, ngasih, ngeliat, dll) - gunakan kata baku.
+- DILARANG menyebut nama medsos lain (TikTok, Instagram, YouTube, Facebook, dll).
+- DILARANG mengatakan "link di bio" - WAJIB gunakan "keranjang pojok kiri bawah" atau "produk di bawah".
+- Ejaan baku tanpa aksen é/è.
 
 4. 'aiStudioPrompt':
-   - A copy-paste ready text block formatted EXACTLY for Google AI Studio TTS Playground (Composer view).
-   - It MUST follow this exact structure (with these exact section headers on separate lines):
-
-Scene
-[One sentence describing the setting/environment, e.g. "Studio dapur modern yang bersih dengan presenter Indonesia bersuara ramah dan energik."]
-
-Sample Context
-[One or two sentences describing tone, pacing, style of the ad, and voice over duration. ALWAYS start with the voice over duration matching the timestamp of the last spoken line, e.g. "Durasi voice over 30 detik. Iklan affiliate viral. Dimulai dengan hook yang menarik perhatian, membangun ke demonstrasi produk, diakhiri CTA yang meyakinkan. Nada suara hangat, antusias, dan persuasif."]
-
-Speaker 1
-[voiceover script with timestamps and emotion tags inline. Use emotional tone tags: [excited], [emphasis], [soft], [pause]. Every line starts with timestamp and emotion tag, e.g.
-[00:00] [excited] Wah, racun yang satu ini wajib banget kamu punya! [pause]
-[00:05] [soft] Masih sering capek marut kelapa atau keju pakai alat lama?
-[00:10] [emphasis] Pakai parutan serbaguna ini, [pause] hasilnya rapi dan praktis banget!
-...
-[${formatSeconds(targetDuration - 5)}] [excited] Cek produk di bawah sekarang sebelum kehabisan!]
-
-   - IMPORTANT: The output of 'aiStudioPrompt' must be a plain string (not JSON) ready to paste directly into AI Studio. Do NOT add any JSON object inside it.
+   - Plain text block formatted for Google AI Studio TTS Playground (Scene, Sample Context, Speaker 1 with timestamps and emotion tags).
 
 5. 'caption':
-   - High-converting Instagram & Facebook Reels caption with emojis, attention-grabbing hook, product benefits, CTA (e.g. 'Cek produk di bio ya!'), and relevant Indonesian hashtags (#racunbelanja, #racuntiktok, #reelsviral, #affiliateindonesia, #spillracun).
-   - STRICT RULES FOR CAPTION:
-     * DILARANG KERAS menyertakan link Shopee, tautan web, atau URL apa pun!
-     * DILARANG KERAS menggunakan karakter China/Mandarin/asing (seperti 朋友们 atau huruf Hanzi)! Gunakan 100% bahasa Indonesia.
-     * DILARANG KERAS menuliskan ajakan komentar seperti 'Cek selengkapnya di komentar pertama ya,朋友们!' atau 'cek komentar pertama'. Cukup ajak cek profil atau bio ('Cek produk di bio ya!').
+   - Caption with emojis, Problem-Solution hook, benefits, CTA ("Cek keranjang pojok kiri bawah!"), and hashtags (#racunshopee, #spillracun, #racunbelanja, #shopeevideo, #fyp).
+   - NO URLs/links, NO Chinese characters.
 
 Output MUST be strictly valid JSON matching the requested schema.`;
 
@@ -747,14 +754,20 @@ Return strict JSON in this format:
     throw new Error(formatApiError(lastError, activeModel, provider));
   }
 
-  const scenes = normalizeShortScenes(parsed.scenes, effectiveTitle, segmentDuration);
+  const scenes = normalizeShortScenes(parsed.scenes, effectiveTitle, segmentDuration, sceneDuration);
 
   let voiceoverScript = (parsed.voiceoverScript || '').trim();
   if (!voiceoverScript && scenes.length > 0) {
     voiceoverScript = scenes.map(s => `[${s.timeRange ? s.timeRange.split(' - ')[0] : '00:00'}] ${s.voiceover}`).join('\n');
   }
   if (!voiceoverScript) {
-    voiceoverScript = `[HOOK]\nStop scroll! ${effectiveTitle} yang satu ini bener-bener lagi viral dan wajib banget kamu punya!\n\n[DEMO & BENEFIT]\n${effectiveDesc ? effectiveDesc.slice(0, 100) : 'Kualitasnya kokoh, desainnya elegan, dan praktis banget buat dipakai sehari-hari tanpa ribet.'}\n\n[VALUE PROPOSITION]\nUdah banyak yang review bagus dan terbukti awet buat jangka panjang.\n\n[CALL TO ACTION]\nMumpung lagi ada promo dan diskon spesial, buruan cek produk di bawah sekarang sebelum kehabisan!`;
+    voiceoverScript = `[00:00] [excited] Kalau masih pakai cara lama atau kain biasa, fix kurang maksimal!
+[00:03] [emphasis] Untung sekarang ada ${effectiveTitle} yang serbaguna ini.
+[00:07] [soft] ${effectiveDesc ? effectiveDesc.slice(0, 80) : 'Busa melimpah, praktis banget dipakai, dan bikin pekerjaan beres lebih cepat.'}
+[00:11] [emphasis] Menjangkau semua sela-sela dengan bersih tuntas tanpa bikin baret atau lecet.
+[00:15] [soft] Bahannya berkualitas, awet tahan lama, dan mudah banget dicuci.
+[00:18] [excited] Harganya murah meriah banget, gak bikin kantong jebol!
+[00:21] [excited] Buruan cek keranjang pojok kiri bawah sekarang sebelum kehabisan!`;
   }
 
   let caption = (parsed.caption || '').trim();
@@ -962,13 +975,13 @@ function normalizeReframe(reframe = {}) {
   };
 }
 
-function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, frameAudit = [], hasProductBrand = false, allowHflip = true } = {}) {
-  const clipLength = 5;
+function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, frameAudit = [], hasProductBrand = false, allowHflip = true, sceneDuration = 3.3 } = {}) {
+  const clipLength = Math.max(2.5, Math.min(5.0, Number(sceneDuration) || 3.3));
   const sourceClips = Array.isArray(rawClips) ? rawClips : [];
   const normalized = [];
   let previousEnd = -1;
 
-  console.log(`[normalizeClipPlan] totalDuration=${totalDuration}s, rawClips=${sourceClips.length}, frameAudit=${frameAudit.length}, hasProductBrand=${hasProductBrand}, allowHflip=${allowHflip}`);
+  console.log(`[normalizeClipPlan] totalDuration=${totalDuration}s, rawClips=${sourceClips.length}, clipLength=${clipLength}s, frameAudit=${frameAudit.length}, hasProductBrand=${hasProductBrand}, allowHflip=${allowHflip}`);
 
   // Build a set of timestamps containing detected floating text, subtitles, watermarks, faces, or amateur framing
   const dirtyTimestamps = [];
@@ -1040,6 +1053,7 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, fram
     normalized.push({
       startSeconds,
       endSeconds,
+      duration: clipLength,
       startTime: formatSeconds(startSeconds),
       endTime: formatSeconds(endSeconds),
       reason: (rawClip?.reason || 'Clean full-product affiliate shot.').toString().slice(0, 180),
@@ -1052,23 +1066,24 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, fram
       }),
     });
     previousEnd = endSeconds;
-    if (normalized.length === 7) break; // Target max 7 clips (35s)
+    if (normalized.length === 8) break; // Target max 8 clips (~24-26s)
   }
 
   console.log(`[normalizeClipPlan] Accepted ${normalized.length} valid clips from AI vision`);
 
-  if (normalized.length >= 4) {
+  if (normalized.length >= 5) {
     return normalized;
   }
 
   if (!allowFallback) {
-    throw new Error('AI menolak video ini: tidak ditemukan minimal 4 potongan video bersih (20 detik) dari watermark, subtitle terjemahan, nama channel mengambang, wajah, atau proses unboxing.');
+    throw new Error('AI menolak video ini: tidak ditemukan minimal 5 potongan video bersih dari watermark, subtitle terjemahan, nama channel mengambang, wajah, atau proses unboxing.');
   }
 
-  // Fallback: build 4 to 7 evenly spaced clips (20 to 35 seconds total, exactly 5s per clip)
-  console.log(`[normalizeClipPlan] Building 20-35s fallback clip plan for ${totalDuration}s video`);
+  // Fallback: build 6 to 8 evenly spaced clips (around 20 to 26 seconds total, exactly clipLength per clip)
+  console.log(`[normalizeClipPlan] Building ~20-26s fallback clip plan for ${totalDuration}s video with clipLength=${clipLength}s`);
   const fallbackClips = [];
-  const fallbackTargetClips = Math.min(7, Math.max(4, Math.floor(totalDuration / clipLength)));
+  const targetTotalSec = 24;
+  const fallbackTargetClips = Math.min(8, Math.max(5, Math.floor(Math.min(totalDuration, targetTotalSec) / clipLength)));
   const maxStart = Math.max(0, Math.floor(totalDuration - clipLength));
   // Avoid first 15-18% of video in fallback to bypass intro unboxing segments on YouTube
   const fallbackStart = totalDuration > 30
@@ -1091,9 +1106,10 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, fram
     fallbackClips.push({
       startSeconds,
       endSeconds: startSeconds + clipLength,
+      duration: clipLength,
       startTime: formatSeconds(startSeconds),
       endTime: formatSeconds(startSeconds + clipLength),
-      reason: 'Fallback 5-second product shot.',
+      reason: `Fallback ${clipLength}s product shot.`,
       hasProductBrand,
       allowHflip,
       reframe: normalizeReframe({
@@ -1105,7 +1121,7 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, fram
   }
 
   if (!fallbackClips.length) {
-    throw new Error('Video terlalu pendek untuk membuat potongan produk utama 5 detik (minimal 20 detik).');
+    throw new Error(`Video terlalu pendek untuk membuat potongan produk utama (minimal ${Math.round(clipLength * 4)} detik).`);
   }
   return fallbackClips;
 }
@@ -1125,61 +1141,56 @@ function clampNumber(value, min, max, fallback) {
   return Math.min(max, Math.max(min, number));
 }
 
-function buildFallbackScenes(productName, segmentDuration) {
-  const totalDuration = Math.max(20, Math.min(35, Math.round(Number(segmentDuration) || 30)));
-  const sceneLength = 5;
-  const sceneCount = Math.round(totalDuration / sceneLength);
+function buildFallbackScenes(productName, segmentDuration, sceneDuration = 3.3) {
+  const totalDuration = Math.max(18, Math.min(35, Math.round(Number(segmentDuration) || 24)));
+  const sceneLength = Math.max(2.5, Math.min(5.0, Number(sceneDuration) || 3.3));
+  const sceneCount = Math.max(5, Math.min(8, Math.round(totalDuration / sceneLength)));
   const sceneTemplates = [
     {
-      visualDescription: `Close-up produk ${productName} sebagai hook awal.`,
-      voiceover: `${productName} ini bikin penasaran dari awal.`,
-      adAdvisorNotes: 'Mulai dengan cut cepat dan teks hook singkat.'
+      visualDescription: `Hook perbandingan visual: demonstrasi cara lama atau alat biasa yang kurang maksimal.`,
+      voiceover: `Kalau masih pakai cara lama atau kain biasa, fix kurang maksimal!`,
+      adAdvisorNotes: 'Teks hook merah/kuning tebal, SFX alert, potongan cepat 3 detik pertama.'
     },
     {
-      visualDescription: 'Produk ditunjukkan dari jarak dekat.',
-      voiceover: 'Desainnya ringkas dan kelihatan premium.',
-      adAdvisorNotes: 'Sorot detail produk, hindari wajah creator.'
+      visualDescription: `Solusi hero: ${productName} ditampilkan saat mulai digunakan dengan mudah.`,
+      voiceover: `Untung sekarang ada ${productName} ini, sekali usap langsung beres.`,
+      adAdvisorNotes: 'Transisi snappy, tunjukkan tangan memegang produk dengan percaya diri.'
     },
     {
-      visualDescription: 'Tangan mulai mendemonstrasikan cara pakai produk.',
-      voiceover: 'Cara pakainya gampang banget.',
-      adAdvisorNotes: 'Pakai zoom ringan ke bagian produk yang bergerak.'
+      visualDescription: `Aksi satisfying demo: busa melimpah atau kotoran rontok seketika.`,
+      voiceover: `Busanya melimpah banget dan langsung mengangkat semua kotoran membandel.`,
+      adAdvisorNotes: 'Visual satisfying close-up, SFX desis busa / gosokan bersih.'
     },
     {
-      visualDescription: 'Fitur utama produk terlihat saat digunakan.',
-      voiceover: 'Fungsinya langsung terasa praktis.',
-      adAdvisorNotes: 'Tambahkan SFX ringan pada momen demo.'
+      visualDescription: `Menjangkau sela-sela sempit yang sulit dijangkau alat biasa.`,
+      voiceover: `Bisa menjangkau sela-sela sempit tanpa bikin tangan lecet atau baret.`,
+      adAdvisorNotes: 'Close-up sela-sela bersih kinclong, pergerakan tangan luwes.'
     },
     {
-      visualDescription: 'Hasil penggunaan produk diperlihatkan jelas.',
-      voiceover: 'Hasilnya rapi dan cocok buat harian.',
-      adAdvisorNotes: 'Tahan visual hasil sebentar agar mudah dipahami.'
+      visualDescription: `Detail material produk: tebal, lembut, dan awet dicuci berkali-kali.`,
+      voiceover: `Materialnya tebal dan halus, gak gampang rontok walau dipakai tiap hari.`,
+      adAdvisorNotes: 'Tunjukkan tekstur produk, teks benefit kuning di layar.'
     },
     {
-      visualDescription: 'Produk kembali ditampilkan sebagai hero shot.',
-      voiceover: 'Ini tipe produk yang kepake terus.',
-      adAdvisorNotes: 'Gunakan cut pendek agar ritme tetap cepat.'
+      visualDescription: `Psikologi harga: produk ditampilkan siap pakai dengan tulisan promo hemat.`,
+      voiceover: `Harganya murah meriah banget, bener-bener gak bikin kantong jebol!`,
+      adAdvisorNotes: 'Teks harga promo mencolok, SFX kaching / coin.'
     },
     {
-      visualDescription: 'Detail material atau bagian penting produk disorot.',
-      voiceover: 'Detailnya juga terasa lebih niat.',
-      adAdvisorNotes: 'Fokus pada tekstur, bentuk, atau mekanisme.'
+      visualDescription: `Hero shot penutup dengan animasi panah ke keranjang kuning pojok kiri bawah.`,
+      voiceover: `Buruan cek keranjang pojok kiri bawah sekarang sebelum kehabisan!`,
+      adAdvisorNotes: 'Grafis panah berkedip ke pojok kiri bawah, CTA mendesak.'
     },
     {
-      visualDescription: 'Produk ditunjukkan dalam konteks pemakaian sehari-hari.',
-      voiceover: 'Buat kebutuhan rumah, ini membantu banget.',
-      adAdvisorNotes: 'Jaga framing tetap produk dan tangan.'
-    },
-    {
-      visualDescription: 'Produk ditampilkan dengan angle penutup.',
-      voiceover: 'Cek produknya di bawah sebelum kehabisan.',
-      adAdvisorNotes: 'Akhiri dengan CTA singkat dan jelas.'
+      visualDescription: `Stiker diskon dan keranjang kuning berkedip.`,
+      voiceover: `Langsung checkout di keranjang pojok kiri bawah mumpung masih promo!`,
+      adAdvisorNotes: 'Teks urgensi terakhir, SFX click.'
     },
   ];
 
   return Array.from({ length: sceneCount }, (_, index) => {
-    const start = index * sceneLength;
-    const end = Math.min(totalDuration, start + sceneLength);
+    const start = Math.round(index * sceneLength * 10) / 10;
+    const end = Math.min(totalDuration, Math.round((start + sceneLength) * 10) / 10);
     const template = sceneTemplates[Math.min(index, sceneTemplates.length - 1)];
 
     return {
@@ -1190,8 +1201,8 @@ function buildFallbackScenes(productName, segmentDuration) {
   });
 }
 
-function normalizeShortScenes(scenes, productName, segmentDuration) {
-  const fallbackScenes = buildFallbackScenes(productName, segmentDuration);
+function normalizeShortScenes(scenes, productName, segmentDuration, sceneDuration = 3.3) {
+  const fallbackScenes = buildFallbackScenes(productName, segmentDuration, sceneDuration);
   const sourceScenes = Array.isArray(scenes) ? scenes : [];
 
   return fallbackScenes.map((fallback, index) => {

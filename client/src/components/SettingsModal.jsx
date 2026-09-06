@@ -88,10 +88,10 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings, 
                   </div>
                 </div>
                 <div className="text-[11px] font-mono font-semibold mb-1 text-blue-300">
-                  gemini-flash-latest &bull; gemini-3.6-flash
+                  gemini-1.5-flash (File API Fallback)
                 </div>
                 <p className="text-[10px] leading-tight opacity-80">
-                  Direct Google Gemini API. Dipakai sebagai secondary fallback otomatis jika OpenRouter limit, atau saat dipilih langsung.
+                  Direct Google Gemini API dengan File API. Dipakai sebagai secondary fallback otomatis jika OpenRouter limit/gagal, atau saat dipilih langsung.
                 </p>
                 {currentProvider === 'gemini' && (
                   <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-blue-400 animate-ping" />

@@ -3,6 +3,9 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleAIFileManager } from '@google/generative-ai/server';
+import { getMediaDurationSec } from './videoRenderer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -106,11 +109,8 @@ function getOpenRouterKeys(apiKeyOverride) {
 let currentOpenRouterKeyIndex = 0;
 
 const defaultGeminiDirectModels = [
+  'gemini-1.5-flash',
   'gemini-flash-latest',
-  'gemini-3.6-flash',
-  'gemini-flash-lite-latest',
-  'gemini-3.1-flash-lite-preview',
-  'gemini-2.5-flash',
 ];
 
 function getDirectGeminiApiKey(apiKeyOverride) {
@@ -225,13 +225,274 @@ function formatApiError(err, modelName = 'AI', provider = 'AI') {
 }
 
 /**
- * Stage 1, Step A: Calls AI Vision API (Alibaba Qwen / Google Gemini)
- * to analyze the full video timeline and select a cut plan made of 5-second product shots.
+ * Fallback Video Analysis using Google Gemini File API (Gemini 1.5 Flash).
+ * Uploads video directly to Google's File API, allowing native video comprehension
+ * without relying on frame extraction.
+ */
+export async function analyzeVideoWithGeminiFileApi({
+  videoPath,
+  apiKey,
+  productTitle,
+  productDescription,
+  shopeeLink,
+  sceneDuration = 3.3,
+  allowFallbackClips = false,
+  onProgress = () => {},
+}) {
+  const geminiKey = getDirectGeminiApiKey(apiKey);
+  if (!geminiKey) {
+    throw new Error('GEMINI_API_KEY belum disetel di server/.env untuk fallback Gemini File API.');
+  }
+
+  if (!videoPath || !fs.existsSync(videoPath)) {
+    throw new Error(`File video tidak ditemukan di: ${videoPath}`);
+  }
+
+  const clipSec = Math.max(2.5, Math.min(5.0, Number(sceneDuration) || 3.3));
+  const effectiveTitle = (productTitle || '').trim() || 'Produk Affiliate';
+  const effectiveDesc = (productDescription || '').trim();
+
+  let totalDuration = 60;
+  try {
+    const d = await getMediaDurationSec(videoPath);
+    if (d && d > 5) totalDuration = d;
+  } catch {}
+
+  onProgress({
+    step: 'gemini_vision',
+    message: 'Mengunggah video ke Google Gemini File API (Gemini 1.5 Flash)...',
+    progress: 46,
+  });
+
+  const fileManager = new GoogleAIFileManager(geminiKey);
+  const genAI = new GoogleGenerativeAI(geminiKey);
+
+  let uploadResponse = null;
+  try {
+    uploadResponse = await fileManager.uploadFile(videoPath, {
+      mimeType: 'video/mp4',
+      displayName: `clip_${path.basename(videoPath, path.extname(videoPath))}_${Date.now()}`,
+    });
+
+    onProgress({
+      step: 'gemini_vision',
+      message: 'Menunggu proses video di Google Gemini File API...',
+      progress: 48,
+    });
+
+    // Wait until file is ACTIVE
+    let fileState = await fileManager.getFile(uploadResponse.file.name);
+    let pollCount = 0;
+    while (fileState.state === 'PROCESSING' && pollCount < 30) {
+      await new Promise((r) => setTimeout(r, 2000));
+      pollCount++;
+      fileState = await fileManager.getFile(uploadResponse.file.name);
+    }
+
+    if (fileState.state !== 'ACTIVE') {
+      throw new Error(`Gemini File API processing error: status ${fileState.state}`);
+    }
+
+    onProgress({
+      step: 'gemini_vision',
+      message: 'Gemini 1.5 Flash menganalisa video, verifikasi faceless, dan menentukan cuplikan...',
+      progress: 50,
+    });
+
+    const videoPrompt = `You are an elite e-commerce video editor & QC specialist for Shopee Video Affiliate ads.
+Review this full video carefully against the 5 Mandatory Acceptance Criteria:
+
+1. Exact Product Match: Does the physical item in the video match "${effectiveTitle}"?
+   ${effectiveDesc ? `Product Description: "${effectiveDesc}"` : ''}
+   - If DIFFERENT product or compilation: output {"status": "reject", "detectedProduct": "<nama produk>", "isExactProductMatch": false, "reason": "Produk di video tidak cocok dengan link Shopee"}
+
+2. Faceless QC: Selected cut scenes MUST NEVER contain any human face, head, or body! Only hands-on product demonstration allowed.
+   - If no faceless product demo scenes exist: output {"status": "reject", "hasFaceOrHumanInSelectedFrames": true, "reason": "Video menampilkan wajah atau manusia"}
+
+3. Subtitle & Text QC:
+   - NOTE: Physical text, brand names, or button markings printed ON THE PHYSICAL PRODUCT are 100% ACCEPTABLE and NOT subtitles!
+   - If speech dialogue captions cover the center of the video throughout all scenes: output {"status": "reject", "hasSubtitlesOrBurnedText": true, "reason": "Video ditolak: Mengandung subtitle ucapan bawaan."}
+
+4. Watermark & Logo QC:
+   - NOTE: Corner/edge channel watermarks will be cropped off in vertical 9:16 and are 100% ACCEPTABLE. Physical brand logos on the product are 100% ACCEPTABLE.
+   - ONLY reject if a giant digital watermark directly covers the CENTER of the frame over the product and cannot be cropped out.
+
+5. Selected Clips:
+   - If acceptable, select 4 to 8 non-overlapping timestamps (each about ${clipSec} seconds long) showing the best, satisfying product actions and demonstrations.
+   - Each timestamp in "timestamps" MUST be in seconds from the start of the video (e.g. [3.0, 7.5, 12.0, 16.5, 21.0]).
+
+Output valid JSON ONLY with this exact format:
+If ACCEPTED:
+{
+  "status": "accept",
+  "detectedProduct": "<nama produk>",
+  "isExactProductMatch": true,
+  "hasSubtitlesOrBurnedText": false,
+  "hasFaceOrHumanInSelectedFrames": false,
+  "hasCenterObstructingWatermark": false,
+  "isAiGeneratedOrSynthetic": false,
+  "timestamps": [3, 7, 12, 16, 21, 26],
+  "productHook": "Kalau [kebiasaan lama], fix [masalah fatal / kurang maksimal]!",
+  "hasProductBrand": false,
+  "detectedBrand": "none"
+}
+
+If REJECTED:
+{
+  "status": "reject",
+  "detectedProduct": "<nama produk di video>",
+  "isExactProductMatch": false,
+  "hasSubtitlesOrBurnedText": false,
+  "hasFaceOrHumanInSelectedFrames": false,
+  "hasCenterObstructingWatermark": false,
+  "isAiGeneratedOrSynthetic": false,
+  "reason": "<alasan penolakan yang jelas dalam bahasa Indonesia>"
+}`;
+
+    const candidateModels = ['gemini-1.5-flash', 'gemini-flash-latest'];
+    let parsed = null;
+    let activeGeminiModel = candidateModels[0];
+    let lastGeminiErr = null;
+
+    for (const modelName of candidateModels) {
+      try {
+        console.log(`[Gemini File API] Calling model: ${modelName}...`);
+        activeGeminiModel = modelName;
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.2,
+          },
+        });
+
+        const result = await model.generateContent([
+          {
+            fileData: {
+              mimeType: uploadResponse.file.mimeType,
+              fileUri: uploadResponse.file.uri,
+            },
+          },
+          { text: videoPrompt },
+        ]);
+
+        const rawText = result.response.text();
+        console.log(`[Gemini File API ${modelName}] Response:`, rawText);
+        parsed = repairJson(rawText);
+        if (parsed && (parsed.status || parsed.timestamps || parsed.reason)) {
+          break;
+        }
+      } catch (gemErr) {
+        console.warn(`[Gemini File API] Model ${modelName} error:`, gemErr.message);
+        lastGeminiErr = gemErr;
+      }
+    }
+
+    if (!parsed) {
+      throw lastGeminiErr || new Error('Gemini File API gagal menganalisa video.');
+    }
+
+    const rawStatus = String(parsed.status || '').toLowerCase().trim();
+    const isRejectStatus = rawStatus === 'reject' || rawStatus === 'rejected' || rawStatus === 'ditolak';
+    const isMatchFalse = parsed.isProductMatch === false || parsed.isExactProductMatch === false;
+    const hasFace = parsed.hasFaceOrHumanInSelectedFrames === true;
+    const hasCenterWatermark = parsed.hasCenterObstructingWatermark === true;
+    const isSynthetic = parsed.isAiGeneratedOrSynthetic === true;
+    const reasonText = String(parsed.reason || parsed.rejectionReason || '').trim();
+
+    if (isRejectStatus || isMatchFalse || hasFace || isSynthetic || hasCenterWatermark) {
+      let rejectionMsg = reasonText || 'Video ditolak oleh AI: Tidak memenuhi syarat affiliate faceless / produk tidak cocok.';
+      const rejectError = new Error(`Video ditolak oleh Gemini 1.5 Flash: ${rejectionMsg}`);
+      rejectError.isAiRejection = true;
+      rejectError.rejectionReason = rejectionMsg;
+      throw rejectError;
+    }
+
+    let rawTimestamps = [];
+    if (Array.isArray(parsed.timestamps)) {
+      rawTimestamps = parsed.timestamps;
+    } else if (Array.isArray(parsed.clips)) {
+      rawTimestamps = parsed.clips.map((c) => c.startSeconds ?? c.startTime);
+    } else if (Array.isArray(parsed.frames)) {
+      rawTimestamps = parsed.frames;
+    }
+
+    let candidateClips = [];
+    if (rawTimestamps.length > 0) {
+      for (const rawTs of rawTimestamps) {
+        const sec = typeof rawTs === 'number' ? rawTs : parseTimeToSeconds(rawTs);
+        if (isNaN(sec) || sec < 0 || sec > totalDuration) continue;
+        const startSec = Math.max(0, Math.min(totalDuration - clipSec, Math.round(sec * 10) / 10));
+        const endSec = Math.round((startSec + clipSec) * 10) / 10;
+        candidateClips.push({
+          startSeconds: startSec,
+          endSeconds: endSec,
+          duration: clipSec,
+          startTime: formatSeconds(startSec),
+          endTime: formatSeconds(endSec),
+          reason: `Cuplikan produk di detik ${formatSeconds(startSec)}`,
+          isCleanAffiliateShot: true,
+          hasProductBrand: Boolean(parsed.hasProductBrand),
+          reframe: {
+            ...DEFAULT_REFRAME,
+            renderMode: 'square_stage',
+          },
+        });
+      }
+    }
+
+    const hasProductBrand = Boolean(parsed.hasProductBrand);
+    const detectedBrand = (parsed.detectedBrand || '').trim() || (hasProductBrand ? 'Brand Terdeteksi' : 'none');
+    const allowHflip = hasProductBrand ? false : (parsed.allowHflip !== false);
+
+    const clips = normalizeClipPlan(candidateClips, totalDuration, {
+      allowFallback: allowFallbackClips,
+      hasProductBrand,
+      allowHflip,
+      sceneDuration: clipSec,
+    });
+    const duration = clips.reduce((total, clip) => total + (clip.endSeconds - clip.startSeconds), 0);
+
+    onProgress({
+      step: 'gemini_vision',
+      message: `Gemini 1.5 Flash selected ${clips.length} clean ${clipSec}s product shots (${duration.toFixed(1)}s total).`,
+      progress: 55,
+    });
+
+    return {
+      startTime: clips[0].startTime,
+      endTime: clips[clips.length - 1].endTime,
+      startSeconds: clips[0].startSeconds,
+      endSeconds: clips[clips.length - 1].endSeconds,
+      duration,
+      productHook: parsed.productHook || 'Kalau masih pakai cara lama, fix kurang maksimal!',
+      hasProductBrand,
+      detectedBrand,
+      allowHflip,
+      reframe: clips[0].reframe,
+      clips,
+    };
+  } finally {
+    if (uploadResponse?.file?.name) {
+      try {
+        await fileManager.deleteFile(uploadResponse.file.name);
+        console.log(`[Gemini File API] Cleaned up uploaded file: ${uploadResponse.file.name}`);
+      } catch (delErr) {
+        console.warn('[Gemini File API] Cleanup file warning:', delErr.message);
+      }
+    }
+  }
+}
+
+/**
+ * Stage 1, Step A: Calls AI Vision API (OpenRouter with ffmpeg frames)
+ * with automatic fallback to Gemini File API (Gemini 1.5 Flash).
  */
 export async function selectHighlightWithAI({
   apiKey,
   aiProvider,
   frames,
+  videoPath = null,
   videoMetadata,
   productTitle,
   productDescription,
@@ -240,6 +501,22 @@ export async function selectHighlightWithAI({
   allowFallbackClips = false,
   onProgress = () => {}
 }) {
+  const reqProvider = (aiProvider || '').trim().toLowerCase();
+  const forceGemini = (reqProvider === 'gemini_direct' || reqProvider === 'gemini');
+  if (forceGemini && videoPath && fs.existsSync(videoPath)) {
+    console.log('[AIService Vision] Gemini Direct provider requested. Analyzing with Gemini File API (Gemini 1.5 Flash)...');
+    return await analyzeVideoWithGeminiFileApi({
+      videoPath,
+      apiKey,
+      productTitle,
+      productDescription,
+      shopeeLink,
+      sceneDuration,
+      allowFallbackClips,
+      onProgress,
+    });
+  }
+
   let activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
   let { client, models: modelFallbackList, provider } = activeConfig;
   let activeModel = modelFallbackList[0];
@@ -538,23 +815,46 @@ Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
       const msg = (err.message || '').toLowerCase();
       const isFatalAuthOrBilling = status === 401 || status === 402 || msg.includes('balance') || msg.includes('credits');
 
-      // Fallback langsung ke Google Gemini Direct API jika OpenRouter bermasalah atau habis saldo
+      // Fallback ke Google Gemini File API (Gemini 1.5 Flash) jika OpenRouter bermasalah atau habis saldo
       if (!hasFallenBackToGemini) {
-        const geminiFallback = getDirectGeminiClientConfig({ apiKeyOverride: apiKey });
-        if (geminiFallback && (isFatalAuthOrBilling || attempt >= totalRetries - 1)) {
-          console.warn(`[AIService Vision] OpenRouter error (${err.message}). Beralih langsung ke Google Gemini Direct API fallback (${geminiFallback.models[0]})...`);
-          onProgress({
-            step: 'gemini_vision',
-            message: `OpenRouter gagal. Mengaktifkan direct fallback Google Gemini API (${geminiFallback.models[0]})...`,
-            progress: 47,
-          });
-          hasFallenBackToGemini = true;
-          client = geminiFallback.client;
-          modelFallbackList = geminiFallback.models;
-          provider = geminiFallback.provider;
-          totalRetries = modelFallbackList.length;
-          attempt = -1; // Reset agar loop berikutnya mulai dari model Gemini pertama
-          continue;
+        const geminiKey = getDirectGeminiApiKey(apiKey);
+        if (geminiKey && (isFatalAuthOrBilling || attempt >= totalRetries - 1)) {
+          if (videoPath && fs.existsSync(videoPath)) {
+            clearInterval(heartbeat);
+            console.warn(`[AIService Vision] OpenRouter error (${err.message}). Beralih ke Google Gemini File API fallback (Gemini 1.5 Flash)...`);
+            onProgress({
+              step: 'gemini_vision',
+              message: 'OpenRouter gagal. Mengaktifkan fallback Google Gemini File API (Gemini 1.5 Flash)...',
+              progress: 47,
+            });
+            return await analyzeVideoWithGeminiFileApi({
+              videoPath,
+              apiKey,
+              productTitle,
+              productDescription,
+              shopeeLink,
+              sceneDuration,
+              allowFallbackClips,
+              onProgress,
+            });
+          }
+
+          const geminiFallback = getDirectGeminiClientConfig({ apiKeyOverride: apiKey });
+          if (geminiFallback) {
+            console.warn(`[AIService Vision] OpenRouter error (${err.message}). Beralih langsung ke Google Gemini Direct API fallback (${geminiFallback.models[0]})...`);
+            onProgress({
+              step: 'gemini_vision',
+              message: `OpenRouter gagal. Mengaktifkan direct fallback Google Gemini API (${geminiFallback.models[0]})...`,
+              progress: 47,
+            });
+            hasFallenBackToGemini = true;
+            client = geminiFallback.client;
+            modelFallbackList = geminiFallback.models;
+            provider = geminiFallback.provider;
+            totalRetries = modelFallbackList.length;
+            attempt = -1; // Reset agar loop berikutnya mulai dari model Gemini pertama
+            continue;
+          }
         }
       }
 

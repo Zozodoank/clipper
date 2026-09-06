@@ -1,7 +1,9 @@
 import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import { applyTalingPhonetics } from './phoneticData.js';
+import { getFFmpegPath } from './binaryChecker.js';
 
 // Default Microsoft Edge TTS Voice: id-ID-GadisNeural (Indonesian female natural voice)
 export const DEFAULT_EDGE_VOICE = 'id-ID-GadisNeural';
@@ -330,20 +332,90 @@ export function isFishAudioQuotaError(statusCode, responseText = '') {
 }
 
 /**
+ * Parses raw script into scene lines with target timestamps and emotion tags.
+ */
+export function parseScriptToScenes(rawScript, targetDurationSec = 20) {
+  if (!rawScript || typeof rawScript !== 'string') return [];
+
+  let text = rawScript;
+  const speakerMatch = text.match(/(?:Speaker\s*\d*(?:\s*-[^\n\r:]+)?|SPEAKER\s*\d*)[\s\r\n:]+([\s\S]*)$/i);
+  if (speakerMatch && speakerMatch[1].trim()) {
+    text = speakerMatch[1].trim();
+  }
+
+  const rawLines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && !/^Speaker\s*\d/i.test(l));
+
+  const scenes = [];
+
+  for (let idx = 0; idx < rawLines.length; idx++) {
+    const line = rawLines[idx];
+    let targetSec = null;
+    const timeMatch = line.match(/^\[?(\d{1,2}):(\d{2})\]?/);
+    if (timeMatch) {
+      targetSec = parseInt(timeMatch[1], 10) * 60 + parseInt(timeMatch[2], 10);
+    }
+
+    let clean = line.replace(/^\[?\d{1,2}:\d{2}\]?\s*/, '');
+
+    let emotion = 'default';
+    const emotionMatch = clean.match(/\[(excited|emphasis|soft|intrigue|urgent|happy|information)\]/i);
+    if (emotionMatch) {
+      emotion = emotionMatch[1].toLowerCase();
+    }
+
+    clean = clean.replace(/\[\s*(?:long\s*)?pause\s*\]/gi, ', ');
+    clean = clean.replace(/\[\s*[^\]]+\s*\]/g, ' ');
+    clean = clean.replace(/\([^)]+\)/g, ' ');
+    clean = clean.replace(/^#+\s+/gm, '').replace(/[*_~`]/g, '').replace(/^[-•*]\s+/gm, '').replace(/#\w+/g, '');
+    clean = clean.replace(/%/g, ' persen ').replace(/&/g, ' dan ').replace(/\+/g, ' plus ');
+    clean = clean.replace(/\s{2,}/g, ' ').replace(/\s+([,.:!?])/g, '$1').trim();
+
+    if (!clean) continue;
+
+    const spokenText = applyIndonesianPhoneticFixes(clean, { useTaling: false });
+    const subtitleText = cleanScriptForSubtitles(line);
+
+    scenes.push({
+      idx,
+      rawLine: line,
+      targetSec,
+      emotion,
+      spokenText,
+      subtitleText,
+    });
+  }
+
+  if (scenes.length > 0 && scenes.every((s) => s.targetSec === null)) {
+    const spacing = Math.max(2.5, (targetDurationSec - 3.0) / Math.max(1, scenes.length - 1));
+    for (let i = 0; i < scenes.length; i++) {
+      scenes[i].targetSec = +(i * spacing).toFixed(2);
+    }
+  }
+
+  return scenes;
+}
+
+/**
  * Generate Voiceover Audio via Microsoft Edge TTS (id-ID-GadisNeural).
  * 100% Free, no API key required, high quality natural Indonesian voiceover.
+ * Synchronizes per-scene audio and extracts exact WordBoundary timestamps for pixel-perfect subtitles.
  */
 export async function generateVoiceoverEdgeTTS({
   script,
   outputPath,
+  targetDurationSec = null,
   voice = 'id-ID-GadisNeural',
   onProgress = null,
   jobId = '',
 }) {
-  const ttsText = prepareScriptForEdgeTTS(script);
+  const scenes = parseScriptToScenes(script, targetDurationSec || 20);
   const subtitleText = cleanScriptForSubtitles(script);
+  const fullSpokenText = scenes.map((s) => s.spokenText).join(' ');
 
-  if (!ttsText || ttsText.length < 3) {
+  if (!fullSpokenText || fullSpokenText.length < 3) {
     throw new Error('Naskah suara kosong setelah dibersihkan dari tag/timestamp.');
   }
 
@@ -353,52 +425,237 @@ export async function generateVoiceoverEdgeTTS({
   };
 
   const selectedVoice = (voice || process.env.TTS_VOICE || DEFAULT_EDGE_VOICE).trim();
-  log(`Menghasilkan voice over Gadis (${ttsText.length} karakter): "${ttsText.slice(0, 60)}..."`);
-
   const outDir = path.dirname(outputPath);
   if (!fs.existsSync(outDir)) {
     fs.mkdirSync(outDir, { recursive: true });
   }
 
-  const tts = new MsEdgeTTS();
-  await tts.setMetadata(selectedVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-
-  const { audioStream } = tts.toStream(ttsText, {
-    rate: '+0%',
-    pitch: '+0Hz',
-    volume: '+0%',
-  });
-
-  const writeStream = fs.createWriteStream(outputPath);
-  audioStream.pipe(writeStream);
-
-  await new Promise((resolve, reject) => {
-    writeStream.on('finish', resolve);
-    audioStream.on('error', (err) => {
-      writeStream.destroy();
-      reject(new Error(`Edge TTS audio stream error: ${err.message}`));
+  if (scenes.length <= 1) {
+    log(`Menghasilkan voice over Gadis continuous (${fullSpokenText.length} karakter)...`);
+    const tts = new MsEdgeTTS();
+    await tts.setMetadata(selectedVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3, {
+      wordBoundaryEnabled: true,
     });
-    writeStream.on('error', (err) => {
-      reject(new Error(`Gagal menulis file audio TTS: ${err.message}`));
-    });
-  });
 
-  const stats = fs.statSync(outputPath);
-  if (stats.size < 500) {
-    throw new Error('Hasil audio Edge TTS kosong atau file rusak.');
+    const words = [];
+    const { audioStream, metadataStream } = tts.toStream(fullSpokenText, {
+      rate: '+8%',
+      pitch: '+4Hz',
+      volume: '+0%',
+    });
+
+    metadataStream.on('data', (d) => {
+      try {
+        const json = JSON.parse(d.toString());
+        for (const m of json.Metadata || []) {
+          if (m.Type === 'WordBoundary') {
+            words.push({
+              word: m.Data.text.Text,
+              startSec: +(m.Data.Offset / 10000000).toFixed(3),
+              durationSec: +(m.Data.Duration / 10000000).toFixed(3),
+              endSec: +((m.Data.Offset + m.Data.Duration) / 10000000).toFixed(3),
+            });
+          }
+        }
+      } catch {}
+    });
+
+    const writeStream = fs.createWriteStream(outputPath);
+    audioStream.pipe(writeStream);
+    await new Promise((resolve, reject) => {
+      writeStream.on('finish', resolve);
+      audioStream.on('error', (err) => {
+        writeStream.destroy();
+        reject(new Error(`Edge TTS audio stream error: ${err.message}`));
+      });
+      writeStream.on('error', (err) => {
+        reject(new Error(`Gagal menulis file audio TTS: ${err.message}`));
+      });
+    });
+
+    const stats = fs.statSync(outputPath);
+    return {
+      audioPath: outputPath,
+      provider: 'edge_tts',
+      voice: 'Gadis (Edge-TTS Neural)',
+      modelId: selectedVoice,
+      sizeBytes: stats.size,
+      cleanScript: subtitleText,
+      spokenScript: fullSpokenText,
+      wordBoundaries: words,
+      totalDuration: words.length ? words[words.length - 1].endSec : (targetDurationSec || 20),
+    };
   }
 
-  log(`✅ Berhasil menghasilkan voice over Gadis! Ukuran: ${(stats.size / 1024).toFixed(1)} KB`);
+  log(`Menghasilkan voice over Gadis ekspresif (${scenes.length} adegan sinkron video)...`);
+  const ffmpeg = getFFmpegPath();
+  const tempDir = path.join(outDir, `tts_parts_${jobId || Date.now()}`);
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
 
-  return {
-    audioPath: outputPath,
-    provider: 'edge_tts',
-    voice: 'Gadis (Edge-TTS Neural)',
-    modelId: selectedVoice,
-    sizeBytes: stats.size,
-    cleanScript: subtitleText,
-    spokenScript: ttsText,
-  };
+  try {
+    const parts = await Promise.all(
+      scenes.map(async (scene) => {
+        const tts = new MsEdgeTTS();
+        await tts.setMetadata(selectedVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3, {
+          wordBoundaryEnabled: true,
+        });
+
+        const isCta = scene.idx === scenes.length - 1;
+        const prosody = (scene.emotion === 'excited' || isCta)
+          ? { rate: '+10%', pitch: '+5Hz' }
+          : scene.emotion === 'emphasis'
+          ? { rate: '+7%', pitch: '+4Hz' }
+          : scene.emotion === 'soft'
+          ? { rate: '+5%', pitch: '+2Hz' }
+          : { rate: '+8%', pitch: '+4Hz' };
+
+        const words = [];
+        const { audioStream, metadataStream } = tts.toStream(scene.spokenText, prosody);
+
+        metadataStream.on('data', (d) => {
+          try {
+            const json = JSON.parse(d.toString());
+            for (const m of json.Metadata || []) {
+              if (m.Type === 'WordBoundary') {
+                words.push({
+                  word: m.Data.text.Text,
+                  startSec: m.Data.Offset / 10000000,
+                  durationSec: m.Data.Duration / 10000000,
+                  endSec: (m.Data.Offset + m.Data.Duration) / 10000000,
+                });
+              }
+            }
+          } catch {}
+        });
+
+        const partPath = path.join(tempDir, `part_${scene.idx}.mp3`);
+        const writeStream = fs.createWriteStream(partPath);
+        audioStream.pipe(writeStream);
+
+        await new Promise((resolve, reject) => {
+          writeStream.on('finish', resolve);
+          audioStream.on('error', (err) => {
+            writeStream.destroy();
+            reject(new Error(`Edge TTS part ${scene.idx} error: ${err.message}`));
+          });
+          writeStream.on('error', (err) => reject(new Error(`Gagal menulis audio part ${scene.idx}: ${err.message}`)));
+        });
+
+        const dur = words.length ? words[words.length - 1].endSec : 2.5;
+        return { ...scene, partPath, words, duration: dur };
+      })
+    );
+
+    let cursor = 0;
+    const globalWords = [];
+    const filterInputs = [];
+    const filterDelays = [];
+    const filterLabels = [];
+
+    const effectiveTarget = targetDurationSec || (parts.length * 3.8);
+
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
+      filterInputs.push('-i', `"${p.partPath}"`);
+
+      let startSec = cursor;
+      if (p.targetSec !== null) {
+        startSec = Math.max(cursor, p.targetSec);
+      }
+
+      if (i === parts.length - 1 && effectiveTarget > startSec + p.duration) {
+        startSec = Math.max(startSec, effectiveTarget - p.duration - 0.4);
+      }
+
+      const delayMs = Math.max(0, Math.round(startSec * 1000));
+      filterDelays.push(`[${i}:a]adelay=${delayMs}|${delayMs}[a${i}]`);
+      filterLabels.push(`[a${i}]`);
+
+      for (const w of p.words) {
+        globalWords.push({
+          word: w.word,
+          startSec: +(startSec + w.startSec).toFixed(3),
+          endSec: +(startSec + w.endSec).toFixed(3),
+        });
+      }
+
+      cursor = startSec + p.duration + 0.35;
+    }
+
+    const mixFilter = `${filterDelays.join(';')};${filterLabels.join('')}amix=inputs=${parts.length}:dropout_transition=0:normalize=0[aout]`;
+    const cmd = `"${ffmpeg}" -y ${filterInputs.join(' ')} -filter_complex "${mixFilter}" -map "[aout]" -c:a libmp3lame "${outputPath}"`;
+
+    execSync(cmd, { stdio: 'pipe' });
+
+    parts.forEach((p) => {
+      if (fs.existsSync(p.partPath)) fs.unlinkSync(p.partPath);
+    });
+    if (fs.existsSync(tempDir)) {
+      try { fs.rmdirSync(tempDir); } catch {}
+    }
+
+    const stats = fs.statSync(outputPath);
+    log(`✅ Berhasil menghasilkan voice over Gadis tersinkronisasi! Durasi: ${cursor.toFixed(1)}s`);
+
+    return {
+      audioPath: outputPath,
+      provider: 'edge_tts',
+      voice: 'Gadis (Edge-TTS Neural)',
+      modelId: selectedVoice,
+      sizeBytes: stats.size,
+      cleanScript: subtitleText,
+      spokenScript: fullSpokenText,
+      wordBoundaries: globalWords,
+      totalDuration: cursor,
+    };
+  } catch (syncErr) {
+    console.warn(`[Edge TTS] Multi-scene sync error (${syncErr.message}), falling back to single stream...`);
+    if (fs.existsSync(tempDir)) {
+      try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+    }
+
+    const tts = new MsEdgeTTS();
+    await tts.setMetadata(selectedVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3, {
+      wordBoundaryEnabled: true,
+    });
+    const words = [];
+    const { audioStream, metadataStream } = tts.toStream(fullSpokenText, { rate: '+8%', pitch: '+4Hz' });
+    metadataStream.on('data', (d) => {
+      try {
+        const json = JSON.parse(d.toString());
+        for (const m of json.Metadata || []) {
+          if (m.Type === 'WordBoundary') {
+            words.push({
+              word: m.Data.text.Text,
+              startSec: +(m.Data.Offset / 10000000).toFixed(3),
+              durationSec: +(m.Data.Duration / 10000000).toFixed(3),
+              endSec: +((m.Data.Offset + m.Data.Duration) / 10000000).toFixed(3),
+            });
+          }
+        }
+      } catch {}
+    });
+    const writeStream = fs.createWriteStream(outputPath);
+    audioStream.pipe(writeStream);
+    await new Promise((res, rej) => {
+      writeStream.on('finish', res);
+      audioStream.on('error', rej);
+    });
+    const stats = fs.statSync(outputPath);
+    return {
+      audioPath: outputPath,
+      provider: 'edge_tts',
+      voice: 'Gadis (Edge-TTS Neural)',
+      modelId: selectedVoice,
+      sizeBytes: stats.size,
+      cleanScript: subtitleText,
+      spokenScript: fullSpokenText,
+      wordBoundaries: words,
+      totalDuration: words.length ? words[words.length - 1].endSec : (targetDurationSec || 20),
+    };
+  }
 }
 
 /**
@@ -507,6 +764,7 @@ export async function generateVoiceoverFishAudio({
 export async function generateVoiceoverTTS({
   script,
   outputPath,
+  targetDurationSec = null,
   voice = null,
   modelId = null,
   onProgress = null,
@@ -516,5 +774,5 @@ export async function generateVoiceoverTTS({
   if (provider === 'fish_audio') {
     return generateVoiceoverFishAudio({ script, outputPath, modelId, onProgress, jobId });
   }
-  return generateVoiceoverEdgeTTS({ script, outputPath, voice, onProgress, jobId });
+  return generateVoiceoverEdgeTTS({ script, outputPath, targetDurationSec, voice, onProgress, jobId });
 }

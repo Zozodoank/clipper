@@ -143,7 +143,7 @@ export default function InputCard({
               Subtitle: Kuning &amp; Putih
             </span>
             <span className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 font-mono text-emerald-300 font-bold">
-              Framing: {(settings.renderMode || 'square_stage') === 'fit_canvas' ? 'Fit 16:9' : (settings.renderMode || 'square_stage') === 'vertical_crop' ? 'Full 9:16' : 'Smart Stage 1:1'}
+              Framing: {(settings.renderMode || 'stage_80') === 'stage_80' ? 'Stage 80% (Blur)' : (settings.renderMode || 'stage_80') === 'fit_canvas' ? 'Fit 16:9' : (settings.renderMode || 'stage_80') === 'vertical_crop' ? 'Full 9:16' : 'Stage 1:1'}
             </span>
             <span className="px-2 py-0.5 rounded bg-slate-800/80 border border-slate-700/60 font-mono text-slate-300">
               9:16 (1080x1920)

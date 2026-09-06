@@ -10,7 +10,7 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings, 
     setSettings({
       aiProvider: engineStatus?.activeAiEngine || 'gemini',
       sceneDuration: 3.3,
-      renderMode: 'square_stage',
+      renderMode: 'stage_80',
       hflip: false,
       speedMultiplier: 1,
       enableSubtitles: true,
@@ -209,22 +209,29 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings, 
             <div className="flex items-center justify-between">
               <span className="font-semibold text-slate-200 flex items-center gap-1.5">
                 <Layers className="w-4 h-4 text-emerald-400" />
-                <span>Format Framing Video (Anti-Crop)</span>
+                <span>Format Framing Video (Anti-Crop & Watermark)</span>
               </span>
               <span className="font-mono text-xs font-bold text-emerald-400 px-2 py-0.5 bg-slate-800 rounded">
-                {(settings.renderMode || 'square_stage') === 'fit_canvas' ? 'Fit 16:9' : (settings.renderMode || 'square_stage') === 'vertical_crop' ? 'Full 9:16' : 'Smart Stage 1:1'}
+                {(settings.renderMode || 'stage_80') === 'stage_80'
+                  ? 'Stage 80% (Blur)'
+                  : (settings.renderMode || 'stage_80') === 'fit_canvas'
+                  ? 'Fit 16:9'
+                  : (settings.renderMode || 'stage_80') === 'vertical_crop'
+                  ? 'Full 9:16'
+                  : 'Stage 1:1'}
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              Mengontrol rasio video agar peragaan produk dan tangan tidak terpotong saat dirender ke 9:16 vertikal.
+              Mengontrol rasio video. <strong>Stage 80%</strong> memperluas bidang crop dengan blur atas-bawah dan memotong bersih watermark pojok kreator tanpa memotong produk.
             </p>
-            <div className="grid grid-cols-3 gap-2 pt-1">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
               {[
-                { value: 'square_stage', label: 'Smart Stage 1:1', badge: 'Rekomendasi (Metode 2)' },
-                { value: 'fit_canvas', label: 'Fit 16:9 Utuh', badge: 'No Crop (Metode 1)' },
+                { value: 'stage_80', label: 'Stage 80%', badge: 'Blur Atas Bawah (Rekomendasi)' },
+                { value: 'square_stage', label: 'Stage 1:1', badge: 'Square Blur' },
+                { value: 'fit_canvas', label: 'Fit 16:9 Utuh', badge: 'No Crop' },
                 { value: 'vertical_crop', label: 'Full 9:16', badge: 'Zoom Crop' }
               ].map((item) => {
-                const isSelected = (settings.renderMode || 'square_stage') === item.value;
+                const isSelected = (settings.renderMode || 'stage_80') === item.value;
                 return (
                   <button
                     key={item.value}

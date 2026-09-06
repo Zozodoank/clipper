@@ -192,7 +192,7 @@ const DEFAULT_REFRAME = {
   focusX: 0.5,
   focusY: 0.5,
   cropStrategy: 'faceless_product_hands_avoid_creator_text',
-  renderMode: 'square_stage',
+  renderMode: 'stage_80',
   avoidTextZones: [],
   avoidFaceZones: ['top', 'upper_middle'],
   faceSafety: true,
@@ -314,7 +314,7 @@ Review this full video carefully against the 5 Mandatory Acceptance Criteria:
    - If speech dialogue captions cover the center of the video throughout all scenes: output {"status": "reject", "hasSubtitlesOrBurnedText": true, "reason": "Video ditolak: Mengandung subtitle ucapan bawaan."}
 
 4. Watermark & Logo QC:
-   - NOTE: Corner/edge channel watermarks will be cropped off in vertical 9:16 and are 100% ACCEPTABLE. Physical brand logos on the product are 100% ACCEPTABLE.
+   - NOTE: Corner/edge channel watermarks (e.g. in top/bottom corners) will be cleanly cropped off by the 80% blur stage and are 100% ACCEPTABLE. Physical brand logos on the product are 100% ACCEPTABLE.
    - ONLY reject if a giant digital watermark directly covers the CENTER of the frame over the product and cannot be cropped out.
 
 5. Selected Clips:
@@ -435,7 +435,7 @@ If REJECTED:
           hasProductBrand: Boolean(parsed.hasProductBrand),
           reframe: {
             ...DEFAULT_REFRAME,
-            renderMode: 'square_stage',
+            renderMode: 'stage_80',
           },
         });
       }
@@ -632,7 +632,7 @@ Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
    - NOTE: Physical text, brand names, or button markings printed ON THE PHYSICAL PRODUCT are 100% ACCEPTABLE and NOT subtitles!
    - If speech captions cover the video throughout all frames: output {"status": "reject", "hasSubtitlesOrBurnedText": true, "reason": "Video ditolak: Mengandung subtitle / teks caption ucapan bawaan."}
 4. Watermark & Logo QC:
-   - NOTE: Corner/edge watermarks will be cropped off in 9:16 and are 100% ACCEPTABLE. Physical brand logos on the product are 100% ACCEPTABLE.
+   - NOTE: Corner/edge channel watermarks (e.g. in top/bottom corners) will be cleanly cropped off by the 80% blur stage and are 100% ACCEPTABLE. Physical brand logos on the product are 100% ACCEPTABLE.
    - ONLY reject if a giant digital watermark directly covers the CENTER of the frame over the product and cannot be cropped out.
 5. If there are at least 5 clean frames demonstrating the product (faceless, clean center, matching product):
    - Select 5 to 8 frame indices in "frames" array.
@@ -763,7 +763,7 @@ Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
             hasProductBrand: Boolean(parsed.hasProductBrand),
             reframe: {
               ...DEFAULT_REFRAME,
-              renderMode: 'square_stage',
+              renderMode: 'stage_80',
             }
           });
         }
@@ -1357,8 +1357,8 @@ function normalizeReframe(reframe = {}) {
     ? reframe.avoidFaceZones.filter(Boolean).map((zone) => zone.toString().slice(0, 40))
     : DEFAULT_REFRAME.avoidFaceZones;
 
-  const validRenderModes = ['square_stage', 'fit_canvas', 'vertical_crop'];
-  const renderMode = validRenderModes.includes(reframe.renderMode) ? reframe.renderMode : 'square_stage';
+  const validRenderModes = ['stage_80', 'square_stage', 'fit_canvas', 'vertical_crop'];
+  const renderMode = validRenderModes.includes(reframe.renderMode) ? reframe.renderMode : 'stage_80';
 
   return {
     focusX,

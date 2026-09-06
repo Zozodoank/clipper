@@ -24,7 +24,7 @@ export default function App() {
   const [settings, setSettings] = useState({
     aiProvider: 'gemini',
     sceneDuration: 3.3,
-    renderMode: 'square_stage',
+    renderMode: 'stage_80',
     hflip: false,
     speedMultiplier: 1,
     enableSubtitles: true,

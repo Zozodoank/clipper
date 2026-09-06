@@ -32,6 +32,7 @@ import {
   discoverShopeeProducts,
   discoverSingleShopeeProduct,
   discoverYouTubeCandidatesForProduct,
+  findMatchingShopeeProductUrl,
   DEFAULT_AUTO_KEYWORDS,
   getAutoKeywords
 } from './services/discoveryService.js';
@@ -1189,7 +1190,7 @@ export async function runStage1Pipeline({
       ? `Rendering ${highlight.clips.length} cuplikan produk (${highlight.duration.toFixed(1)}s) [Mirror H-Flip OFF: Merek "${highlight.detectedBrand || 'Terdeteksi'}"]...`
       : `Rendering ${highlight.clips.length} AI-selected fast product shots (${highlight.duration.toFixed(1)}s)...`;
 
-    const effectiveRenderMode = options.renderMode || highlight.reframe?.renderMode || 'square_stage';
+    const effectiveRenderMode = options.renderMode || highlight.reframe?.renderMode || 'stage_80';
     const effectiveReframe = {
       ...(highlight.reframe || {}),
       renderMode: effectiveRenderMode,
@@ -1229,10 +1230,26 @@ export async function runStage1Pipeline({
 
     cleanupTempFiles([], [rawFramesDir, trimmedFramesDir]);
 
-    // ─── TAHAP OTOMATIS: Voiceover TTS & Subtitle Burning ───────────────────────
+    // ─── TAHAP OTOMATIS: Auto-Match Shopee Link, Voiceover TTS & Subtitle Burning ───
+    let effectiveShopeeLink = shopeeLink || '';
+    const detectedItemName = highlight.detectedProduct || productTitle || videoMeta?.title || '';
+    if (!effectiveShopeeLink || effectiveShopeeLink.includes('/search') || effectiveShopeeLink.includes('localhost')) {
+      try {
+        updateProgress({ step: 'shopee_match', message: `Mencari link Shopee yang cocok untuk "${detectedItemName.slice(0, 30)}..."...`, progress: 82, status: 'running' });
+        const matchedShopeeUrl = await findMatchingShopeeProductUrl(detectedItemName, highlight.detectedBrand);
+        if (matchedShopeeUrl) {
+          effectiveShopeeLink = matchedShopeeUrl;
+          console.log(`[Job ${jobId}] ✅ Link Shopee otomatis dicocokkan dengan video: ${effectiveShopeeLink}`);
+        }
+      } catch (shopeeErr) {
+        console.warn(`[Job ${jobId}] Gagal mencari link Shopee pencocokan otomatis:`, shopeeErr.message);
+      }
+    }
+
     const rawVoiceScript = scriptData.voiceoverScript || scriptData.aiStudioPrompt || '';
     const voiceoverFileName = `voiceover_${jobId}.mp3`;
     const autoVoiceoverPath = path.join(uploadsDir, voiceoverFileName);
+    const silentDurationSec = (await getMediaDurationSec(silentOutputPath)) || highlight.duration || 20;
 
     updateProgress({
       step: 'tts_generating',
@@ -1247,6 +1264,7 @@ export async function runStage1Pipeline({
       ttsResult = await generateVoiceoverTTS({
         script: scriptData.voiceoverScript || rawVoiceScript,
         outputPath: autoVoiceoverPath,
+        targetDurationSec: silentDurationSec,
         onProgress: (msg) => updateProgress({ step: 'tts_generating', message: `🎙️ ${msg}`, progress: 86, status: 'running' }),
         jobId,
       });
@@ -1269,7 +1287,6 @@ export async function runStage1Pipeline({
         const finalOutputPath = path.join(outputDir, finalFileName);
         const srtPath = path.join(uploadsDir, `subtitles_${jobId}.ass`);
 
-        const silentDurationSec = (await getMediaDurationSec(silentOutputPath)) || highlight.duration || 45;
         const audioDurationSec = await getMediaDurationSec(autoVoiceoverPath);
         const narrationDurationSec = (audioDurationSec && audioDurationSec > 0)
           ? Math.min(silentDurationSec, audioDurationSec)
@@ -1281,9 +1298,11 @@ export async function runStage1Pipeline({
           progress: 93,
           status: 'running',
         });
-        // Pass structured timestamped script to guarantee synchronized subtitle timings
+        // Pass structured script and exact word boundaries to guarantee 100% synchronized subtitles
         const scriptForSubtitles = scriptData.voiceoverScript || rawVoiceScript || ttsResult.cleanScript;
-        generateSrtSubtitles(scriptForSubtitles, narrationDurationSec, srtPath);
+        generateSrtSubtitles(scriptForSubtitles, narrationDurationSec, srtPath, {
+          wordBoundaries: ttsResult.wordBoundaries,
+        });
 
         updateProgress({
           step: 'render_final',
@@ -1327,7 +1346,7 @@ export async function runStage1Pipeline({
           productTitle: productTitle || videoMeta.title,
           productDescription: productDescription || '',
           youtubeUrl,
-          shopeeLink: shopeeLink || '',
+          shopeeLink: effectiveShopeeLink || shopeeLink || '',
           highlight: {
             startTime: highlight.startTime,
             endTime: highlight.endTime,
@@ -1903,21 +1922,25 @@ async function processJobVoiceover(jobId, customScript = null) {
   try {
     updateProgress({ step: 'tts_generating', message: '🎙️ Menghasilkan voice over Gadis (Edge-TTS Neural)...', progress: 20, status: 'running' });
 
+    const silentDurationSec = (await getMediaDurationSec(silentPath)) || job.highlight?.duration || 20;
+
     const ttsResult = await generateVoiceoverTTS({
       script: scriptToUse,
       outputPath: voiceoverAudioPath,
+      targetDurationSec: silentDurationSec,
       onProgress: (msg) => updateProgress({ step: 'tts_generating', message: `🎙️ ${msg}`, progress: 35, status: 'running' }),
       jobId,
     });
 
-    const silentDurationSec = (await getMediaDurationSec(silentPath)) || job.highlight?.duration || 45;
     const audioDurationSec = await getMediaDurationSec(voiceoverAudioPath);
     const narrationDurationSec = (audioDurationSec && audioDurationSec > 0)
       ? Math.min(silentDurationSec, audioDurationSec)
       : silentDurationSec;
 
     updateProgress({ step: 'subtitles', message: `Menyinkronkan subtitle narasi (${narrationDurationSec.toFixed(1)}s)...`, progress: 55, status: 'running' });
-    generateSrtSubtitles(scriptToUse, narrationDurationSec, srtPath);
+    generateSrtSubtitles(scriptToUse, narrationDurationSec, srtPath, {
+      wordBoundaries: ttsResult.wordBoundaries,
+    });
 
     updateProgress({ step: 'render_final', message: 'Rendering video final 9:16 dengan Voiceover & Subtitles...', progress: 75, status: 'running' });
     await mergeVoiceoverAndBurnSubtitles({

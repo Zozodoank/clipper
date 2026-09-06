@@ -404,6 +404,34 @@ export function isBulkyOrUnsuitableProduct(text = '') {
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 const insecureTlsAgent = new https.Agent({ rejectUnauthorized: false });
 
+let cachedDdgIp = '20.43.161.105'; // Known Azure IP for DuckDuckGo
+let lastDdgIpLookup = 0;
+
+async function resolveDdgIp() {
+  const now = Date.now();
+  if (cachedDdgIp && now - lastDdgIpLookup < 3600000) {
+    return cachedDdgIp;
+  }
+  try {
+    const res = await fetch('https://dns.google/resolve?name=html.duckduckgo.com&type=A', {
+      agent: insecureTlsAgent,
+      timeout: 3000,
+    });
+    if (res.ok) {
+      const json = await res.json();
+      const ip = json?.Answer?.find((a) => a.type === 1)?.data;
+      if (ip) {
+        cachedDdgIp = ip;
+        lastDdgIpLookup = now;
+        return ip;
+      }
+    }
+  } catch {
+    // Keep fallback IP
+  }
+  return cachedDdgIp;
+}
+
 function formatKeywordToProductTitle(keyword) {
   if (!keyword) return 'Produk Rumah Tangga Viral';
   return keyword
@@ -586,49 +614,64 @@ export function delayWithJitter(minMs, maxMs) {
 }
 
 async function searchDuckDuckGoShopee(keyword) {
-  const searchQuery = `site:shopee.co.id/product "${keyword}"`;
-  const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}`;
-  let html = '';
+  const cleanKeyword = String(keyword || '').replace(/\s+/g, ' ').trim();
+  // Include "produk rumah tangga" as requested to target real household Shopee products
+  const searchQueries = [
+    `"${cleanKeyword}" produk rumah tangga site:shopee.co.id`,
+    `${cleanKeyword} produk rumah tangga site:shopee.co.id`,
+    `"${cleanKeyword}" site:shopee.co.id`,
+  ];
 
-  try {
-    const response = await fetchWithTlsFallback(url, {
-      timeoutMs: 2500,
-      headers: {
-        'user-agent': USER_AGENT,
-        'accept-language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
-      },
-    });
-
-    if (!response || !response.ok) {
-      return searchBraveShopee(keyword);
-    }
-
-    html = await response.text();
-  } catch (error) {
-    return searchBraveShopee(keyword);
-  }
-
-  if (html.includes('internetbaik.telkomsel.com') || html.includes('blocked')) {
-    return searchBraveShopee(keyword);
-  }
-
-  const $ = cheerio.load(html);
-  const results = [];
-
-  $('.result').each((_, element) => {
-    const anchor = $(element).find('a.result__a').first();
-    const rawHref = anchor.attr('href');
-    const productUrl = normalizeSearchResultUrl(rawHref);
-    if (!isShopeeProductUrl(productUrl)) return;
-
-    results.push({
-      title: anchor.text().trim(),
-      snippet: $(element).find('.result__snippet').text().trim(),
-      url: productUrl,
-    });
+  const ddgIp = await resolveDdgIp();
+  const ddgAgent = new https.Agent({
+    rejectUnauthorized: false,
+    servername: 'html.duckduckgo.com',
   });
 
-  return results.length ? dedupeByUrl(results) : searchBraveShopee(keyword);
+  for (const searchQuery of searchQueries) {
+    try {
+      const url = `https://${ddgIp}/html/?q=${encodeURIComponent(searchQuery)}`;
+      const response = await fetch(url, {
+        agent: ddgAgent,
+        timeout: 4500,
+        headers: {
+          'Host': 'html.duckduckgo.com',
+          'user-agent': USER_AGENT,
+          'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'accept-language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+        },
+      });
+
+      if (!response || !response.ok) continue;
+
+      const html = await response.text();
+      if (html.includes('internetbaik.telkomsel.com') || html.includes('blocked')) continue;
+
+      const $ = cheerio.load(html);
+      const results = [];
+
+      $('.result').each((_, element) => {
+        const anchor = $(element).find('a.result__a').first();
+        const rawHref = anchor.attr('href');
+        const productUrl = normalizeSearchResultUrl(rawHref);
+        if (!isShopeeProductUrl(productUrl)) return;
+
+        results.push({
+          title: anchor.text().trim(),
+          snippet: $(element).find('.result__snippet').text().trim(),
+          url: productUrl,
+        });
+      });
+
+      if (results.length > 0) {
+        return dedupeByUrl(results);
+      }
+    } catch {
+      // Continue to next query / search engine
+    }
+  }
+
+  return searchBraveShopee(keyword);
 }
 
 async function searchBraveShopee(keyword) {
@@ -738,7 +781,7 @@ async function fetchShopeePageMeta(url) {
 }
 
 async function fetchWithTlsFallback(url, options = {}) {
-  const timeoutMs = Number(options.timeoutMs) || 3000;
+  const timeoutMs = Number(options.timeoutMs) || 5000;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -746,6 +789,7 @@ async function fetchWithTlsFallback(url, options = {}) {
     const cleanOptions = { ...options };
     delete cleanOptions.timeoutMs;
     const response = await fetch(url, {
+      agent: insecureTlsAgent,
       ...cleanOptions,
       signal: cleanOptions.signal || controller.signal,
     });
@@ -927,3 +971,34 @@ function cleanDescription(value = '') {
 function normalizeText(value = '') {
   return value.toString().toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
 }
+
+/**
+ * Searches and returns the best exact Shopee product URL matching the video's detected product.
+ * Uses DoH-powered DuckDuckGo and household product keywords.
+ */
+export async function findMatchingShopeeProductUrl(productTitle, detectedBrand = '') {
+  if (!productTitle || typeof productTitle !== 'string') return '';
+  const cleanTitleStr = cleanTitle(productTitle) || productTitle.trim();
+  const brand = (detectedBrand && detectedBrand !== 'none' && !detectedBrand.includes('Terdeteksi')) ? detectedBrand.trim() : '';
+  const searchPhrase = `${brand ? `${brand} ` : ''}${cleanTitleStr}`.trim();
+
+  console.log(`[Discovery] Mencari link Shopee yang cocok untuk produk video: "${searchPhrase}"...`);
+  try {
+    const results = await searchDuckDuckGoShopee(searchPhrase);
+    if (results && results.length > 0) {
+      const match = results.find(r => isShopeeProductUrl(r.url));
+      if (match) {
+        console.log(`[Discovery] ✅ Menemukan link Shopee cocok: "${match.title}" -> ${match.url}`);
+        return match.url;
+      }
+    }
+  } catch (err) {
+    console.warn(`[Discovery] Gagal mencari link Shopee via DuckDuckGo:`, err.message);
+  }
+
+  // Fallback: direct search page URL with refined household keyword
+  const fallbackUrl = `https://shopee.co.id/search?keyword=${encodeURIComponent(`${searchPhrase} produk rumah tangga`)}`;
+  console.log(`[Discovery] Menggunakan fallback link Shopee: ${fallbackUrl}`);
+  return fallbackUrl;
+}
+

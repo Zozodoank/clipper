@@ -1339,6 +1339,7 @@ export async function runStage1Pipeline({
           ttsVoice: ttsResult.voice || 'Gadis Indonesia (Neural)',
           ttsProvider: ttsResult.provider || 'edge_neural',
           cleanScript: ttsResult.cleanScript,
+          wordBoundaries: ttsResult.wordBoundaries || [],
           downloadedVideoPath: null,
           hasDownloadedVideo: false,
           hasFinalVideo: true,
@@ -1824,7 +1825,9 @@ app.post('/api/upload-voiceover', upload.single('audio'), async (req, res) => {
       : (job.aiStudioPrompt || job.voiceoverScript || '');
 
     updateProgress({ step: 'subtitles', message: `Generating synchronized subtitle captions for ${narrationDurationSec.toFixed(1)}s voiceover...`, progress: 40, status: 'running' });
-    generateSrtSubtitles(scriptToUse, narrationDurationSec, srtPath);
+    generateSrtSubtitles(scriptToUse, narrationDurationSec, srtPath, {
+      wordBoundaries: job?.wordBoundaries || [],
+    });
 
     updateProgress({ step: 'render_final', message: 'Rendering final 9:16 video with Voiceover & Subtitles...', progress: 60, status: 'running' });
     await mergeVoiceoverAndBurnSubtitles({
@@ -1966,6 +1969,7 @@ async function processJobVoiceover(jobId, customScript = null) {
       ttsVoice: ttsResult.voice || 'Gadis (Edge-TTS Neural)',
       ttsProvider: ttsResult.provider || 'edge_tts',
       cleanScript: ttsResult.cleanScript,
+      wordBoundaries: ttsResult.wordBoundaries || [],
       hasFinalVideo: true,
       hasSilentVideo: true,
       updatedAt: new Date().toISOString(),

@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { getFFmpegPath } from './binaryChecker.js';
+import { scaleAssSubtitles } from './subtitleService.js';
 
 /**
  * Stage 1: Renders Gemini-selected 5-second product clips as one vertical 9:16 video
@@ -159,6 +160,11 @@ export async function mergeVoiceoverAndBurnSubtitles({
   let atempoFactor = 1.0;
   if (audioDuration && videoDuration && audioDuration > videoDuration + 0.3) {
     atempoFactor = Math.min(1.25, Math.max(1.0, audioDuration / videoDuration));
+  }
+
+  // If audio is sped up via atempo, rescale ASS subtitle timestamps to match 100%
+  if (srtPath && fs.existsSync(srtPath) && atempoFactor > 1.005) {
+    scaleAssSubtitles(srtPath, 1 / atempoFactor);
   }
 
   onProgress({

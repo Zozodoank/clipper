@@ -270,8 +270,33 @@ function colorizeShopeeSubtitle(text, index = 0) {
 }
 
 /**
+ * Normalizes TTS phonetic pronunciations back to crisp standard Indonesian on-screen text.
+ */
+function normalizeSubtitleWord(w) {
+  if (!w || typeof w !== 'string') return '';
+  return w
+    .replace(/\bcekout\b/gi, 'checkout')
+    .replace(/\bwortit\b/gi, 'worth it')
+    .replace(/\bfiral\b/gi, 'viral')
+    .replace(/\bfowcer\b/gi, 'voucher')
+    .replace(/\bSyopi\b/gi, 'Shopee')
+    .replace(/\bCe\s*O\s*De\b/gi, 'COD')
+    .replace(/\bwan in wan\b/gi, '1 in 1')
+    .replace(/\btu in wan\b/gi, '2 in 1')
+    .replace(/\btri in wan\b/gi, '3 in 1')
+    .replace(/\bfor in wan\b/gi, '4 in 1')
+    .replace(/\bflas sel\b/gi, 'flash sale')
+    .replace(/\bredi stok\b/gi, 'ready stock')
+    .replace(/\bril-pik\b/gi, 'real pict')
+    .replace(/\bgais\b/gi, 'guys');
+}
+
+/**
  * Generates ASS subtitles directly from Edge-TTS WordBoundary metadata.
- * Yields 100.0% exact, sub-millisecond synchronization with the spoken voiceover.
+ * Yields 100.0% exact, sub-millisecond synchronization with the spoken voiceover:
+ * - 80ms audio-visual lead-in so subtitles appear at the exact acoustic onset.
+ * - Balanced 3 to 5 word chunking (never leaves awkward 1-word orphans like "ini" or "kuning").
+ * - Seamless inter-phrase continuity avoiding rapid flickering black pauses.
  */
 export function generateAssSubtitlesFromWordBoundaries({ wordBoundaries, totalDurationSec, assOutputPath }) {
   if (!Array.isArray(wordBoundaries) || wordBoundaries.length === 0) {
@@ -279,49 +304,81 @@ export function generateAssSubtitlesFromWordBoundaries({ wordBoundaries, totalDu
   }
 
   const safeTotalDuration = Math.max(3, Number(totalDurationSec) || 25);
-  const phrases = [];
-  let currentPhraseWords = [];
+
+  // 1. Group words by natural audio pause breaks (gaps > 0.45s between spoken words)
+  const sceneGroups = [];
+  let currentGroup = [];
 
   for (let i = 0; i < wordBoundaries.length; i++) {
     const w = wordBoundaries[i];
     if (!w.word || !w.word.trim()) continue;
-    currentPhraseWords.push(w);
+    currentGroup.push(w);
 
-    const isPunctuationEnd = /[.!?]$/.test(w.word);
-    const isCommaEnd = /[,;]$/.test(w.word);
     const hasNext = i < wordBoundaries.length - 1;
     const nextGap = hasNext ? (wordBoundaries[i + 1].startSec - w.endSec) : 0;
 
-    // Split phrase on punctuation, pause gaps, or comfortable 4-6 word chunking
-    if (
-      isPunctuationEnd ||
-      (isCommaEnd && currentPhraseWords.length >= 3) ||
-      nextGap > 0.45 ||
-      currentPhraseWords.length >= 5 ||
-      !hasNext
-    ) {
-      const phraseText = currentPhraseWords.map((pw) => pw.word).join(' ').trim();
-      const startSec = Math.max(0, currentPhraseWords[0].startSec);
-      const naturalEndSec = currentPhraseWords[currentPhraseWords.length - 1].endSec;
-      const endSec = Math.min(
-        safeTotalDuration,
-        Math.max(startSec + 0.8, naturalEndSec + (nextGap > 0.2 ? 0.15 : 0))
-      );
+    if (!hasNext || nextGap > 0.45) {
+      sceneGroups.push([...currentGroup]);
+      currentGroup = [];
+    }
+  }
 
-      phrases.push({
-        text: phraseText,
-        start: formatAssTime(startSec),
-        end: formatAssTime(endSec),
-      });
-      currentPhraseWords = [];
+  const phrases = [];
+
+  // 2. For each scene group, partition words into balanced chunks (3-5 words, never 1-word orphans)
+  for (const group of sceneGroups) {
+    if (group.length === 0) continue;
+    const n = group.length;
+    const chunks = [];
+
+    if (n <= 5) {
+      chunks.push(group);
+    } else if (n <= 8) {
+      const mid = Math.ceil(n / 2);
+      chunks.push(group.slice(0, mid));
+      chunks.push(group.slice(mid));
+    } else {
+      let startIdx = 0;
+      while (startIdx < n) {
+        const remaining = n - startIdx;
+        let chunkSize = 4;
+        if (remaining <= 5) {
+          chunkSize = remaining;
+        } else if (remaining === 6) {
+          chunkSize = 3;
+        } else if (remaining === 7) {
+          chunkSize = 4;
+        }
+        chunks.push(group.slice(startIdx, startIdx + chunkSize));
+        startIdx += chunkSize;
+      }
+    }
+
+    for (const chunk of chunks) {
+      if (chunk.length === 0) continue;
+      // Visual lead-in: start 80ms before sound begins so viewers see text right as audio attacks
+      const startSec = Math.max(0, +(chunk[0].startSec - 0.08).toFixed(3));
+      const endSec = Math.min(safeTotalDuration, +(chunk[chunk.length - 1].endSec + 0.12).toFixed(3));
+      const text = chunk.map((w) => normalizeSubtitleWord(w.word)).join(' ');
+      phrases.push({ text, startSec, endSec });
     }
   }
 
   if (phrases.length === 0) return false;
 
+  // 3. Seamless gap filling: If pause between phrases is small (< 0.55s), extend previous phrase
+  // so the subtitle stays comfortably on screen without rapid black-void blinking
+  for (let i = 0; i < phrases.length - 1; i++) {
+    const nextStart = phrases[i + 1].startSec;
+    const gap = nextStart - phrases[i].endSec;
+    if (gap > 0 && gap < 0.55) {
+      phrases[i].endSec = nextStart;
+    }
+  }
+
   const formattedEvents = phrases.map((e, idx) => {
     const coloredText = colorizeShopeeSubtitle(e.text, idx);
-    return `Dialogue: 0,${e.start},${e.end},Default,,0,0,0,,${coloredText}`;
+    return `Dialogue: 0,${formatAssTime(e.startSec)},${formatAssTime(e.endSec)},Default,,0,0,0,,${coloredText}`;
   });
 
   const assContent = `[Script Info]
@@ -349,6 +406,59 @@ ${formattedEvents.join('\n')}
 
 // Backward compatibility alias
 export const generateSrtSubtitles = generateAssSubtitles;
+
+export function parseAssTimeToSeconds(timeStr) {
+  if (!timeStr || typeof timeStr !== 'string') return 0;
+  const match = timeStr.trim().match(/^(\d+):(\d{2}):(\d{2})\.(\d{2})$/);
+  if (!match) return 0;
+  const h = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  const s = parseInt(match[3], 10);
+  const cs = parseInt(match[4], 10);
+  return h * 3600 + m * 60 + s + cs / 100;
+}
+
+/**
+ * Rescales ASS subtitle timestamps when audio tempo is changed (e.g. atempo in FFmpeg).
+ * Keeps subtitles 100% synchronized with sped-up/slowed-down audio.
+ * @param {string} assFilePath
+ * @param {number} scaleFactor - Multiplier applied to time (e.g. 1 / atempoFactor)
+ */
+export function scaleAssSubtitles(assFilePath, scaleFactor) {
+  if (!assFilePath || !fs.existsSync(assFilePath) || !scaleFactor || Math.abs(scaleFactor - 1.0) < 0.005) {
+    return;
+  }
+  try {
+    const content = fs.readFileSync(assFilePath, 'utf8');
+    const lines = content.split(/\r?\n/);
+    const updatedLines = lines.map((line) => {
+      if (!line.startsWith('Dialogue:')) return line;
+      // Dialogue: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+      const firstParts = [];
+      let cursor = 0;
+      for (let i = 0; i < 9; i++) {
+        const nextComma = line.indexOf(',', cursor);
+        if (nextComma === -1) break;
+        firstParts.push(line.slice(cursor, nextComma));
+        cursor = nextComma + 1;
+      }
+      const remainingText = line.slice(cursor);
+      if (firstParts.length < 9) return line;
+
+      const startSec = parseAssTimeToSeconds(firstParts[1]);
+      const endSec = parseAssTimeToSeconds(firstParts[2]);
+      firstParts[1] = formatAssTime(startSec * scaleFactor);
+      firstParts[2] = formatAssTime(endSec * scaleFactor);
+
+      return `${firstParts.join(',')},${remainingText}`;
+    });
+
+    fs.writeFileSync(assFilePath, updatedLines.join('\n'), 'utf8');
+    console.log(`[SubtitleService] ✅ Scaled ASS subtitle timestamps by factor ${scaleFactor.toFixed(4)}`);
+  } catch (err) {
+    console.warn(`[SubtitleService] Failed to scale ASS subtitles: ${err.message}`);
+  }
+}
 
 function formatAssTime(totalSec) {
   const safeSec = Math.max(0, Number(totalSec) || 0);

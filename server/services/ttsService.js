@@ -561,7 +561,24 @@ export async function generateVoiceoverEdgeTTS({
           }),
         ]);
 
-        const dur = words.length ? words[words.length - 1].endSec : 2.5;
+        let dur = words.length ? words[words.length - 1].endSec : 2.5;
+
+        // Fallback safety: If Edge-TTS did not return word boundaries for this scene (e.g. short CTA),
+        // synthesize word boundaries proportionally from spokenText so subtitles NEVER disappear!
+        if (words.length === 0 && scene.spokenText && scene.spokenText.trim()) {
+          const textWords = scene.spokenText.trim().split(/\s+/).filter(Boolean);
+          const wordDur = Math.max(0.2, dur / Math.max(1, textWords.length));
+          textWords.forEach((tw, twIdx) => {
+            words.push({
+              word: tw,
+              startSec: +(twIdx * wordDur).toFixed(3),
+              durationSec: +wordDur.toFixed(3),
+              endSec: +((twIdx + 1) * wordDur).toFixed(3),
+            });
+          });
+          dur = textWords.length * wordDur;
+        }
+
         return { ...scene, partPath, words, duration: dur };
       })
     );

@@ -163,8 +163,9 @@ export async function mergeVoiceoverAndBurnSubtitles({
   }
 
   // If audio is sped up via atempo, rescale ASS subtitle timestamps to match 100%
+  // and keep the final CTA subtitle pinned to the exact video duration!
   if (srtPath && fs.existsSync(srtPath) && atempoFactor > 1.005) {
-    scaleAssSubtitles(srtPath, 1 / atempoFactor);
+    scaleAssSubtitles(srtPath, 1 / atempoFactor, videoDuration);
   }
 
   onProgress({

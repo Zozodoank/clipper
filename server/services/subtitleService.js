@@ -358,7 +358,10 @@ export function generateAssSubtitlesFromWordBoundaries({ wordBoundaries, totalDu
       if (chunk.length === 0) continue;
       // Visual lead-in: start 80ms before sound begins so viewers see text right as audio attacks
       const startSec = Math.max(0, +(chunk[0].startSec - 0.08).toFixed(3));
-      const endSec = Math.min(safeTotalDuration, +(chunk[chunk.length - 1].endSec + 0.12).toFixed(3));
+      let endSec = +(chunk[chunk.length - 1].endSec + 0.15).toFixed(3);
+      if (endSec <= startSec) {
+        endSec = +(startSec + 0.8).toFixed(3);
+      }
       const text = chunk.map((w) => normalizeSubtitleWord(w.word)).join(' ');
       phrases.push({ text, startSec, endSec });
     }
@@ -373,6 +376,21 @@ export function generateAssSubtitlesFromWordBoundaries({ wordBoundaries, totalDu
     const gap = nextStart - phrases[i].endSec;
     if (gap > 0 && gap < 0.55) {
       phrases[i].endSec = nextStart;
+    }
+  }
+
+  // 4. Pin the final CTA subtitle right until the end of the video (safeTotalDuration).
+  // Ensures the high-converting Call To Action remains on screen with zero empty void at the end!
+  if (phrases.length > 0) {
+    const lastPhrase = phrases[phrases.length - 1];
+    lastPhrase.endSec = Math.max(lastPhrase.endSec, safeTotalDuration);
+  }
+
+  // 5. Ensure all phrases have strictly valid timestamps (startSec < endSec)
+  for (let i = 0; i < phrases.length; i++) {
+    const p = phrases[i];
+    if (p.endSec <= p.startSec) {
+      p.endSec = +(p.startSec + 0.8).toFixed(3);
     }
   }
 
@@ -420,18 +438,28 @@ export function parseAssTimeToSeconds(timeStr) {
 
 /**
  * Rescales ASS subtitle timestamps when audio tempo is changed (e.g. atempo in FFmpeg).
- * Keeps subtitles 100% synchronized with sped-up/slowed-down audio.
+ * Keeps subtitles 100% synchronized with sped-up/slowed-down audio, and ensures the last
+ * CTA subtitle stays pinned to the final video duration without empty voids.
  * @param {string} assFilePath
  * @param {number} scaleFactor - Multiplier applied to time (e.g. 1 / atempoFactor)
+ * @param {number} [targetVideoDuration] - Target video duration to pin the final CTA subtitle to
  */
-export function scaleAssSubtitles(assFilePath, scaleFactor) {
+export function scaleAssSubtitles(assFilePath, scaleFactor, targetVideoDuration = null) {
   if (!assFilePath || !fs.existsSync(assFilePath) || !scaleFactor || Math.abs(scaleFactor - 1.0) < 0.005) {
     return;
   }
   try {
     const content = fs.readFileSync(assFilePath, 'utf8');
     const lines = content.split(/\r?\n/);
-    const updatedLines = lines.map((line) => {
+
+    const dialogueIndices = [];
+    lines.forEach((l, idx) => {
+      if (l.startsWith('Dialogue:')) dialogueIndices.push(idx);
+    });
+
+    const lastDialogueIdx = dialogueIndices.length > 0 ? dialogueIndices[dialogueIndices.length - 1] : -1;
+
+    const updatedLines = lines.map((line, idx) => {
       if (!line.startsWith('Dialogue:')) return line;
       // Dialogue: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
       const firstParts = [];
@@ -445,16 +473,26 @@ export function scaleAssSubtitles(assFilePath, scaleFactor) {
       const remainingText = line.slice(cursor);
       if (firstParts.length < 9) return line;
 
-      const startSec = parseAssTimeToSeconds(firstParts[1]);
-      const endSec = parseAssTimeToSeconds(firstParts[2]);
-      firstParts[1] = formatAssTime(startSec * scaleFactor);
-      firstParts[2] = formatAssTime(endSec * scaleFactor);
+      let startSec = +(parseAssTimeToSeconds(firstParts[1]) * scaleFactor).toFixed(3);
+      let endSec = +(parseAssTimeToSeconds(firstParts[2]) * scaleFactor).toFixed(3);
+
+      // Pin the final CTA subtitle to targetVideoDuration if provided
+      if (idx === lastDialogueIdx && targetVideoDuration && targetVideoDuration > 0) {
+        endSec = Math.max(endSec, targetVideoDuration);
+      }
+
+      if (endSec <= startSec) {
+        endSec = +(startSec + 0.8).toFixed(3);
+      }
+
+      firstParts[1] = formatAssTime(startSec);
+      firstParts[2] = formatAssTime(endSec);
 
       return `${firstParts.join(',')},${remainingText}`;
     });
 
     fs.writeFileSync(assFilePath, updatedLines.join('\n'), 'utf8');
-    console.log(`[SubtitleService] ✅ Scaled ASS subtitle timestamps by factor ${scaleFactor.toFixed(4)}`);
+    console.log(`[SubtitleService] ✅ Scaled ASS subtitle timestamps by factor ${scaleFactor.toFixed(4)}${targetVideoDuration ? ` (CTA pinned to ${targetVideoDuration.toFixed(1)}s)` : ''}`);
   } catch (err) {
     console.warn(`[SubtitleService] Failed to scale ASS subtitles: ${err.message}`);
   }

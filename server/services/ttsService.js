@@ -1,8 +1,13 @@
 import fs from 'fs';
 import path from 'path';
+import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import { applyTalingPhonetics } from './phoneticData.js';
 
-// Default Model ID: RINDI (Indonesian female advertisement voice on Fish Audio)
+// Default Microsoft Edge TTS Voice: id-ID-GadisNeural (Indonesian female natural voice)
+export const DEFAULT_EDGE_VOICE = 'id-ID-GadisNeural';
+export const DEFAULT_EDGE_VOICE_NAME = 'Gadis (Edge-TTS Neural)';
+
+// Default Fish Audio Model ID (legacy fallback): RINDI
 export const DEFAULT_FISH_MODEL_ID = '9c94fb1d0504466898beb87481df9fa1';
 export const DEFAULT_FISH_VOICE_NAME = 'RINDI';
 
@@ -18,17 +23,22 @@ export const VALID_FISH_TAGS = new Set([
  * Solves common mispronunciation issues (such as "banget" sounding like "ban" + "et",
  * and distinguishing taling /e/ vs pepet /ə/ for Fish Audio Angelica).
  */
-export function applyIndonesianPhoneticFixes(text) {
+export function applyIndonesianPhoneticFixes(text, { useTaling = false } = {}) {
   if (!text || typeof text !== 'string') return '';
 
-  // 1. Terapkan leksikon taling & morphological affix engine (misal: keren -> kéren, mejanya -> méjanya)
-  let result = applyTalingPhonetics(text);
+  let result = text;
+  if (useTaling) {
+    // Taling dictionary & diacritics for legacy multilingual models like Fish Audio
+    result = applyTalingPhonetics(result);
+  } else {
+    // Edge TTS natively models standard Indonesian. Strip accent marks (é, è, ê -> e) so pronunciation stays pure.
+    result = result.replace(/[éèê]/g, 'e').replace(/[ÉÈÊ]/g, 'E');
+  }
 
   return result
     // 2. Vokal & Diakritik Slang/Khas Indonesia:
-    // "banget" -> "bangét" (tanda aksen / garis miring kecil di atas e agar suara natural tanpa patahan glottal)
-    .replace(/\b(?:banget|bangett|bangnget|bangget)\b/gi, 'bangét')
-    .replace(/\bpengen\b/gi, 'péngin')
+    .replace(/\b(?:banget|bangett|bangnget|bangget)\b/gi, useTaling ? 'bangét' : 'banget')
+    .replace(/\bpengen\b/gi, useTaling ? 'péngin' : 'pengin')
     .replace(/\b(?:kece|kécé)\b/gi, 'keren')
     .replace(/\byuk\b/gi, 'yu')
     .replace(/\b(?:enggak|engga|nggak|ngga)\b/gi, 'tidak')
@@ -87,11 +97,11 @@ export function applyIndonesianPhoneticFixes(text) {
     // Kata-kata berawalan V diganti F agar model TTS tidak membacanya "bhee" / "vee"
     .replace(/\bviral\b/gi, 'firal')
     .replace(/\bvoucher\b/gi, 'fowcer')
-    .replace(/\bvideo\b/gi, 'fidéo')
+    .replace(/\bvideo\b/gi, useTaling ? 'fidéo' : 'video')
     .replace(/\bvariasi\b/gi, 'fariasi')
     .replace(/\bvarian\b/gi, 'farian')
-    .replace(/\bventilasi\b/gi, 'féntilasi')
-    .replace(/\bversi\b/gi, 'férsi')
+    .replace(/\bventilasi\b/gi, useTaling ? 'féntilasi' : 'ventilasi')
+    .replace(/\bversi\b/gi, useTaling ? 'férsi' : 'versi')
     .replace(/\bvakum\b/gi, 'fakum')
     .replace(/\bvitamin\b/gi, 'fitamin')
     .replace(/\bvintage\b/gi, 'fintij')
@@ -179,8 +189,8 @@ export function prepareScriptForFishTTS(rawScript) {
 
   const consolidated = lines.join(' ').replace(/\s{2,}/g, ' ').trim();
 
-  // Apply phonetic fixes for Indonesian voiceover
-  return applyIndonesianPhoneticFixes(consolidated);
+  // Apply phonetic fixes for Indonesian voiceover (Fish Audio uses taling accents é)
+  return applyIndonesianPhoneticFixes(consolidated, { useTaling: true });
 }
 
 /**
@@ -247,9 +257,61 @@ export function cleanScriptForSubtitles(rawScript) {
 }
 
 /**
+ * Prepares the script for Microsoft Edge TTS (id-ID-GadisNeural):
+ * - Strips timestamps, speaker markers, and emotion tags.
+ * - Applies phonetic Indonesian corrections and expansions.
+ */
+export function prepareScriptForEdgeTTS(rawScript) {
+  if (!rawScript || typeof rawScript !== 'string') return '';
+
+  let text = rawScript;
+
+  // Extract text after Speaker 1 if script has section headers
+  const speakerMatch = text.match(/(?:Speaker\s*\d*(?:\s*-[^\n\r:]+)?|SPEAKER\s*\d*)[\s\r\n:]+([\s\S]*)$/i);
+  if (speakerMatch && speakerMatch[1].trim()) {
+    text = speakerMatch[1].trim();
+  }
+
+  // Remove timestamp markers like [00:00], [00:05], (00:00)
+  text = text.replace(/\[\s*\d{1,2}:\d{2}(?::\d{2})?\s*\]/g, ' ');
+  text = text.replace(/\(\s*\d{1,2}:\d{2}(?::\d{2})?\s*\)/g, ' ');
+
+  // Convert [pause] or [long pause] to natural punctuation pause for Edge TTS
+  text = text.replace(/\[\s*(?:long\s*)?pause\s*\]/gi, ', ');
+
+  // Remove ALL other bracketed tags (e.g. [excited], [soft], etc.)
+  text = text.replace(/\[\s*[^\]]+\s*\]/g, ' ');
+
+  // Remove parenthesized directions like (hook), (cta), (senyum), etc.
+  text = text.replace(/\(\s*(?:hook|cta|problem|solution|intrigue|desire|urgency|information|senyum|tunjuk|close-up|cut to)[^)]*\)/gi, ' ');
+
+  // Remove leftover markdown headers, bold/italics, bullet points, asterisks, hashtags
+  text = text.replace(/^#+\s+/gm, '');
+  text = text.replace(/[*_~`]/g, '');
+  text = text.replace(/^[-•*]\s+/gm, '');
+  text = text.replace(/#\w+/g, '');
+
+  // Expand common symbols
+  text = text.replace(/%/g, ' persen ');
+  text = text.replace(/&/g, ' dan ');
+  text = text.replace(/\+/g, ' plus ');
+
+  // Clean whitespace and normalize lines
+  const lines = text
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line.length > 0 && !/^Speaker\s*\d/i.test(line));
+
+  const consolidated = lines.join(' ').replace(/\s{2,}/g, ' ').replace(/\s+([,.:!?])/g, '$1').trim();
+
+  // Apply phonetic fixes for Indonesian voiceover (Edge-TTS does NOT use taling accents, pure standard Indonesian)
+  return applyIndonesianPhoneticFixes(consolidated, { useTaling: false });
+}
+
+/**
  * Backwards-compatibility alias
  */
-export const cleanScriptForTTS = prepareScriptForFishTTS;
+export const cleanScriptForTTS = prepareScriptForEdgeTTS;
 
 /**
  * Helper to test whether an error is due to Fish Audio quota exhaustion
@@ -268,11 +330,82 @@ export function isFishAudioQuotaError(statusCode, responseText = '') {
 }
 
 /**
- * Generate Voiceover Audio directly via Fish Audio API (S2.1 Pro)
- * Uses Voice Model RINDI (9c94fb1d0504466898beb87481df9fa1).
- * If quota runs out, stops the job and marks it as retryable tomorrow.
+ * Generate Voiceover Audio via Microsoft Edge TTS (id-ID-GadisNeural).
+ * 100% Free, no API key required, high quality natural Indonesian voiceover.
  */
-export async function generateVoiceoverTTS({
+export async function generateVoiceoverEdgeTTS({
+  script,
+  outputPath,
+  voice = 'id-ID-GadisNeural',
+  onProgress = null,
+  jobId = '',
+}) {
+  const ttsText = prepareScriptForEdgeTTS(script);
+  const subtitleText = cleanScriptForSubtitles(script);
+
+  if (!ttsText || ttsText.length < 3) {
+    throw new Error('Naskah suara kosong setelah dibersihkan dari tag/timestamp.');
+  }
+
+  const log = (msg) => {
+    console.log(`[Edge TTS${jobId ? ` ${jobId}` : ''}] ${msg}`);
+    if (onProgress) onProgress(msg);
+  };
+
+  const selectedVoice = (voice || process.env.TTS_VOICE || DEFAULT_EDGE_VOICE).trim();
+  log(`Menghasilkan voice over Gadis (${ttsText.length} karakter): "${ttsText.slice(0, 60)}..."`);
+
+  const outDir = path.dirname(outputPath);
+  if (!fs.existsSync(outDir)) {
+    fs.mkdirSync(outDir, { recursive: true });
+  }
+
+  const tts = new MsEdgeTTS();
+  await tts.setMetadata(selectedVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+
+  const { audioStream } = tts.toStream(ttsText, {
+    rate: '+0%',
+    pitch: '+0Hz',
+    volume: '+0%',
+  });
+
+  const writeStream = fs.createWriteStream(outputPath);
+  audioStream.pipe(writeStream);
+
+  await new Promise((resolve, reject) => {
+    writeStream.on('finish', resolve);
+    audioStream.on('error', (err) => {
+      writeStream.destroy();
+      reject(new Error(`Edge TTS audio stream error: ${err.message}`));
+    });
+    writeStream.on('error', (err) => {
+      reject(new Error(`Gagal menulis file audio TTS: ${err.message}`));
+    });
+  });
+
+  const stats = fs.statSync(outputPath);
+  if (stats.size < 500) {
+    throw new Error('Hasil audio Edge TTS kosong atau file rusak.');
+  }
+
+  log(`✅ Berhasil menghasilkan voice over Gadis! Ukuran: ${(stats.size / 1024).toFixed(1)} KB`);
+
+  return {
+    audioPath: outputPath,
+    provider: 'edge_tts',
+    voice: 'Gadis (Edge-TTS Neural)',
+    modelId: selectedVoice,
+    sizeBytes: stats.size,
+    cleanScript: subtitleText,
+    spokenScript: ttsText,
+  };
+}
+
+/**
+ * Generate Voiceover Audio via Fish Audio API (S2.1 Pro)
+ * Legacy fallback when TTS_PROVIDER=fish_audio is explicitly set.
+ */
+export async function generateVoiceoverFishAudio({
   script,
   outputPath,
   modelId = null,
@@ -366,4 +499,22 @@ export async function generateVoiceoverTTS({
     cleanScript: subtitleText,
     spokenScript: ttsText,
   };
+}
+
+/**
+ * Main TTS entry point: Defaults to Edge-TTS Gadis (free & unmetered).
+ */
+export async function generateVoiceoverTTS({
+  script,
+  outputPath,
+  voice = null,
+  modelId = null,
+  onProgress = null,
+  jobId = '',
+}) {
+  const provider = (process.env.TTS_PROVIDER || 'edge_tts').toLowerCase().trim();
+  if (provider === 'fish_audio') {
+    return generateVoiceoverFishAudio({ script, outputPath, modelId, onProgress, jobId });
+  }
+  return generateVoiceoverEdgeTTS({ script, outputPath, voice, onProgress, jobId });
 }

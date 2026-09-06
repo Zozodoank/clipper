@@ -72,7 +72,7 @@ export default function DependenciesStatus({ status, onRefresh, loading }) {
             TTS AI
           </span>
           <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 font-medium">
-            Fish Audio (RINDI)
+            Edge TTS (Gadis)
           </span>
         </div>
       </div>

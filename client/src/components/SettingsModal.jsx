@@ -128,7 +128,7 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings, 
                   </div>
                 </div>
                 <div className="text-[11px] font-mono font-semibold mb-1 text-emerald-300">
-                  Gemma 4 26B &bull; Gemma 4 31B &bull; Nemotron 30B
+                  MiniMax M3 &bull; OpenRouter Free &bull; Auto &bull; Nemotron 30B
                 </div>
                 <p className="text-[10px] leading-tight opacity-80">
                   Prioritas utama model vision gratis berkualitas tinggi tanpa watermark &amp; bebas subtitle bawaan. Otomatis fallback ke Gemini Direct.
@@ -150,17 +150,17 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings, 
             <div className="flex items-center justify-between">
               <span className="font-semibold text-slate-200 flex items-center gap-1.5 text-sm">
                 <Volume2 className="w-4 h-4 text-emerald-400" />
-                <span>Mesin Voiceover: Fish Audio S2.1 Pro</span>
+                <span>Mesin Voiceover: Microsoft Edge TTS</span>
               </span>
               <span className="text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                Voice: RINDI
+                Voice: Gadis (Neural)
               </span>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed">
-              Menggunakan API Fish Audio secara langsung dengan model suara wanita Indonesia <strong className="text-emerald-300">RINDI</strong> (ID: <code className="text-slate-300 font-mono text-[10px]">9c94fb1d0504466898beb87481df9fa1</code>).
+              Menggunakan Microsoft Edge TTS Neural Bahasa Indonesia model <strong className="text-emerald-300">Gadis</strong> (<code className="text-slate-300 font-mono text-[10px]">id-ID-GadisNeural</code>).
             </p>
-            <p className="text-[11px] text-slate-400">
-              💡 <em>Jika kuota harian S2.1 Pro habis, proses akan berhenti dan tombol Retry siap digunakan saat kuota terisi kembali besok.</em>
+            <p className="text-[11px] text-emerald-400/90">
+              ✨ <em>100% Gratis & tanpa batas kuota (unmetered), tanpa perlu API key, bersuara jernih dan natural dengan kamus fonetik otomatis.</em>
             </p>
           </div>
 

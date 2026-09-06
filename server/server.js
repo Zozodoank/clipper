@@ -308,9 +308,10 @@ app.get('/api/health', async (req, res) => {
     defaultAiProvider: activeAiEngine !== 'none' ? activeAiEngine : 'openrouter',
     tts: {
       available: true,
-      defaultVoice: 'RINDI (Fish Audio S2.1 Pro)',
-      provider: 'fish_audio',
-      modelId: process.env.FISH_AUDIO_MODEL_ID || '9c94fb1d0504466898beb87481df9fa1',
+      defaultVoice: 'Gadis (Edge-TTS Neural)',
+      provider: process.env.TTS_PROVIDER || 'edge_tts',
+      voiceName: process.env.TTS_VOICE || 'id-ID-GadisNeural',
+      edgeTtsConfigured: true,
       fishAudioConfigured: Boolean(process.env.FISH_AUDIO_API_KEY && !process.env.FISH_AUDIO_API_KEY.startsWith('your_')),
     },
     envFilesLoaded: envFiles.map((envPath) => path.relative(path.resolve(__dirname, '..'), envPath).replace(/\\/g, '/')),
@@ -1231,7 +1232,7 @@ export async function runStage1Pipeline({
 
     updateProgress({
       step: 'tts_generating',
-      message: '🎙️ Menghasilkan voice over RINDI (Fish Audio S2.1 Pro)...',
+      message: '🎙️ Menghasilkan voice over Gadis (Edge-TTS Neural)...',
       progress: 84,
       status: 'running',
     });
@@ -1247,7 +1248,7 @@ export async function runStage1Pipeline({
       });
       ttsSucceeded = true;
     } catch (ttsErr) {
-      console.error(`[Job ${jobId}] Fish Audio TTS Error:`, ttsErr.message);
+      console.error(`[Job ${jobId}] Edge-TTS Error:`, ttsErr.message);
       throw ttsErr;
     }
 
@@ -1896,7 +1897,7 @@ async function processJobVoiceover(jobId, customScript = null) {
   };
 
   try {
-    updateProgress({ step: 'tts_generating', message: '🎙️ Menghasilkan voice over RINDI (Fish Audio S2.1 Pro)...', progress: 20, status: 'running' });
+    updateProgress({ step: 'tts_generating', message: '🎙️ Menghasilkan voice over Gadis (Edge-TTS Neural)...', progress: 20, status: 'running' });
 
     const ttsResult = await generateVoiceoverTTS({
       script: scriptToUse,
@@ -1935,8 +1936,8 @@ async function processJobVoiceover(jobId, customScript = null) {
       downloadUrl: `/api/download/${finalFileName}?t=${cacheBuster}`,
       finalLocalPath: finalOutputPath,
       voiceoverAudioUrl: `/api/audio/${voiceoverFileName}?t=${cacheBuster}`,
-      ttsVoice: ttsResult.voice || 'RINDI (Fish Audio S2.1 Pro)',
-      ttsProvider: ttsResult.provider || 'fish_audio',
+      ttsVoice: ttsResult.voice || 'Gadis (Edge-TTS Neural)',
+      ttsProvider: ttsResult.provider || 'edge_tts',
       cleanScript: ttsResult.cleanScript,
       hasFinalVideo: true,
       hasSilentVideo: true,
@@ -2075,7 +2076,7 @@ app.post('/api/batch-tts/start', async (req, res) => {
 
         if (err.isQuotaError || isQuotaErrorMessage(err.message)) {
           currentBatchTTS.isQuotaExhausted = true;
-          console.warn('[Batch TTS] ⚠️ Fish Audio quota exhausted. Pausing batch queue.');
+          console.warn('[Batch TTS] ⚠️ TTS quota exhausted or rate limit hit. Pausing batch queue.');
           break;
         }
         // Non-quota error: DO NOT STOP! Keep processing the remaining jobs!

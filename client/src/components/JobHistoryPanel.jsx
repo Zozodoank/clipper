@@ -134,9 +134,9 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
               setProcessingTtsId(null);
               fetchJobs(true);
               if (data.batch.isQuotaExhausted) {
-                alert(`⚠️ Kuota Fish Audio S2.1 Pro telah habis setelah menyelesaikan ${data.batch.successfulJobs} job. Sisanya dapat dilanjutkan besok ketika kuota direset.`);
+                alert(`⚠️ Terjadi kendala saat memproses TTS setelah menyelesaikan ${data.batch.successfulJobs} job.`);
               } else if (data.batch.successfulJobs > 0) {
-                alert(`✨ Selesai! Berhasil menyatukan ${data.batch.successfulJobs} video dengan suara RINDI & subtitle.`);
+                alert(`✨ Selesai! Berhasil menyatukan ${data.batch.successfulJobs} video dengan suara Gadis & subtitle.`);
               }
             }
           }
@@ -185,7 +185,7 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
     }
   };
 
-  // 1. Single-Job Generate TTS & Merge Video via Fish Audio
+  // 1. Single-Job Generate TTS & Merge Video via Edge-TTS (Gadis)
   const handleGenerateTTSForJob = async (e, job) => {
     e.stopPropagation();
     if (processingTtsId || batchStatus.isRunning) return;
@@ -201,7 +201,7 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
 
       if (!res.ok || !data.success) {
         if (data.isQuotaError || res.status === 402) {
-          alert('⚠️ Kuota harian Fish Audio S2.1 Pro telah habis. Proses dihentikan dan dapat di-retry besok ketika kuota direset.');
+          alert('⚠️ Terjadi kendala limit kuota/rate limit TTS. Silakan coba sesaat lagi.');
         } else {
           alert(`Gagal membuat TTS: ${data.error || 'Terjadi kesalahan pada server.'}`);
         }
@@ -238,7 +238,7 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
     e.stopPropagation();
     if (awaitingVoiceoverJobs.length === 0) return;
 
-    if (!confirm(`Generate TTS otomatis untuk ${awaitingVoiceoverJobs.length} job yang menunggu dengan Fish Audio (RINDI)?\n\nSistem di server akan memproses seluruh video satu per satu secara berurutan tanpa terputus.`)) {
+    if (!confirm(`Generate TTS otomatis untuk ${awaitingVoiceoverJobs.length} job yang menunggu dengan Edge-TTS (Gadis)?\n\nSistem di server akan memproses seluruh video satu per satu secara berurutan tanpa terputus.`)) {
       return;
     }
 
@@ -447,7 +447,7 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
                       : `${awaitingVoiceoverJobs.length} Job Menunggu Voiceover`}
                   </span>
                   <span className="text-[10px] font-mono px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30">
-                    Fish Audio RINDI
+                    Edge-TTS Gadis
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-300 mt-0.5 truncate max-w-[340px] sm:max-w-[480px]">
@@ -654,7 +654,7 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
                       )}
                       {isAwaitingVoiceover && (
                         <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                          ✨ Siap TTS RINDI
+                          ✨ Siap TTS Gadis
                         </span>
                       )}
                     </div>
@@ -674,7 +674,7 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
                                 ? 'bg-slate-800 text-slate-400 border border-slate-700 cursor-not-allowed'
                                 : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 text-white shadow-emerald-500/20 hover:scale-[1.02] active:scale-[0.98]'
                             }`}
-                            title="Generate suara RINDI & satukan subtitle ke video final secara otomatis"
+                            title="Generate suara Gadis & satukan subtitle ke video final secara otomatis"
                           >
                             {isProcessingThis ? (
                               <>

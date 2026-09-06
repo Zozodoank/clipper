@@ -195,15 +195,15 @@ export default function ProgressCard({ progressState, onRetry, onStopAutoRetry, 
               <div className="font-bold flex items-center justify-between text-amber-300 mb-1.5">
                 <span className="flex items-center gap-1.5">
                   <CreditCard className="w-4 h-4 text-amber-400" />
-                  Batas Kuota AI Tercapai (Fish Audio / OpenRouter)
+                  Batas Kuota AI Tercapai (LLM / API Provider)
                 </span>
                 <span className="text-[10px] font-mono bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded border border-amber-500/30">
                   Dapat Di-Retry Besok
                 </span>
               </div>
               <p className="text-[11px] text-slate-300 leading-relaxed mb-2">
-                Panggilan AI berhenti karena kuota harian tercapai. Data formulir dan video yang sudah dipotong <strong>tidak hilang dan tersimpan aman</strong>.
-                Jika kuota harian Fish Audio S2.1 Pro habis, Anda cukup menekan tombol <strong>"Coba Lagi (Retry Job)"</strong> besok saat kuota harian sudah direset kembali.
+                Panggilan AI berhenti karena limit kuota provider tercapai. Data formulir dan video yang sudah dipotong <strong>tidak hilang dan tersimpan aman</strong>.
+                Anda cukup menekan tombol <strong>"Coba Lagi (Retry Job)"</strong> saat kuota provider sudah direset kembali.
               </p>
               {error && (
                 <div className="p-2 rounded bg-black/30 text-amber-200/90 font-mono text-[10px] break-all border border-amber-500/20">

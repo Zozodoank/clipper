@@ -185,14 +185,14 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
     }
   };
 
-  // 1. Single-Job Generate TTS & Merge Video via Edge-TTS (Gadis)
+  // 1. Single-Job Generate TTS & Merge Video via Edge-TTS (Gadis) with AI Phonetic Detection
   const handleGenerateTTSForJob = async (e, job) => {
     e.stopPropagation();
     if (processingTtsId || batchStatus.isRunning) return;
 
     setProcessingTtsId(job.jobId);
     try {
-      const res = await fetch('/api/regenerate-voiceover', {
+      const res = await fetch('/api/retry-job-tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jobId: job.jobId }),
@@ -218,6 +218,50 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
     } catch (err) {
       console.error('Error generating TTS:', err);
       alert(`Gagal: ${err.message}`);
+    } finally {
+      setProcessingTtsId(null);
+    }
+  };
+
+  // Dedicated Retry TTS with AI phonetic detection & automatic dictionary updating for existing history jobs
+  const handleRetryTTSForJob = async (e, job) => {
+    e.stopPropagation();
+    if (processingTtsId || batchStatus.isRunning) return;
+
+    setProcessingTtsId(job.jobId);
+    try {
+      const res = await fetch('/api/retry-job-tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: job.jobId }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        if (data.isQuotaError || res.status === 402) {
+          alert('⚠️ Terjadi kendala limit kuota/rate limit TTS. Silakan coba sesaat lagi.');
+        } else {
+          alert(`Gagal memproses Retry TTS: ${data.error || 'Terjadi kesalahan pada server.'}`);
+        }
+        return;
+      }
+
+      // Update in state
+      setJobs(prev => prev.map(j => j.jobId === job.jobId ? { ...j, ...data, stage: 'completed', hasFinalVideo: true } : j));
+
+      const newWords = Object.keys(data.newlyDetectedLexicon || {});
+      const msg = newWords.length > 0
+        ? `✨ Berhasil Retry TTS!\nAI mendeteksi & menambahkan ${newWords.length} istilah fonetik baru ke kamus:\n${newWords.map(w => `• ${w} -> ${data.newlyDetectedLexicon[w]}`).join('\n')}\n\nSubtitle video tetap menggunakan teks normal non-fonetik!`
+        : '✨ Berhasil membuat ulang suara voiceover & subtitle dengan kamus fonetik terbaru!';
+      alert(msg);
+
+      // Auto-select this completed job so user can see it right away
+      if (onSelectJob) {
+        onSelectJob({ ...job, ...data, stage: 'completed', hasFinalVideo: true });
+      }
+    } catch (err) {
+      console.error('Error in Retry TTS:', err);
+      alert(`Gagal memproses Retry TTS: ${err.message}`);
     } finally {
       setProcessingTtsId(null);
     }
@@ -721,6 +765,31 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
                                 onClick={(e) => handleOpenFolder(e, job.finalFileName || `final_clip_${job.jobId}.mp4`)}
                               >
                                 <FolderOpen className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* Dedicated RETRY TTS button for completed jobs */}
+                              <button
+                                type="button"
+                                disabled={isProcessingThis || batchStatus.isRunning}
+                                onClick={(e) => handleRetryTTSForJob(e, job)}
+                                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all shadow-sm ${
+                                  isProcessingThis
+                                    ? 'bg-slate-800 text-slate-400 border border-slate-700 cursor-not-allowed'
+                                    : 'bg-gradient-to-r from-teal-500/20 via-emerald-500/20 to-teal-500/20 hover:from-teal-500/30 hover:to-emerald-500/30 text-teal-300 border border-teal-500/40 hover:scale-[1.02] active:scale-[0.98]'
+                                }`}
+                                title="Deteksi kata Inggris dengan AI, tambahkan otomatis ke kamus fonetik, dan generate ulang suara & subtitle video"
+                              >
+                                {isProcessingThis ? (
+                                  <>
+                                    <RefreshCw className="w-3 h-3 animate-spin text-teal-400" />
+                                    <span>Memproses...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Volume2 className="w-3 h-3 text-teal-400" />
+                                    <span>Retry TTS</span>
+                                  </>
+                                )}
                               </button>
 
                               {/* AUTO RETRY BUTTON FOR COMPLETED JOBS */}

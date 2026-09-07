@@ -13,7 +13,8 @@ import { downloadYouTubeVideo, extractVideoId } from './services/downloader.js';
 import { extractFrames } from './services/frameExtractor.js';
 import {
   selectHighlightWithAI,
-  generateAdAdvisorScriptWithAI
+  generateAdAdvisorScriptWithAI,
+  detectPhoneticLexiconWithAI
 } from './services/aiService.js';
 import { generateSrtSubtitles } from './services/subtitleService.js';
 import {
@@ -2029,6 +2030,75 @@ app.post('/api/regenerate-voiceover', async (req, res) => {
     res.status(status).json({ success: false, error: error.message, isQuotaError: isQuota, jobId });
   }
 });
+
+// 6b2. Dedicated Retry TTS Endpoint:
+// Uses AI to detect English words in the job script & title,
+// automatically appends new phonetic pronunciations into english_dictionary.json,
+// regenerates TTS audio with the phonetic lexicon,
+// ensures output subtitles remain 100% normal non-phonetic text, and re-renders video.
+app.post('/api/retry-job-tts', async (req, res) => {
+  reloadEnvironment();
+  const { jobId, customScript, apiKey, aiProvider } = req.body;
+
+  if (!jobId) return res.status(400).json({ error: 'Job ID is required.' });
+
+  loadJobsFromDisk();
+  let job = activeJobs.get(jobId);
+  if (!job && fs.existsSync(jobsFilePath)) {
+    try {
+      const existing = JSON.parse(fs.readFileSync(jobsFilePath, 'utf-8'));
+      if (existing[jobId]) {
+        job = existing[jobId];
+        activeJobs.set(jobId, job);
+      }
+    } catch {}
+  }
+
+  if (!job) {
+    return res.status(404).json({ error: `Job ${jobId} tidak ditemukan di riwayat.` });
+  }
+
+  const scriptToAnalyze = (customScript && customScript.trim())
+    ? customScript.trim()
+    : (job.voiceoverScript || job.aiStudioPrompt || '');
+
+  try {
+    let newlyDetected = {};
+    try {
+      newlyDetected = await detectPhoneticLexiconWithAI({
+        script: scriptToAnalyze,
+        productTitle: job.productTitle || '',
+        apiKey,
+        aiProvider,
+        onProgress: (p) => {
+          jobProgress.set(jobId, { step: 'tts_lexicon', message: p.message, progress: 15, jobId });
+        },
+      });
+    } catch (aiErr) {
+      console.warn(`[Job ${jobId}] AI phonetic detection warning (continuing with existing dictionary):`, aiErr.message);
+    }
+
+    const currentLexicon = loadEnglishDictionary();
+    const mergedLexicon = { ...currentLexicon, ...(job.lexicon || {}), ...newlyDetected };
+
+    const updatedJob = await processJobVoiceover(jobId, customScript, {
+      lexicon: mergedLexicon,
+    });
+
+    res.json({
+      success: true,
+      newlyDetectedLexicon: newlyDetected,
+      newWordCount: Object.keys(newlyDetected).length,
+      ...updatedJob,
+    });
+  } catch (error) {
+    console.error(`[Job ${jobId}] Retry TTS Error:`, error);
+    const isQuota = error.isQuotaError || isQuotaErrorMessage(error.message);
+    const status = error.statusCode || (isQuota ? 402 : 500);
+    res.status(status).json({ success: false, error: error.message, isQuotaError: isQuota, jobId });
+  }
+});
+
 
 // State tracker for server-side Batch TTS Queue
 let currentBatchTTS = {

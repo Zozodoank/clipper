@@ -1697,3 +1697,162 @@ function normalizeShortScenes(scenes, productName, segmentDuration, sceneDuratio
     };
   });
 }
+
+/**
+ * Stage 2 Helper: Detects English words, brands, and terms in a voiceover script / product title
+ * using AI, determines their Indonesian phonetic pronunciation, and automatically saves
+ * them into the persistent English dictionary.
+ */
+export async function detectPhoneticLexiconWithAI({
+  script,
+  productTitle = '',
+  apiKey = '',
+  aiProvider = '',
+  onProgress = () => {}
+}) {
+  if (!script && !productTitle) {
+    return {};
+  }
+
+  let activeConfig;
+  try {
+    activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
+  } catch (confErr) {
+    console.warn('[AIService Lexicon] Could not init AI client:', confErr.message);
+    return {};
+  }
+
+  let { client, models: modelFallbackList, provider } = activeConfig;
+  let activeModel = modelFallbackList[0];
+
+  const systemPrompt = `Kamu adalah pakar fonetik bahasa Indonesia dan linguistik Text-to-Speech (TTS).
+Tugasmu adalah menganalisis teks naskah voiceover dan judul produk, lalu mendeteksi SEMUA kata, merk, produk, atau istilah bahasa Inggris / asing.
+Untuk setiap istilah yang kamu temukan, buatlah ejaan pelafalan fonetik bahasa Indonesia yang sesuai agar mesin TTS Bahasa Indonesia (seperti Edge-TTS Gadis) dapat melafalkannya dengan fasih, natural, dan tepat tanpa terdengar kaku atau aneh.
+
+CONTOH PEMETAAN FONETIK BAHASA INDONESIA:
+- 'chopper' -> 'coper'
+- 'food chopper' -> 'fud coper'
+- 'stainless steel' -> 'stenlis stil'
+- 'air fryer' / 'airfryer' -> 'er frayer'
+- 'steak' -> 'stik'
+- 'juicy' -> 'jusi'
+- 'online' -> 'onlen'
+- 'checkout' -> 'cekot'
+- 'touch screen' -> 'tac skrin'
+- 'wireless' -> 'wayirles'
+- 'sponge' -> 'spons'
+- 'freezer' -> 'frizer'
+- 'portable' -> 'portebel'
+- 'aesthetic' -> 'estetik'
+- 'smart lock' -> 'smart lok'
+- 'vacuum cleaner' -> 'vakum klinir'
+- 'charger' -> 'carjer'
+- 'earphone' / 'earphones' -> 'irfon'
+- 'frypan' / 'fry pan' -> 'fray pen'
+
+ATURAN OUTPUT:
+- Output WAJIB strictly JSON murni:
+{
+  "lexicon_to_replace": {
+    "istilah_inggris": "pelafalan_fonetik_indonesia"
+  }
+}
+- Key istilah harus dalam huruf kecil (lowercase).
+- Jika tidak ada kata bahasa Inggris yang ditemukan, kembalikan objek kosong:
+{
+  "lexicon_to_replace": {}
+}`;
+
+  const userPrompt = `Analisis teks berikut dan ekstrak semua istilah/kata bahasa Inggris beserta pelafalan fonetik Indonesianya:
+Judul Produk: "${productTitle}"
+Naskah:
+"""
+${script}
+"""
+
+Kembalikan format JSON persis:
+{
+  "lexicon_to_replace": {
+    "istilah": "fonetik"
+  }
+}`;
+
+  let parsed = {};
+  let totalRetries = modelFallbackList.length;
+  let hasFallenBackToGemini = (provider === 'Google Gemini Direct');
+
+  for (let attempt = 0; attempt < totalRetries; attempt++) {
+    activeModel = modelFallbackList[attempt];
+    try {
+      onProgress({
+        step: 'ai_lexicon_detection',
+        message: `Mendeteksi istilah Inggris & fonetik dengan AI (${provider} - ${activeModel})...`,
+        progress: 25,
+      });
+
+      const response = await client.chat.completions.create({
+        model: activeModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.3,
+        max_tokens: 1500,
+      });
+
+      const scriptMsg = response.choices?.[0]?.message;
+      const rawContent = (scriptMsg?.content && scriptMsg.content.trim()) ? scriptMsg.content : (scriptMsg?.reasoning || '{}');
+      parsed = repairJson(rawContent);
+      break;
+    } catch (err) {
+      const status = err.status || err.statusCode;
+      const msg = (err.message || '').toLowerCase();
+      const isFatalAuthOrBilling = status === 401 || status === 402 || msg.includes('balance') || msg.includes('credits');
+
+      if (!hasFallenBackToGemini) {
+        const geminiFallback = getDirectGeminiClientConfig({ apiKeyOverride: apiKey });
+        if (geminiFallback && (isFatalAuthOrBilling || attempt >= totalRetries - 1)) {
+          console.warn(`[AIService Lexicon] OpenRouter fallback ke Google Gemini Direct API...`);
+          hasFallenBackToGemini = true;
+          client = geminiFallback.client;
+          modelFallbackList = geminiFallback.models;
+          provider = geminiFallback.provider;
+          totalRetries = modelFallbackList.length;
+          attempt = -1;
+          continue;
+        }
+      }
+
+      if (attempt < totalRetries - 1) {
+        console.warn(`[AIService Lexicon] Model ${activeModel} gagal. Mencoba model berikutnya...`);
+        continue;
+      }
+      console.warn(`[AIService Lexicon] Semua model AI gagal, melanjutkan tanpa kamus baru:`, err.message);
+      return {};
+    }
+  }
+
+  const detected = (parsed && parsed.lexicon_to_replace && typeof parsed.lexicon_to_replace === 'object')
+    ? parsed.lexicon_to_replace
+    : {};
+
+  const cleanDetected = {};
+  for (const [k, v] of Object.entries(detected)) {
+    if (k && v && typeof k === 'string' && typeof v === 'string') {
+      const cleanKey = k.trim().toLowerCase();
+      const cleanVal = v.trim().toLowerCase();
+      if (cleanKey && cleanVal && cleanKey !== cleanVal) {
+        cleanDetected[cleanKey] = cleanVal;
+      }
+    }
+  }
+
+  if (Object.keys(cleanDetected).length > 0) {
+    console.log(`[AIService Lexicon] 📖 Menambahkan istilah fonetik ke kamus:`, cleanDetected);
+    saveToEnglishDictionary(cleanDetected);
+  }
+
+  return cleanDetected;
+}
+

@@ -869,6 +869,10 @@ export function isLikelyCleanYouTubeCandidate(candidate, productWords = []) {
     // Creator/face-centric and person-focused videos
     'muka', 'wajah', 'facecam', 'webcam', 'selfie', 'grwm', 'get ready with me',
     'try on haul', 'try on', 'outfit', 'ootd', 'mukbang', 'skincare routine', 'makeup tutorial',
+    // Subtitle & lyric indicators (wajib dihindari agar tidak tabrakan subtitle)
+    'sub indo', 'subtitle', 'subtitles', 'sub english', 'eng sub', 'terjemahan', 'lirik',
+    // Social media re-uploads & watermark indicators (wajib bersih tanpa logo sosmed/watermark)
+    'tiktok', 'douyin', 'kuaishou', 'capcut', 'repost', 'watermark', 'shorts tiktok', 'video tiktok', 'vt tiktok',
     // Compilation / multi-product videos (cause mismatch with single Shopee link)
     'top 10', 'top 5', 'top 7', 'top 3', '5 alat', '10 alat', '7 alat', 'rekomendasi barang',
     'racun shopee haul', 'haul shopee', 'haul tiktok', 'unboxing haul', 'berbagai alat', 'kumpulan gadget',

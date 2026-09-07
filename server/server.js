@@ -996,6 +996,13 @@ export async function runStage1Pipeline({
         onProgress: updateProgress,
       });
 
+      if (!hl || !Array.isArray(hl.clips) || hl.clips.length === 0) {
+        const noClipErr = new Error('AI tidak menemukan cuplikan produk yang memenuhi syarat (wajib faceless, tanpa watermark, tanpa logo sosmed/channel, dan tanpa subtitle).');
+        noClipErr.isAiRejection = true;
+        noClipErr.rejectionReason = 'Tidak ditemukan cuplikan bersih yang memenuhi syarat.';
+        throw noClipErr;
+      }
+
       return { highlight: hl, videoMeta: meta, previewVideoPath: candPreviewPath };
     };
 
@@ -1020,6 +1027,12 @@ export async function runStage1Pipeline({
           allowFallbackClips: !requireCleanGeminiPlan,
           onProgress: updateProgress,
         });
+        if (!highlight || !Array.isArray(highlight.clips) || highlight.clips.length === 0) {
+          const noClipErr = new Error('AI tidak menemukan cuplikan produk yang memenuhi syarat pada cache video.');
+          noClipErr.isAiRejection = true;
+          noClipErr.rejectionReason = 'Tidak ditemukan cuplikan bersih pada cache.';
+          throw noClipErr;
+        }
         approved = true;
       } catch (cacheEvalErr) {
         if (cacheEvalErr.isAiRejection || String(cacheEvalErr?.message || '').toLowerCase().includes('ditolak')) {

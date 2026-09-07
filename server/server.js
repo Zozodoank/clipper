@@ -23,6 +23,7 @@ import {
   getVideoDimensions
 } from './services/videoRenderer.js';
 import { generateVoiceoverTTS, cleanScriptForTTS } from './services/ttsService.js';
+import { loadEnglishDictionary, saveToEnglishDictionary } from './services/dictionaryService.js';
 import {
   cleanupTempFiles,
   deleteJobTempDirectory,
@@ -1280,6 +1281,7 @@ export async function runStage1Pipeline({
         targetDurationSec: silentDurationSec,
         onProgress: (msg) => updateProgress({ step: 'tts_generating', message: `🎙️ ${msg}`, progress: 86, status: 'running' }),
         jobId,
+        lexicon: scriptData.lexicon_to_replace || {},
       });
       ttsSucceeded = true;
     } catch (ttsErr) {
@@ -1378,6 +1380,7 @@ export async function runStage1Pipeline({
           voiceoverScript: scriptData.voiceoverScript,
           aiStudioPrompt: scriptData.aiStudioPrompt,
           caption: scriptData.caption,
+          lexicon: scriptData.lexicon_to_replace || {},
           videoTitle: videoMeta.title,
           isOrphan: false,
         };
@@ -1434,6 +1437,7 @@ export async function runStage1Pipeline({
       aiStudioPrompt: scriptData.aiStudioPrompt,
       cleanScript: cleanScriptForTTS(rawVoiceScript),
       caption: scriptData.caption,
+      lexicon: scriptData.lexicon_to_replace || {},
       videoTitle: videoMeta.title,
       isOrphan: false,
     };
@@ -1880,7 +1884,7 @@ app.post('/api/upload-voiceover', upload.single('audio'), async (req, res) => {
 });
 
 /** Helper function to process voiceover & final video merge for a single job */
-async function processJobVoiceover(jobId, customScript = null) {
+async function processJobVoiceover(jobId, customScript = null, options = {}) {
   let job = activeJobs.get(jobId);
   if (!job && fs.existsSync(jobsFilePath)) {
     try {
@@ -1937,12 +1941,18 @@ async function processJobVoiceover(jobId, customScript = null) {
 
     const silentDurationSec = (await getMediaDurationSec(silentPath)) || job.highlight?.duration || 20;
 
+    const effectiveLexicon = options.lexicon || job.lexicon || {};
+    if (options.lexicon && typeof options.lexicon === 'object') {
+      saveToEnglishDictionary(options.lexicon);
+    }
+
     const ttsResult = await generateVoiceoverTTS({
       script: scriptToUse,
       outputPath: voiceoverAudioPath,
       targetDurationSec: silentDurationSec,
       onProgress: (msg) => updateProgress({ step: 'tts_generating', message: `🎙️ ${msg}`, progress: 35, status: 'running' }),
       jobId,
+      lexicon: effectiveLexicon,
     });
 
     const audioDurationSec = await getMediaDurationSec(voiceoverAudioPath);
@@ -1978,6 +1988,7 @@ async function processJobVoiceover(jobId, customScript = null) {
       ttsVoice: ttsResult.voice || 'Gadis (Edge-TTS Neural)',
       ttsProvider: ttsResult.provider || 'edge_tts',
       cleanScript: ttsResult.cleanScript,
+      lexicon: effectiveLexicon,
       wordBoundaries: ttsResult.wordBoundaries || [],
       hasFinalVideo: true,
       hasSilentVideo: true,
@@ -2002,12 +2013,12 @@ async function processJobVoiceover(jobId, customScript = null) {
 // 6b. Regenerate Voiceover automatically via TTS & Re-render Final Video (Single Job)
 app.post('/api/regenerate-voiceover', async (req, res) => {
   reloadEnvironment();
-  const { jobId, customScript } = req.body;
+  const { jobId, customScript, lexicon } = req.body;
 
   if (!jobId) return res.status(400).json({ error: 'Job ID is required.' });
 
   try {
-    const updatedJob = await processJobVoiceover(jobId, customScript);
+    const updatedJob = await processJobVoiceover(jobId, customScript, { lexicon });
     res.json({ success: true, ...updatedJob });
   } catch (error) {
     const isQuota = error.isQuotaError || isQuotaErrorMessage(error.message);
@@ -2375,6 +2386,33 @@ app.post('/api/upload-cookies', express.text({ type: '*/*', limit: '10mb' }), (r
   fs.writeFileSync(cookiesPath, content, 'utf8');
   console.log(`[Cookies] cookies.txt saved to ${cookiesPath} (${content.length} bytes)`);
   res.json({ success: true, message: 'cookies.txt berhasil disimpan. Sekarang retry job Anda.' });
+});
+
+// ── English Phonetic Dictionary Routes ──
+
+// GET /api/english-dictionary – list all active English phonetic mappings
+app.get('/api/english-dictionary', (req, res) => {
+  try {
+    const dict = loadEnglishDictionary();
+    res.json({ success: true, count: Object.keys(dict).length, dictionary: dict });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/english-dictionary – add or update phonetic dictionary entries
+app.post('/api/english-dictionary', (req, res) => {
+  try {
+    const entries = req.body;
+    if (!entries || typeof entries !== 'object') {
+      return res.status(400).json({ success: false, error: 'Request body must be a JSON object mapping English words to Indonesian phonetics.' });
+    }
+    saveToEnglishDictionary(entries);
+    const updated = loadEnglishDictionary();
+    res.json({ success: true, count: Object.keys(updated).length, dictionary: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 app.use((err, req, res, next) => {

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { GoogleAIFileManager } from '@google/generative-ai/server';
 import { getMediaDurationSec } from './videoRenderer.js';
+import { saveToEnglishDictionary } from './dictionaryService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1053,6 +1054,11 @@ STRICT RULES FOR VOICE OVER:
    - Caption with emojis, Problem-Solution hook, benefits, CTA ("Cek keranjang pojok kiri bawah!"), and hashtags (#racunshopee, #spillracun, #racunbelanja, #shopeevideo, #fyp).
    - NO URLs/links, NO Chinese characters.
 
+6. 'lexicon_to_replace' (Deteksi Istilah / Kata Bahasa Inggris Otomatis):
+   - Deteksi SEMUA kata, merk, atau istilah bahasa Inggris yang ada di naskah voiceover maupun judul/deskripsi produk (misal: 'steak', 'juicy', 'online', 'chopper', 'mini chopper', 'food chopper', 'stainless steel', 'air fryer', 'food grade', 'rechargeable', 'wireless', 'magic', 'brush', 'sponge', 'cleaner', 'fry pan', dll).
+   - Petakan ke ejaan pelafalan fonetik bahasa Indonesia yang kaku agar dibaca natural oleh TTS Bahasa Indonesia (misal: {"chopper": "coper", "stainless steel": "stenlis stil", "air fryer": "er frayer", "steak": "stik", "juicy": "jusi"}).
+   - Format wajib: Objek key-value {"kata_inggris": "ejaan_fonetik_indonesia"}. Jika tidak ada kata bahasa Inggris, isi dengan {}.
+
 Output MUST be strictly valid JSON matching the requested schema.`;
 
   const userPrompt = `=== INFORMASI PRODUK UTAMA ===
@@ -1102,7 +1108,10 @@ Return strict JSON in this format:
   ],
   "voiceoverScript": "[00:00] Masih repot marut keju pakai alat lama?\\n[00:05] Kenalin parutan serbaguna ini...\\n[00:30] Cek produk di bawah sekarang!",
   "aiStudioPrompt": "Scene\\nStudio dapur modern...\\n\\nSample Context\\nDurasi voice over 30 detik. Iklan affiliate viral...\\n\\nSpeaker 1\\n[00:00] [intrigue] Masih repot...\\n[00:05] [excited] Kenalin...\\n[00:30] [excited] Cek produk di bawah sekarang!",
-  "caption": "Teks caption lengkap dengan hook, manfaat, ajakan cek bio, dan hashtag viral..."
+  "caption": "Teks caption lengkap dengan hook, manfaat, ajakan cek bio, dan hashtag viral...",
+  "lexicon_to_replace": {
+    "istilah_inggris": "pelafalan_fonetik_indonesia"
+  }
 }`;
 
   const messageContent = [
@@ -1282,6 +1291,16 @@ Return strict JSON in this format:
     if (s.adAdvisorNotes) s.adAdvisorNotes = sanitizeScriptVocabulary(s.adAdvisorNotes);
   }
 
+  // Deteksi dan simpan otomatis kata bahasa Inggris ke kamus fonetik backend (Pendekatan LLM Pre-processing)
+  const detectedLexicon = (parsed && parsed.lexicon_to_replace && typeof parsed.lexicon_to_replace === 'object')
+    ? parsed.lexicon_to_replace
+    : {};
+
+  if (Object.keys(detectedLexicon).length > 0) {
+    console.log(`[AIService] 📖 Mendeteksi kata bahasa Inggris dari skrip AI:`, detectedLexicon);
+    saveToEnglishDictionary(detectedLexicon);
+  }
+
   return {
     sampleContext: parsed.sampleContext || {
       productName: effectiveTitle,
@@ -1295,6 +1314,7 @@ Return strict JSON in this format:
     voiceoverScript,
     aiStudioPrompt,
     caption,
+    lexicon_to_replace: detectedLexicon,
   };
 }
 

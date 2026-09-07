@@ -4,6 +4,7 @@ import { execSync } from 'child_process';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import { applyTalingPhonetics } from './phoneticData.js';
 import { getFFmpegPath } from './binaryChecker.js';
+import { applyEnglishLexicon } from './dictionaryService.js';
 
 // Default Microsoft Edge TTS Voice: id-ID-GadisNeural (Indonesian female natural voice)
 export const DEFAULT_EDGE_VOICE = 'id-ID-GadisNeural';
@@ -145,7 +146,7 @@ export function applyIndonesianPhoneticFixes(text, { useTaling = false } = {}) {
  * - Strips timestamps, speaker markers, and unsupported brackets.
  * - Applies phonetic Indonesian corrections.
  */
-export function prepareScriptForFishTTS(rawScript) {
+export function prepareScriptForFishTTS(rawScript, lexicon = {}) {
   if (!rawScript || typeof rawScript !== 'string') return '';
 
   let text = rawScript;
@@ -191,8 +192,11 @@ export function prepareScriptForFishTTS(rawScript) {
 
   const consolidated = lines.join(' ').replace(/\s{2,}/g, ' ').trim();
 
+  // Convert English terms using LLM/custom phonetic lexicon before Indonesian phonetics
+  const englishApplied = applyEnglishLexicon(consolidated, lexicon);
+
   // Apply phonetic fixes for Indonesian voiceover (Fish Audio uses taling accents é)
-  return applyIndonesianPhoneticFixes(consolidated, { useTaling: true });
+  return applyIndonesianPhoneticFixes(englishApplied, { useTaling: true });
 }
 
 /**
@@ -263,7 +267,7 @@ export function cleanScriptForSubtitles(rawScript) {
  * - Strips timestamps, speaker markers, and emotion tags.
  * - Applies phonetic Indonesian corrections and expansions.
  */
-export function prepareScriptForEdgeTTS(rawScript) {
+export function prepareScriptForEdgeTTS(rawScript, lexicon = {}) {
   if (!rawScript || typeof rawScript !== 'string') return '';
 
   let text = rawScript;
@@ -306,8 +310,11 @@ export function prepareScriptForEdgeTTS(rawScript) {
 
   const consolidated = lines.join(' ').replace(/\s{2,}/g, ' ').replace(/\s+([,.:!?])/g, '$1').trim();
 
+  // Convert English terms using LLM/custom phonetic lexicon before Indonesian phonetics
+  const englishApplied = applyEnglishLexicon(consolidated, lexicon);
+
   // Apply phonetic fixes for Indonesian voiceover (Edge-TTS does NOT use taling accents, pure standard Indonesian)
-  return applyIndonesianPhoneticFixes(consolidated, { useTaling: false });
+  return applyIndonesianPhoneticFixes(englishApplied, { useTaling: false });
 }
 
 /**
@@ -334,7 +341,7 @@ export function isFishAudioQuotaError(statusCode, responseText = '') {
 /**
  * Parses raw script into scene lines with target timestamps and emotion tags.
  */
-export function parseScriptToScenes(rawScript, targetDurationSec = 20) {
+export function parseScriptToScenes(rawScript, targetDurationSec = 20, lexicon = {}) {
   if (!rawScript || typeof rawScript !== 'string') return [];
 
   let text = rawScript;
@@ -375,7 +382,9 @@ export function parseScriptToScenes(rawScript, targetDurationSec = 20) {
 
     if (!clean) continue;
 
-    const spokenText = applyIndonesianPhoneticFixes(clean, { useTaling: false });
+    // Convert English terms using LLM/custom phonetic lexicon before Indonesian phonetics
+    const englishApplied = applyEnglishLexicon(clean, lexicon);
+    const spokenText = applyIndonesianPhoneticFixes(englishApplied, { useTaling: false });
     const subtitleText = cleanScriptForSubtitles(line);
 
     scenes.push({
@@ -422,8 +431,9 @@ export async function generateVoiceoverEdgeTTS({
   voice = 'id-ID-GadisNeural',
   onProgress = null,
   jobId = '',
+  lexicon = {},
 }) {
-  const scenes = parseScriptToScenes(script, targetDurationSec || 20);
+  const scenes = parseScriptToScenes(script, targetDurationSec || 20, lexicon);
   const subtitleText = cleanScriptForSubtitles(script);
   const fullSpokenText = scenes.map((s) => s.spokenText).join(' ');
 
@@ -713,8 +723,9 @@ export async function generateVoiceoverFishAudio({
   modelId = null,
   onProgress = null,
   jobId = '',
+  lexicon = {},
 }) {
-  const ttsText = prepareScriptForFishTTS(script);
+  const ttsText = prepareScriptForFishTTS(script, lexicon);
   const subtitleText = cleanScriptForSubtitles(script);
 
   if (!ttsText || ttsText.length < 3) {
@@ -814,10 +825,11 @@ export async function generateVoiceoverTTS({
   modelId = null,
   onProgress = null,
   jobId = '',
+  lexicon = {},
 }) {
   const provider = (process.env.TTS_PROVIDER || 'edge_tts').toLowerCase().trim();
   if (provider === 'fish_audio') {
-    return generateVoiceoverFishAudio({ script, outputPath, modelId, onProgress, jobId });
+    return generateVoiceoverFishAudio({ script, outputPath, modelId, onProgress, jobId, lexicon });
   }
-  return generateVoiceoverEdgeTTS({ script, outputPath, targetDurationSec, voice, onProgress, jobId });
+  return generateVoiceoverEdgeTTS({ script, outputPath, targetDurationSec, voice, onProgress, jobId, lexicon });
 }

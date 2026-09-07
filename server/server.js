@@ -1316,6 +1316,7 @@ export async function runStage1Pipeline({
         generateSrtSubtitles(scriptForSubtitles, subtitleTargetDuration, srtPath, {
           wordBoundaries: ttsResult.wordBoundaries,
           videoDurationSec: silentDurationSec,
+          lexicon: scriptData.lexicon_to_replace || {},
         });
 
         updateProgress({
@@ -1841,6 +1842,7 @@ app.post('/api/upload-voiceover', upload.single('audio'), async (req, res) => {
     generateSrtSubtitles(scriptToUse, subtitleTargetDuration, srtPath, {
       wordBoundaries: job?.wordBoundaries || [],
       videoDurationSec: silentDurationSec,
+      lexicon: job?.lexicon || {},
     });
 
     updateProgress({ step: 'render_final', message: 'Rendering final 9:16 video with Voiceover & Subtitles...', progress: 60, status: 'running' });
@@ -1962,6 +1964,7 @@ async function processJobVoiceover(jobId, customScript = null, options = {}) {
     generateSrtSubtitles(scriptToUse, subtitleTargetDuration, srtPath, {
       wordBoundaries: ttsResult.wordBoundaries,
       videoDurationSec: silentDurationSec,
+      lexicon: effectiveLexicon,
     });
 
     updateProgress({ step: 'render_final', message: 'Rendering video final 9:16 dengan Voiceover & Subtitles...', progress: 75, status: 'running' });

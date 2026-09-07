@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { restoreStandardText } from './dictionaryService.js';
 
 /**
  * Generates an Advanced SubStation Alpha (.ass) subtitle file synchronized to the voiceover audio.
@@ -20,6 +21,8 @@ export function generateAssSubtitles(scriptText, totalDurationSec, assOutputPath
       wordBoundaries: options.wordBoundaries,
       totalDurationSec,
       assOutputPath,
+      lexicon: options.lexicon || {},
+      scriptText,
     });
     if (ok) return assOutputPath;
   }
@@ -66,6 +69,8 @@ export function generateAssSubtitles(scriptText, totalDurationSec, assOutputPath
     line = line.replace(/\b(?:kece|Kece|KECE)\b/g, 'keren');
     line = line.replace(/\b(?:racun\s+)?(?:tiktok|shopee|instagram|youtube|facebook|reels|medsos)\b/gi, 'belanja');
     line = line.replace(/\b(?:Shopee|TikTok|Instagram|Facebook|YouTube|Reels)\b/gi, '');
+    // Ensure on-screen subtitles always display clean normal words without phonetic distortions
+    line = restoreStandardText(line, options.lexicon || {});
     line = line.replace(/\s+/g, ' ').trim();
 
     if (!line) continue;
@@ -272,23 +277,9 @@ function colorizeShopeeSubtitle(text, index = 0) {
 /**
  * Normalizes TTS phonetic pronunciations back to crisp standard Indonesian on-screen text.
  */
-function normalizeSubtitleWord(w) {
+function normalizeSubtitleWord(w, customLexicon = {}) {
   if (!w || typeof w !== 'string') return '';
-  return w
-    .replace(/\bcekout\b/gi, 'checkout')
-    .replace(/\bwortit\b/gi, 'worth it')
-    .replace(/\bfiral\b/gi, 'viral')
-    .replace(/\bfowcer\b/gi, 'voucher')
-    .replace(/\bSyopi\b/gi, 'Shopee')
-    .replace(/\bCe\s*O\s*De\b/gi, 'COD')
-    .replace(/\bwan in wan\b/gi, '1 in 1')
-    .replace(/\btu in wan\b/gi, '2 in 1')
-    .replace(/\btri in wan\b/gi, '3 in 1')
-    .replace(/\bfor in wan\b/gi, '4 in 1')
-    .replace(/\bflas sel\b/gi, 'flash sale')
-    .replace(/\bredi stok\b/gi, 'ready stock')
-    .replace(/\bril-pik\b/gi, 'real pict')
-    .replace(/\bgais\b/gi, 'guys');
+  return restoreStandardText(w, customLexicon);
 }
 
 /**
@@ -298,7 +289,7 @@ function normalizeSubtitleWord(w) {
  * - Balanced 3 to 5 word chunking (never leaves awkward 1-word orphans like "ini" or "kuning").
  * - Seamless inter-phrase continuity avoiding rapid flickering black pauses.
  */
-export function generateAssSubtitlesFromWordBoundaries({ wordBoundaries, totalDurationSec, assOutputPath }) {
+export function generateAssSubtitlesFromWordBoundaries({ wordBoundaries, totalDurationSec, assOutputPath, lexicon = {}, scriptText = '' }) {
   if (!Array.isArray(wordBoundaries) || wordBoundaries.length === 0) {
     return false;
   }
@@ -362,7 +353,10 @@ export function generateAssSubtitlesFromWordBoundaries({ wordBoundaries, totalDu
       if (endSec <= startSec) {
         endSec = +(startSec + 0.8).toFixed(3);
       }
-      const text = chunk.map((w) => normalizeSubtitleWord(w.word)).join(' ');
+      // 1. Join raw spoken words in the chunk first so multi-word phrases stay intact
+      let rawChunkText = chunk.map((w) => w.word).join(' ');
+      // 2. Restore standard text at full phrase/sentence level (e.g. "stenlis stil" -> "stainless steel", "er frayer" -> "air fryer")
+      let text = restoreStandardText(rawChunkText, lexicon);
       phrases.push({ text, startSec, endSec });
     }
   }

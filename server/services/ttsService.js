@@ -4,7 +4,7 @@ import { execSync } from 'child_process';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import { applyTalingPhonetics } from './phoneticData.js';
 import { getFFmpegPath } from './binaryChecker.js';
-import { applyEnglishLexicon } from './dictionaryService.js';
+import { applyEnglishLexicon, restoreStandardText } from './dictionaryService.js';
 
 // Default Microsoft Edge TTS Voice: id-ID-GadisNeural (Indonesian female natural voice)
 export const DEFAULT_EDGE_VOICE = 'id-ID-GadisNeural';
@@ -203,7 +203,7 @@ export function prepareScriptForFishTTS(rawScript, lexicon = {}) {
  * Produces clean standard Indonesian text for video subtitles:
  * Strips ALL tags and metadata, retaining proper standard Indonesian spelling.
  */
-export function cleanScriptForSubtitles(rawScript) {
+export function cleanScriptForSubtitles(rawScript, lexicon = {}) {
   if (!rawScript || typeof rawScript !== 'string') return '';
 
   let text = rawScript;
@@ -227,30 +227,6 @@ export function cleanScriptForSubtitles(rawScript) {
   text = text.replace(/^[-•*]\s+/gm, '');
   text = text.replace(/#\w+/g, '');
 
-  // Normalize phonetic spellings back to standard text for on-screen subtitles
-  text = text.replace(/\btu\s*in\s*wan\b/gi, '2 in 1');
-  text = text.replace(/\btri\s*in\s*wan\b/gi, '3 in 1');
-  text = text.replace(/\bfor\s*in\s*wan\b/gi, '4 in 1');
-  text = text.replace(/\bflas\s*sel\b/gi, 'flash sale');
-  text = text.replace(/\bwortit\b/gi, 'worth it');
-  text = text.replace(/\bcekout\b/gi, 'checkout');
-  text = text.replace(/\bCe\s*O\s*De\b/gi, 'COD');
-  text = text.replace(/\b(vi-ral|firal)\b/gi, 'viral');
-  text = text.replace(/\b(vowcer|fowcer)\b/gi, 'voucher');
-  text = text.replace(/\b(fidéo|fideo)\b/gi, 'video');
-  text = text.replace(/\bfariasi\b/gi, 'variasi');
-  text = text.replace(/\bfarian\b/gi, 'varian');
-  text = text.replace(/\b(férsi|fersi)\b/gi, 'versi');
-  text = text.replace(/\b(féntilasi|fentilasi)\b/gi, 'ventilasi');
-  text = text.replace(/\bfakum\b/gi, 'vakum');
-  text = text.replace(/\bfitamin\b/gi, 'vitamin');
-  text = text.replace(/\bredi\s*stok\b/gi, 'ready stock');
-  text = text.replace(/\bril-pik\b/gi, 'real pict');
-  text = text.replace(/\bgais\b/gi, 'guys');
-  text = text.replace(/\bSyopi\b/gi, 'Shopee');
-  text = text.replace(/\bpéngin\b/gi, 'pengen');
-  text = text.replace(/\bskinker\b/gi, 'skincare');
-
   // Remove all accent marks (é, è, ê -> e) so subtitle screen text is pure standard Indonesian
   text = text.replace(/[éèê]/g, 'e').replace(/[ÉÈÊ]/g, 'E');
 
@@ -259,7 +235,9 @@ export function cleanScriptForSubtitles(rawScript) {
     .map(line => line.trim())
     .filter(line => line.length > 0 && !/^Speaker\s*\d/i.test(line));
 
-  return lines.join(' ').replace(/\s{2,}/g, ' ').trim();
+  const consolidated = lines.join(' ').replace(/\s{2,}/g, ' ').trim();
+  // Ensure on-screen subtitle text is 100% standard words without phonetics!
+  return restoreStandardText(consolidated, lexicon);
 }
 
 /**
@@ -385,7 +363,7 @@ export function parseScriptToScenes(rawScript, targetDurationSec = 20, lexicon =
     // Convert English terms using LLM/custom phonetic lexicon before Indonesian phonetics
     const englishApplied = applyEnglishLexicon(clean, lexicon);
     const spokenText = applyIndonesianPhoneticFixes(englishApplied, { useTaling: false });
-    const subtitleText = cleanScriptForSubtitles(line);
+    const subtitleText = cleanScriptForSubtitles(line, lexicon);
 
     scenes.push({
       idx,
@@ -434,7 +412,7 @@ export async function generateVoiceoverEdgeTTS({
   lexicon = {},
 }) {
   const scenes = parseScriptToScenes(script, targetDurationSec || 20, lexicon);
-  const subtitleText = cleanScriptForSubtitles(script);
+  const subtitleText = cleanScriptForSubtitles(script, lexicon);
   const fullSpokenText = scenes.map((s) => s.spokenText).join(' ');
 
   if (!fullSpokenText || fullSpokenText.length < 3) {
@@ -726,7 +704,7 @@ export async function generateVoiceoverFishAudio({
   lexicon = {},
 }) {
   const ttsText = prepareScriptForFishTTS(script, lexicon);
-  const subtitleText = cleanScriptForSubtitles(script);
+  const subtitleText = cleanScriptForSubtitles(script, lexicon);
 
   if (!ttsText || ttsText.length < 3) {
     throw new Error('Naskah suara kosong setelah dibersihkan dari tag/timestamp.');

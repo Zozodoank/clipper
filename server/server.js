@@ -13,6 +13,8 @@ import { downloadYouTubeVideo, extractVideoId } from './services/downloader.js';
 import { extractFrames } from './services/frameExtractor.js';
 import {
   selectHighlightWithAI,
+  analyzeYouTubeVideoWithGemini,
+  getDirectGeminiApiKey,
   generateAdAdvisorScriptWithAI,
   detectPhoneticLexiconWithAI
 } from './services/aiService.js';
@@ -975,17 +977,51 @@ export async function runStage1Pipeline({
         throw metaErr;
       }
 
-      console.log(`[Job ${jobId}] ✅ [Filter 1/3 Lolos] Metadata valid (${meta.title}, ${meta.duration}s). Mengambil stream URL...`);
+      console.log(`[Job ${jobId}] ✅ [Filter 1/3 Lolos] Metadata valid (${meta.title}, ${meta.duration}s).`);
 
-      // ── TAHAP 2: SAMPLING 30 FRAME DARI STREAM URL (~2MB KUOTA) ──
+      // ── JALUR 1: GOOGLE GEMINI NATIVE YOUTUBE STREAM (0 MB KUOTA LOKAL, 1.500 REQ/HARI) ──
+      const reqEngine = (options.aiProvider || aiProvider || process.env.ACTIVE_AI_ENGINE || '').toLowerCase();
+      const isGeminiEngine = reqEngine === 'gemini' || reqEngine === 'gemini_direct' || (process.env.GEMINI_API_KEY && reqEngine !== 'openrouter');
+      const hasGeminiKey = Boolean(getDirectGeminiApiKey(apiKey));
+
+      if (isGeminiEngine && hasGeminiKey && (targetUrl.includes('youtube.com') || targetUrl.includes('youtu.be'))) {
+        const streamMsg = candidateLabel
+          ? `[${candidateLabel}] [Gemini Stream] Google Gemini 3.6 Flash menganalisa video langsung dari YouTube (0 MB kuota lokal)...`
+          : '[Gemini Stream] Google Gemini 3.6 Flash menganalisa video langsung dari YouTube (0 MB kuota lokal)...';
+        updateProgress({ step: 'gemini_vision', message: streamMsg, progress: 38, status: 'running' });
+
+        const hl = await analyzeYouTubeVideoWithGemini({
+          youtubeUrl: targetUrl,
+          apiKey,
+          productTitle,
+          productDescription,
+          shopeeLink,
+          sceneDuration,
+          allowFallbackClips: !requireCleanGeminiPlan,
+          totalDuration: meta.duration,
+          onProgress: updateProgress,
+        });
+
+        if (!hl || !Array.isArray(hl.clips) || hl.clips.length === 0) {
+          const noClipErr = new Error('Gemini tidak menemukan cuplikan produk yang memenuhi syarat (wajib faceless, tanpa watermark 9:16, tanpa subtitle).');
+          noClipErr.isAiRejection = true;
+          noClipErr.rejectionReason = 'Tidak ditemukan cuplikan bersih yang memenuhi syarat.';
+          throw noClipErr;
+        }
+
+        console.log(`[Job ${jobId}] 🎉 [Gemini Stream Lolos] AI menyetujui video langsung dari YouTube! Ditemukan ${hl.clips.length} cuplikan produk bersih.`);
+        return { highlight: hl, videoMeta: meta, previewVideoPath: null };
+      }
+
+      // ── JALUR 2: OPENROUTER / STREAM SAMPLING LOKAL DENGAN 10 KEYFRAME ──
       const sampleMsg = candidateLabel
-        ? `[${candidateLabel}] [Filter 2/3] Sampling 30 frame dari stream URL (~2MB kuota)...`
-        : '[Filter 2/3] Sampling 30 frame langsung dari stream URL YouTube...';
+        ? `[${candidateLabel}] [Filter 2/3] Sampling 10 keyframe dari stream URL (~1MB kuota)...`
+        : '[Filter 2/3] Sampling 10 keyframe langsung dari stream URL YouTube...';
       updateProgress({ step: 'stream_sampling', message: sampleMsg, progress: 28, status: 'running' });
 
       const { frames: rawFrames } = await sampleFramesFromStream(streamUrl, rawFramesDir, {
         duration: meta.duration,
-        maxSampleFrames: 30,
+        maxSampleFrames: 10,
         onProgress: updateProgress,
       });
 
@@ -1022,7 +1058,8 @@ export async function runStage1Pipeline({
         apiKey,
         aiProvider,
         frames: rawFrames,
-        videoPath: null, // Zero 360p download! Uses stream-sampled visual frames
+        videoPath: null,
+        youtubeUrl: targetUrl,
         videoMetadata: meta,
         productTitle,
         productDescription,

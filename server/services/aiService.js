@@ -68,9 +68,11 @@ function loadEnvFromDisk() {
 }
 
 const defaultOpenRouterModels = [
-  "minimax/minimax-m3:free",
   "openrouter/free",
   "openrouter/auto",
+  "google/gemini-2.0-flash-exp:free",
+  "meta-llama/llama-3.2-11b-vision-instruct:free",
+  "minimax/minimax-m3:free",
   "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
 ];
 
@@ -111,11 +113,13 @@ function getOpenRouterKeys(apiKeyOverride) {
 let currentOpenRouterKeyIndex = 0;
 
 const defaultGeminiDirectModels = [
-  'gemini-1.5-flash',
+  'gemini-3.6-flash',
   'gemini-flash-latest',
+  'gemini-3.7-flash',
+  'gemini-3.5-flash',
 ];
 
-function getDirectGeminiApiKey(apiKeyOverride) {
+export function getDirectGeminiApiKey(apiKeyOverride) {
   loadEnvFromDisk();
   if (apiKeyOverride) {
     const cleaned = cleanEnvKey(apiKeyOverride);
@@ -146,8 +150,15 @@ function getAiClientConfig({ apiKeyOverride, aiProvider } = {}) {
   const envEngine = (process.env.ACTIVE_AI_ENGINE || '').trim().toLowerCase();
   const openRouterKeys = getOpenRouterKeys(apiKeyOverride);
 
-  // If Gemini Direct is explicitly requested (e.g. forced via API key starting with AIzaSy or gemini_direct provider without OpenRouter keys)
-  const forceGeminiDirect = (apiKeyOverride?.startsWith('AIzaSy') || reqProvider === 'gemini_direct' || (reqProvider === 'gemini' && openRouterKeys.length === 0));
+  // If Gemini Direct is requested (via provider option, .env ACTIVE_AI_ENGINE=gemini, or AIzaSy API key)
+  const forceGeminiDirect = (
+    apiKeyOverride?.startsWith('AIzaSy') ||
+    reqProvider === 'gemini_direct' ||
+    reqProvider === 'gemini' ||
+    envEngine === 'gemini' ||
+    envEngine === 'gemini_direct' ||
+    (openRouterKeys.length === 0)
+  );
   if (forceGeminiDirect) {
     const geminiConf = getDirectGeminiClientConfig({ apiKeyOverride });
     if (geminiConf) {
@@ -224,6 +235,270 @@ function formatApiError(err, modelName = 'AI', provider = 'AI') {
     return `Semua model fallback gagal. Model terakhir yang dicoba ('${modelName}') tidak tersedia di akun ${provider} Anda.`;
   }
   return `${provider} API Error (${modelName}): ${message}`;
+}
+
+/**
+ * Stage 1 Jalur 1: Analyzes a public YouTube video directly via Google Gemini API using native video streaming (fileUri).
+ * Zero download on local server, zero FFmpeg frame extraction, zero base64 payload.
+ */
+export async function analyzeYouTubeVideoWithGemini({
+  youtubeUrl,
+  apiKey,
+  productTitle,
+  productDescription,
+  shopeeLink,
+  sceneDuration = 3.3,
+  allowFallbackClips = false,
+  totalDuration = 600,
+  onProgress = () => {},
+}) {
+  const geminiKey = getDirectGeminiApiKey(apiKey);
+  if (!geminiKey) {
+    throw new Error('GEMINI_API_KEY belum disetel di server/.env untuk Google Gemini.');
+  }
+
+  if (!youtubeUrl) {
+    throw new Error('URL YouTube tidak valid.');
+  }
+
+  const clipSec = Math.max(2.5, Math.min(5.0, Number(sceneDuration) || 3.3));
+  const effectiveTitle = (productTitle || '').trim() || 'Produk Affiliate';
+  const effectiveDesc = (productDescription || '').trim();
+
+  onProgress({
+    step: 'gemini_vision',
+    message: 'Google Gemini 3.6 Flash menganalisa stream video langsung dari YouTube (0 MB kuota lokal)...',
+    progress: 46,
+  });
+
+  const genAI = new GoogleGenerativeAI(geminiKey);
+  const videoPrompt = `You are an elite Quality Control (QC) Director for Affiliate Product Video Ads.
+Evaluate this YouTube video carefully against the following 5 MANDATORY ACCEPTANCE CRITERIA:
+
+CRITERION 1: EXACT PHYSICAL PRODUCT MATCH
+- Does the physical item demonstrated in the video match "${effectiveTitle}"?
+${effectiveDesc ? `  (Product Description: "${effectiveDesc}")` : ''}
+- REJECT IMMEDIATELY if it is a DIFFERENT product or a compilation/haul video showing multiple random items.
+
+CRITERION 2: WATERMARKS, SOCIAL MEDIA LOGOS, & CHANNEL IDENTITIES (9:16 CROP TOLERANCE RULE)
+- 9:16 CROP GEOMETRY:
+  * Both 'clipper' (9:16 vertical) and 'YTCLIPER' (16:9 with background color pillars) crop the central 9:16 vertical frame (the middle ~45-50% width of the horizontal video).
+  * The outer left margins (0-20% from left edge) and outer right margins (80-100% from right edge) are COMPLETELY CROPPED OUT or covered by background pillars!
+- PERIPHERAL CORNER WATERMARK / LOGO TOLERANCE (100% ACCEPTABLE):
+  * Jika ada watermark, logo media sosial (TikTok/Douyin/YouTube), atau nama channel di pojok KIRI atau KANAN video (di luar frame 9:16 tengah): TETAP DITERIMA! JANGAN DITOLAK! Karena bagian kiri dan kanan ini akan terpotong bersih atau tertutup background.
+- STRICT ZERO-TOLERANCE INSIDE THE 9:16 OUTPUT FRAME:
+  * DILARANG KERAS jika watermark digital, logo TikTok/YouTube, atau identitas channel MASUK KE DALAM FRAME 9:16 TENGAH (area yang menutupi peragaan produk)!
+  * Setiap watermark atau logo yang masuk ke dalam frame 9:16 wajib DITOLAK karena tidak bisa terpotong.
+- PHYSICAL PRODUCT BRANDING IS 100% ACCEPTABLE:
+  * Merek, logo, atau tulisan yang tercetak/terukir secara fisik pada bodi produk (misal: "Philips", "Joybos", "Xiaomi") BUKAN watermark dan 100% DITERIMA!
+
+CRITERION 3: ZERO SUBTITLES & ZERO BURNED-IN TEXT INSIDE 9:16 OUTPUT
+- The backend generates and burns its own clean, animated subtitles.
+- REJECT if speech dialogue captions, translated subtitles, lyric bars, or running dialogue text are visible INSIDE the 9:16 output frame (bottom or center), as this causes ugly overlapping double-subtitles.
+- Physical text/button labels directly on the physical product ("Power", "ON/OFF", "500ml") are 100% ACCEPTABLE.
+
+CRITERION 4: STRICT 100% WHOLE-VIDEO FACELESS MANDATE (ZERO TOLERANCE FOR FACES ANYWHERE)
+- The entire source video MUST be 100% faceless and human-free!
+- ZERO TOLERANCE FOR FACES: Does ANY part of the video show a human face, head, hair, neck, torso, or person talking (vlogger, host, presenter, bystander)?
+  * If YES -> REJECT THE ENTIRE VIDEO IMMEDIATELY!
+  * Dilarang keras memilih potongan tangan dari video yang ada vlogger atau orangnya!
+- The ONLY permitted footage is pure tabletop/countertop product demonstration where HANDS/FINGERS ONLY actively operate the product.
+
+CRITERION 5: CLEAN TIMESTAMP SELECTION
+- Select 5 to 8 non-overlapping timestamps (each about ${clipSec}s long) showing the best, satisfying hands-on product actions.
+- Each timestamp in "timestamps" MUST be in seconds from the start of the video where the 9:16 center area is 100% faceless, free of subtitles, and free of watermarks/logos.
+- If the video does NOT contain at least 5 clean faceless product clips inside the 9:16 frame: MUST BE REJECTED.
+
+Output valid JSON ONLY with this exact format:
+If ACCEPTED:
+{
+  "status": "accept",
+  "detectedProduct": "<nama produk>",
+  "isExactProductMatch": true,
+  "isFacelessIn916Frame": true,
+  "hasHumanOrFaceAnywhereInVideo": false,
+  "hasFaceIn916Frame": false,
+  "hasWatermarkIn916Frame": false,
+  "hasSocialOrChannelLogoIn916Frame": false,
+  "hasSubtitlesIn916Frame": false,
+  "hasOnlyPhysicalProductText": true,
+  "isAiGeneratedOrSynthetic": false,
+  "timestamps": [15, 25, 40, 60, 85, 110],
+  "productHook": "Kalau [kebiasaan lama], fix [masalah fatal / kurang maksimal]!",
+  "hasProductBrand": false,
+  "detectedBrand": "none"
+}
+
+If REJECTED:
+{
+  "status": "reject",
+  "detectedProduct": "<nama produk di video>",
+  "isExactProductMatch": false,
+  "isFacelessIn916Frame": false,
+  "hasFaceIn916Frame": true,
+  "hasWatermarkIn916Frame": false,
+  "hasSocialOrChannelLogoIn916Frame": false,
+  "hasSubtitlesIn916Frame": false,
+  "hasOnlyPhysicalProductText": false,
+  "isAiGeneratedOrSynthetic": false,
+  "reason": "<alasan penolakan spesifik dalam bahasa Indonesia, misal: 'Watermark masuk ke dalam frame 9:16', 'Menampilkan wajah orang/vlogger', 'Mengandung subtitle ucapan', atau 'Produk tidak cocok'>"
+}`;
+
+  const candidateModels = ['gemini-3.6-flash', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-3.5-flash'];
+  let parsed = null;
+  let activeGeminiModel = candidateModels[0];
+  let lastGeminiErr = null;
+
+  for (const modelName of candidateModels) {
+    try {
+      console.log(`[Gemini YouTube Stream] Calling model: ${modelName} for ${youtubeUrl}...`);
+      activeGeminiModel = modelName;
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.2,
+        },
+      });
+
+      trackBandwidth('aiRequests', 2500, `Gemini YouTube Stream (${modelName})`);
+      const result = await model.generateContent([
+        {
+          fileData: {
+            fileUri: youtubeUrl,
+            mimeType: 'video/mp4',
+          },
+        },
+        { text: videoPrompt },
+      ]);
+
+      const rawText = result.response.text();
+      console.log(`[Gemini YouTube Stream ${modelName}] Response:`, rawText);
+      parsed = repairJson(rawText);
+      if (parsed && (parsed.status || parsed.timestamps || parsed.reason)) {
+        break;
+      }
+    } catch (gemErr) {
+      console.warn(`[Gemini YouTube Stream] Model ${modelName} error:`, gemErr.message);
+      lastGeminiErr = gemErr;
+    }
+  }
+
+  if (!parsed) {
+    throw lastGeminiErr || new Error('Gemini YouTube Stream gagal menganalisa video.');
+  }
+
+  const rawStatus = String(parsed.status || '').toLowerCase().trim();
+  const isRejectStatus = rawStatus === 'reject' || rawStatus === 'rejected' || rawStatus === 'ditolak';
+  const isMatchFalse = parsed.isProductMatch === false || parsed.isExactProductMatch === false;
+  const hasFace = parsed.hasFaceIn916Frame === true ||
+    parsed.hasFaceOrHumanInSelectedFrames === true ||
+    parsed.hasHumanOrFaceAnywhereInVideo === true ||
+    parsed.isFacelessIn916Frame === false ||
+    parsed.isFacelessAndHumanFree === false;
+  const hasWatermarkInFrame = parsed.hasWatermarkIn916Frame === true || parsed.hasCenterObstructingWatermark === true;
+  const hasSocialOrChannelInFrame = parsed.hasSocialOrChannelLogoIn916Frame === true || parsed.hasSocialMediaOrChannelIdentityIn916Frame === true;
+  const hasSubtitles = parsed.hasSubtitlesIn916Frame === true || parsed.hasSubtitlesOrBurnedText === true || parsed.hasBurnedText === true;
+  const isSynthetic = parsed.isAiGeneratedOrSynthetic === true;
+  const reasonText = String(parsed.reason || parsed.rejectionReason || '').trim();
+  const reasonLower = reasonText.toLowerCase();
+
+  const mentionsFaceInReason = reasonLower.includes('wajah') || reasonLower.includes('face') || reasonLower.includes('manusia') || reasonLower.includes('orang');
+  const mentionsWatermarkInFrame = isRejectStatus && (reasonLower.includes('watermark') || reasonLower.includes('capcut')) && !reasonLower.includes('terpotong') && !reasonLower.includes('luar frame') && !reasonLower.includes('di luar 9:16');
+  const mentionsLogoInFrame = isRejectStatus && (reasonLower.includes('logo') || reasonLower.includes('tiktok') || reasonLower.includes('channel') || reasonLower.includes('identitas') || reasonLower.includes('sosmed')) && !reasonLower.includes('terpotong') && !reasonLower.includes('luar frame') && !reasonLower.includes('di luar 9:16');
+  const mentionsSubtitlesInReason = reasonLower.includes('subtitle') || reasonLower.includes('caption') || reasonLower.includes('teks berjalan') || reasonLower.includes('terjemahan');
+
+  const shouldReject = isRejectStatus || isMatchFalse || hasFace || hasWatermarkInFrame || hasSocialOrChannelInFrame || hasSubtitles || isSynthetic ||
+    mentionsFaceInReason || mentionsWatermarkInFrame || mentionsLogoInFrame || mentionsSubtitlesInReason;
+
+  if (shouldReject) {
+    let rejectionMsg = reasonText;
+    if (!rejectionMsg) {
+      if (hasFace || mentionsFaceInReason) {
+        rejectionMsg = 'Video ditolak oleh AI: Menampilkan wajah atau manusia (wajib 100% faceless tabletop dari awal sampai akhir).';
+      } else if (hasWatermarkInFrame || mentionsWatermarkInFrame) {
+        rejectionMsg = 'Video ditolak oleh AI: Mengandung watermark digital yang masuk ke dalam frame 9:16 output.';
+      } else if (hasSocialOrChannelInFrame || mentionsLogoInFrame) {
+        rejectionMsg = 'Video ditolak oleh AI: Mengandung logo media sosial atau identitas channel yang masuk ke frame 9:16.';
+      } else if (hasSubtitles || mentionsSubtitlesInReason) {
+        rejectionMsg = 'Video ditolak oleh AI: Mengandung subtitle atau teks caption ucapan bawaan di frame 9:16.';
+      } else if (isSynthetic) {
+        rejectionMsg = 'Video ditolak oleh AI: Terdeteksi video AI / animasi / CGI, bukan demonstrasi fisik nyata.';
+      } else if (isMatchFalse) {
+        rejectionMsg = `Video ditolak oleh AI: Produk di video (${parsed.detectedProduct || 'tidak cocok'}) tidak cocok dengan link Shopee.`;
+      } else {
+        rejectionMsg = 'Video ditolak oleh AI: Tidak memenuhi syarat affiliate faceless / bersih.';
+      }
+    }
+    console.warn(`[Gemini YouTube Stream] ⛔ VIDEO RESMI DITOLAK OLEH AI: ${rejectionMsg}`);
+    const rejectError = new Error(`Video ditolak oleh Gemini: ${rejectionMsg}`);
+    rejectError.isAiRejection = true;
+    rejectError.rejectionReason = rejectionMsg;
+    throw rejectError;
+  }
+
+  let rawTimestamps = [];
+  if (Array.isArray(parsed.timestamps)) {
+    rawTimestamps = parsed.timestamps;
+  } else if (Array.isArray(parsed.clips)) {
+    rawTimestamps = parsed.clips.map((c) => c.startSeconds ?? c.startTime);
+  }
+
+  let candidateClips = [];
+  if (rawTimestamps.length > 0) {
+    for (const rawTs of rawTimestamps) {
+      const sec = typeof rawTs === 'number' ? rawTs : parseTimeToSeconds(rawTs);
+      if (isNaN(sec) || sec < 0 || sec > totalDuration) continue;
+      const startSec = Math.max(0, Math.min(totalDuration - clipSec, Math.round(sec * 10) / 10));
+      const endSec = Math.round((startSec + clipSec) * 10) / 10;
+      candidateClips.push({
+        startSeconds: startSec,
+        endSeconds: endSec,
+        duration: clipSec,
+        startTime: formatSeconds(startSec),
+        endTime: formatSeconds(endSec),
+        reason: `Cuplikan produk di detik ${formatSeconds(startSec)}`,
+        isCleanAffiliateShot: true,
+        hasProductBrand: Boolean(parsed.hasProductBrand),
+        reframe: {
+          ...DEFAULT_REFRAME,
+          renderMode: 'stage_80',
+        },
+      });
+    }
+  }
+
+  const hasProductBrand = Boolean(parsed.hasProductBrand);
+  const detectedBrand = (parsed.detectedBrand || '').trim() || (hasProductBrand ? 'Brand Terdeteksi' : 'none');
+  const allowHflip = hasProductBrand ? false : (parsed.allowHflip !== false);
+
+  const clips = normalizeClipPlan(candidateClips, totalDuration, {
+    allowFallback: allowFallbackClips,
+    hasProductBrand,
+    allowHflip,
+    sceneDuration: clipSec,
+  });
+  const duration = clips.reduce((total, clip) => total + (clip.endSeconds - clip.startSeconds), 0);
+
+  onProgress({
+    step: 'gemini_vision',
+    message: `${activeGeminiModel} selected ${clips.length} clean ${clipSec}s product shots (${duration.toFixed(1)}s total).`,
+    progress: 55,
+  });
+
+  return {
+    startTime: clips[0].startTime,
+    endTime: clips[clips.length - 1].endTime,
+    startSeconds: clips[0].startSeconds,
+    endSeconds: clips[clips.length - 1].endSeconds,
+    duration,
+    productHook: parsed.productHook || 'Kalau masih pakai cara lama, fix kurang maksimal!',
+    hasProductBrand,
+    detectedBrand,
+    allowHflip,
+    reframe: clips[0].reframe,
+    clips,
+  };
 }
 
 /**
@@ -545,6 +820,7 @@ export async function selectHighlightWithAI({
   aiProvider,
   frames,
   videoPath = null,
+  youtubeUrl = null,
   videoMetadata,
   productTitle,
   productDescription,
@@ -554,9 +830,27 @@ export async function selectHighlightWithAI({
   onProgress = () => {}
 }) {
   const reqProvider = (aiProvider || '').trim().toLowerCase();
-  const forceGemini = (reqProvider === 'gemini_direct' || reqProvider === 'gemini');
+  const envEngine = (process.env.ACTIVE_AI_ENGINE || '').trim().toLowerCase();
+  const forceGemini = (reqProvider === 'gemini_direct' || reqProvider === 'gemini' || envEngine === 'gemini');
+  const geminiKey = getDirectGeminiApiKey(apiKey);
+
+  if (forceGemini && geminiKey && youtubeUrl && (youtubeUrl.includes('youtube.com') || youtubeUrl.includes('youtu.be'))) {
+    console.log('[AIService Vision] Gemini Direct provider requested. Analyzing with native YouTube Stream URL (0 MB local quota)...');
+    return await analyzeYouTubeVideoWithGemini({
+      youtubeUrl,
+      apiKey,
+      productTitle,
+      productDescription,
+      shopeeLink,
+      sceneDuration,
+      allowFallbackClips,
+      totalDuration: videoMetadata?.duration || 600,
+      onProgress,
+    });
+  }
+
   if (forceGemini && videoPath && fs.existsSync(videoPath)) {
-    console.log('[AIService Vision] Gemini Direct provider requested. Analyzing with Gemini File API (Gemini 1.5 Flash)...');
+    console.log('[AIService Vision] Gemini Direct provider requested. Analyzing with Gemini File API...');
     return await analyzeVideoWithGeminiFileApi({
       videoPath,
       apiKey,
@@ -675,16 +969,30 @@ If REJECTED:
   "reason": "<alasan penolakan yang jelas dalam bahasa Indonesia, misal: 'Watermark masuk ke frame 9:16', 'Menampilkan wajah vlogger', 'Mengandung subtitle ucapan'>"
 }`;
 
+  // Bound frames to at most 10 keyframes for OpenRouter / Vision APIs to prevent token exhaustion and rate limits
+  let evalFrames = frames || [];
+  if (evalFrames.length > 10) {
+    const step = (evalFrames.length - 1) / 9;
+    const sampled = [];
+    for (let i = 0; i < 10; i++) {
+      const idx = Math.round(i * step);
+      if (evalFrames[idx] && !sampled.includes(evalFrames[idx])) {
+        sampled.push(evalFrames[idx]);
+      }
+    }
+    evalFrames = sampled;
+  }
+
   const userPrompt = `Target Shopee Product: "${effectiveTitle}"
 ${effectiveDesc ? `Product Description: "${effectiveDesc}"` : ''}
 Total Duration: ${totalDuration}s
 Sampled Frames:
-${frames.map((f, i) => `#${i + 1} (${f.timeFormatted})`).join(', ')}
+${evalFrames.map((f, i) => `#${i + 1} (${f.timeFormatted})`).join(', ')}
 
 Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
 1. Exact Product Match: Does the physical item in the video match "${effectiveTitle}" exactly?
    - If DIFFERENT product or compilation: output {"status": "reject", "detectedProduct": "<nama produk>", "isExactProductMatch": false, "reason": "Produk di video tidak cocok dengan link Shopee"}
-2. Faceless QC: Inspect ALL ${frames.length} frames. Does ANY frame show a human face, head, hair, or person talking?
+2. Faceless QC: Inspect ALL ${evalFrames.length} frames. Does ANY frame show a human face, head, hair, or person talking?
    - If ANY face or person is visible in ANY frame: output {"status": "reject", "hasHumanOrFaceAnywhereInFrames": true, "isFacelessIn916Frame": false, "hasFaceIn916Frame": true, "reason": "Video ditolak: Menampilkan wajah/orang (wajib 100% faceless tabletop)"}
    - Dilarang memilih frame tangan dari video yang ada vlogger/orangnya!
 3. Subtitle & Text QC: Do the selected frames contain hardcoded speech captions, dialogue subtitles, or digital text overlays in the 9:16 frame?
@@ -699,7 +1007,7 @@ Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
 
   const messageContent = [
     { type: 'text', text: userPrompt },
-    ...frames.map((f) => ({
+    ...evalFrames.map((f) => ({
       type: 'image_url',
       image_url: {
         url: f.base64,

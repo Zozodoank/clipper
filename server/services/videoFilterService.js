@@ -174,13 +174,13 @@ export function checkVideoMetadataCompliance(metadata, productTitle = '', option
     return { eligible: false, reason: 'Metadata video kosong atau tidak tersedia.' };
   }
 
-  // 1. Durasi Video (Wajib antara 15 detik s/d 30 menit)
+  // 1. Durasi Video (Wajib antara 5 menit s/d 15 menit)
   const duration = Number(metadata.duration) || 0;
-  if (duration > 0 && duration < 15) {
-    return { eligible: false, reason: `Durasi video terlalu pendek (${duration}s < 15s).` };
+  if (duration > 0 && duration < 300) {
+    return { eligible: false, reason: `Durasi video terlalu pendek (${Math.round(duration)} detik / ${(duration / 60).toFixed(1)} menit). Minimal durasi video 5 menit agar memiliki peragaan produk yang memadai.` };
   }
-  if (duration > 1800) {
-    return { eligible: false, reason: `Durasi video terlalu panjang (${Math.round(duration / 60)} menit > 30 menit).` };
+  if (duration > 900) {
+    return { eligible: false, reason: `Durasi video terlalu panjang (${(duration / 60).toFixed(1)} menit). Maksimal durasi video 15 menit.` };
   }
 
   const titleLower = (metadata.title || '').toLowerCase();

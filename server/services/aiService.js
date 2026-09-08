@@ -969,12 +969,12 @@ If REJECTED:
   "reason": "<alasan penolakan yang jelas dalam bahasa Indonesia, misal: 'Watermark masuk ke frame 9:16', 'Menampilkan wajah vlogger', 'Mengandung subtitle ucapan'>"
 }`;
 
-  // Bound frames to at most 10 keyframes for OpenRouter / Vision APIs to prevent token exhaustion and rate limits
+  // Bound frames to at most 20 keyframes for OpenRouter / Vision APIs to prevent token exhaustion and rate limits
   let evalFrames = frames || [];
-  if (evalFrames.length > 10) {
-    const step = (evalFrames.length - 1) / 9;
+  if (evalFrames.length > 20) {
+    const step = (evalFrames.length - 1) / 19;
     const sampled = [];
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 20; i++) {
       const idx = Math.round(i * step);
       if (evalFrames[idx] && !sampled.includes(evalFrames[idx])) {
         sampled.push(evalFrames[idx]);
@@ -1194,17 +1194,18 @@ Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
       const status = err.status || err.statusCode;
       const msg = (err.message || '').toLowerCase();
       const isFatalAuthOrBilling = status === 401 || status === 402 || msg.includes('balance') || msg.includes('credits');
+      const isOverloaded = status === 503 || status === 529 || status === 429 || msg.includes('overload') || msg.includes('overloaded') || msg.includes('rate limit');
 
-      // Fallback ke Google Gemini File API (Gemini 1.5 Flash) jika OpenRouter bermasalah atau habis saldo
+      // Fallback ke Google Gemini Direct API jika OpenRouter bermasalah, overload, atau habis saldo
       if (!hasFallenBackToGemini) {
         const geminiKey = getDirectGeminiApiKey(apiKey);
-        if (geminiKey && (isFatalAuthOrBilling || attempt >= totalRetries - 1)) {
+        if (geminiKey && (isFatalAuthOrBilling || isOverloaded || attempt >= totalRetries - 1)) {
           if (videoPath && fs.existsSync(videoPath)) {
             clearInterval(heartbeat);
-            console.warn(`[AIService Vision] OpenRouter error (${err.message}). Beralih ke Google Gemini File API fallback (Gemini 1.5 Flash)...`);
+            console.warn(`[AIService Vision] OpenRouter ${isOverloaded ? 'overloaded' : 'error'} (${err.message}). Beralih ke Google Gemini File API fallback...`);
             onProgress({
               step: 'gemini_vision',
-              message: 'OpenRouter gagal. Mengaktifkan fallback Google Gemini File API (Gemini 1.5 Flash)...',
+              message: 'OpenRouter overloaded/gagal. Mengaktifkan fallback Google Gemini File API...',
               progress: 47,
             });
             return await analyzeVideoWithGeminiFileApi({
@@ -1221,10 +1222,10 @@ Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
 
           const geminiFallback = getDirectGeminiClientConfig({ apiKeyOverride: apiKey });
           if (geminiFallback) {
-            console.warn(`[AIService Vision] OpenRouter error (${err.message}). Beralih langsung ke Google Gemini Direct API fallback (${geminiFallback.models[0]})...`);
+            console.warn(`[AIService Vision] OpenRouter ${isOverloaded ? 'overloaded' : 'error'} (${err.message}). Beralih langsung ke Google Gemini Direct API fallback (${geminiFallback.models[0]})...`);
             onProgress({
               step: 'gemini_vision',
-              message: `OpenRouter gagal. Mengaktifkan direct fallback Google Gemini API (${geminiFallback.models[0]})...`,
+              message: `OpenRouter overloaded. Mengaktifkan direct fallback Google Gemini API (${geminiFallback.models[0]})...`,
               progress: 47,
             });
             hasFallenBackToGemini = true;
@@ -1501,15 +1502,16 @@ Return strict JSON in this format:
       const status = err.status || err.statusCode;
       const msg = (err.message || '').toLowerCase();
       const isFatalAuthOrBilling = status === 401 || status === 402 || msg.includes('balance') || msg.includes('credits');
+      const isOverloaded = status === 503 || status === 529 || status === 429 || msg.includes('overload') || msg.includes('overloaded') || msg.includes('rate limit');
 
-      // Fallback langsung ke Google Gemini Direct API jika OpenRouter bermasalah atau habis saldo
+      // Fallback langsung ke Google Gemini Direct API jika OpenRouter bermasalah, overload, atau habis saldo
       if (!hasFallenBackToGemini) {
         const geminiFallback = getDirectGeminiClientConfig({ apiKeyOverride: apiKey });
-        if (geminiFallback && (isFatalAuthOrBilling || attempt >= totalRetries - 1)) {
-          console.warn(`[AIService Scripting] OpenRouter error (${err.message}). Beralih langsung ke Google Gemini Direct API fallback (${geminiFallback.models[0]})...`);
+        if (geminiFallback && (isFatalAuthOrBilling || isOverloaded || attempt >= totalRetries - 1)) {
+          console.warn(`[AIService Scripting] OpenRouter ${isOverloaded ? 'overloaded' : 'error'} (${err.message}). Beralih langsung ke Google Gemini Direct API fallback (${geminiFallback.models[0]})...`);
           onProgress({
             step: 'gpt_scripting',
-            message: `OpenRouter gagal. Mengaktifkan direct fallback Google Gemini API (${geminiFallback.models[0]})...`,
+            message: `OpenRouter overloaded. Mengaktifkan direct fallback Google Gemini API (${geminiFallback.models[0]})...`,
             progress: 78,
           });
           hasFallenBackToGemini = true;

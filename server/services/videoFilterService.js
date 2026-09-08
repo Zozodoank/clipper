@@ -273,7 +273,7 @@ export function checkVideoMetadataCompliance(metadata, productTitle = '', option
  */
 export async function sampleFramesFromStream(streamUrl, outputDir, {
   duration = 60,
-  maxSampleFrames = 30,
+  maxSampleFrames = 20,
   onProgress = () => {}
 } = {}) {
   if (!fs.existsSync(outputDir)) {
@@ -287,7 +287,7 @@ export async function sampleFramesFromStream(streamUrl, outputDir, {
   }
 
   const ffmpegPath = getFFmpegPath();
-  const safeMax = Math.max(5, Math.min(30, Number(maxSampleFrames) || 30));
+  const safeMax = Math.max(5, Math.min(20, Number(maxSampleFrames) || 20));
   const safeDuration = Math.max(10, Number(duration) || 60);
   const sampleInterval = Math.max(1, Math.floor(safeDuration / safeMax));
 
@@ -297,15 +297,16 @@ export async function sampleFramesFromStream(streamUrl, outputDir, {
     progress: 25,
   });
 
-  const outputPattern = path.join(outputDir, 'frame_%04d.png');
+  const outputPattern = path.join(outputDir, 'frame_%04d.jpg');
 
   // FFmpeg extracts frames directly from HTTP stream URL.
-  // Seeking via -ss and stream sampling only transfers ~1-2 MB of image packets!
+  // Using lightweight JPEG (-q:v 3) keeps frames compact (~30KB) to prevent AI payload overload!
   const args = [
     '-y',
     '-ss', '1',
     '-i', streamUrl,
     '-vf', `fps=1/${sampleInterval},scale=-2:360`,
+    '-q:v', '3',
     '-frames:v', String(safeMax),
     outputPattern
   ];
@@ -364,7 +365,7 @@ export async function sampleFramesFromStream(streamUrl, outputDir, {
     });
   }
 
-  // Track internet data used by stream sampling (~1.5-2.5 MB)
+  // Track internet data used by stream sampling (~0.8-1.5 MB)
   let sampledBytes = 0;
   for (const f of frameFiles) {
     try {
@@ -372,8 +373,8 @@ export async function sampleFramesFromStream(streamUrl, outputDir, {
     } catch {}
   }
   // Include network packet overhead (~200KB)
-  sampledBytes = Math.max(sampledBytes, 1.2 * 1024 * 1024);
-  trackBandwidth('streamSampling', sampledBytes, `Sampling 30 frame stream URL (~${(sampledBytes / (1024 * 1024)).toFixed(2)} MB)`);
+  sampledBytes = Math.max(sampledBytes, 0.8 * 1024 * 1024);
+  trackBandwidth('streamSampling', sampledBytes, `Sampling 20 frame stream URL (~${(sampledBytes / (1024 * 1024)).toFixed(2)} MB)`);
 
   onProgress({
     step: 'stream_sampling_done',

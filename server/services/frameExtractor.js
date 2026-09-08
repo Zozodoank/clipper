@@ -13,14 +13,14 @@ import { getFFmpegPath } from './binaryChecker.js';
  */
 export async function extractFrames(videoPath, framesDir, onProgress = () => {}, {
   sampleIntervalSec = 1,
-  maxSampleFrames = 30,
+  maxSampleFrames = 20,
 } = {}) {
   if (!fs.existsSync(framesDir)) {
     fs.mkdirSync(framesDir, { recursive: true });
   }
 
   const ffmpegPath = getFFmpegPath();
-  const outputPattern = path.join(framesDir, 'frame_%04d.png');
+  const outputPattern = path.join(framesDir, 'frame_%04d.jpg');
 
   // Guard against audio-only input path
   let targetVideoPath = videoPath;
@@ -40,15 +40,16 @@ export async function extractFrames(videoPath, framesDir, onProgress = () => {},
   }
 
   const safeInterval = Math.max(0.5, Number(sampleIntervalSec) || 1);
-  const safeMaxFrames = Math.max(1, Math.floor(Number(maxSampleFrames) || 30));
+  const safeMaxFrames = Math.max(1, Math.floor(Number(maxSampleFrames) || 20));
   onProgress({ step: 'frames', message: `Extracting source timeline frames (1 frame every ${safeInterval}s)...`, progress: 40 });
 
   return new Promise((resolve, reject) => {
-    // 360p height PNG keeps API payload minimal while ensuring 100% decoder compatibility across all AI providers (e.g. Minimax, Nemotron)
+    // 360p height JPEG with -q:v 3 keeps API payload minimal (~30KB per frame) to prevent AI overload
     const args = [
       '-y',
       '-i', targetVideoPath,
       '-vf', `fps=1/${safeInterval},scale=-2:360`,
+      '-q:v', '3',
       outputPattern
     ];
 

@@ -1013,15 +1013,15 @@ export async function runStage1Pipeline({
         return { highlight: hl, videoMeta: meta, previewVideoPath: null };
       }
 
-      // ── JALUR 2: OPENROUTER / STREAM SAMPLING LOKAL DENGAN 10 KEYFRAME ──
+      // ── JALUR 2: OPENROUTER / STREAM SAMPLING LOKAL DENGAN 20 KEYFRAME ──
       const sampleMsg = candidateLabel
-        ? `[${candidateLabel}] [Filter 2/3] Sampling 10 keyframe dari stream URL (~1MB kuota)...`
-        : '[Filter 2/3] Sampling 10 keyframe langsung dari stream URL YouTube...';
+        ? `[${candidateLabel}] [Filter 2/3] Sampling 20 keyframe dari stream URL (~0.8MB kuota)...`
+        : '[Filter 2/3] Sampling 20 keyframe langsung dari stream URL YouTube...';
       updateProgress({ step: 'stream_sampling', message: sampleMsg, progress: 28, status: 'running' });
 
       const { frames: rawFrames } = await sampleFramesFromStream(streamUrl, rawFramesDir, {
         duration: meta.duration,
-        maxSampleFrames: 10,
+        maxSampleFrames: 20,
         onProgress: updateProgress,
       });
 
@@ -1086,7 +1086,7 @@ export async function runStage1Pipeline({
         updateProgress({ step: 'frames_raw', message: 'Mengekstrak frame video 1080p untuk analisa AI...', progress: 38, status: 'running' });
         const { frames: rawFrames } = await extractFrames(rawVideoPath, rawFramesDir, updateProgress, {
           sampleIntervalSec: 1,
-          maxSampleFrames: 30,
+          maxSampleFrames: 20,
         });
         highlight = await selectHighlightWithAI({
           apiKey,

@@ -26,6 +26,12 @@ import {
 import { generateVoiceoverTTS, cleanScriptForTTS } from './services/ttsService.js';
 import { loadEnglishDictionary, saveToEnglishDictionary } from './services/dictionaryService.js';
 import {
+  fetchVideoMetadataAndStream,
+  checkVideoMetadataCompliance,
+  sampleFramesFromStream,
+  inspectFramesLocally
+} from './services/videoFilterService.js';
+import {
   cleanupTempFiles,
   deleteJobTempDirectory,
   deleteJobFiles
@@ -928,14 +934,12 @@ export async function runStage1Pipeline({
     const initialVid = extractVideoId(currentYoutubeUrl);
     if (initialVid) usedVids.add(initialVid);
 
-    // Helper untuk mengevaluasi satu kandidat video: download preview 360p, ekstrak frame, dan jalankan selectHighlightWithAI
+    // Helper untuk mengevaluasi kandidat video menggunakan Funneling 3 Tahap (Hemat kuota & token AI):
+    // Tahap 1: Metadata Pre-Filter (0 kuota video, 0 token AI)
+    // Tahap 2: Sampling 30 frame langsung dari stream URL via FFmpeg & Analisa Lokal 9:16 (~2MB kuota, 0 token AI)
+    // Tahap 3: Verifikasi AI Vision (Quality Assurance Final, detail: 'low')
     const evaluateCandidate = async (targetUrl, candidateLabel = '') => {
-      // 1. Bersihkan preview lama & frames lama agar tidak tertumpuk
-      if (previewVideoPath && fs.existsSync(previewVideoPath) && previewVideoPath !== rawVideoPath) {
-        try { fs.unlinkSync(previewVideoPath); } catch {}
-      }
-      previewVideoPath = null;
-
+      // 1. Bersihkan frame lama agar tidak tertumpuk
       if (fs.existsSync(rawFramesDir)) {
         try {
           const oldFiles = fs.readdirSync(rawFramesDir);
@@ -945,30 +949,37 @@ export async function runStage1Pipeline({
         } catch {}
       }
 
-      // 2. Unduh preview 360p
-      const dlMsg = candidateLabel
-        ? `[${candidateLabel}] Mengunduh preview 360p untuk analisa visual AI...`
-        : 'Mengunduh preview video (360p) untuk analisa visual AI...';
-      updateProgress({ step: 'download', message: dlMsg, progress: 12, status: 'running' });
+      // ── TAHAP 1: FILTER KASAR METADATA (0 KUOTA, 0 TOKEN AI) ──
+      const metaMsg = candidateLabel
+        ? `[${candidateLabel}] [Filter 1/3] Membaca durasi, CC & metadata video (0 download)...`
+        : '[Filter 1/3] Membaca durasi, CC & metadata video tanpa download...';
+      updateProgress({ step: 'metadata_qc', message: metaMsg, progress: 12, status: 'running' });
 
-      const previewDl = await downloadYouTubeVideo(targetUrl, sessionTempDir, jobId, updateProgress, { quality: 'preview', prefix: 'preview' });
-      const candPreviewPath = previewDl.filePath;
-      const meta = previewDl.metadata || { title: productTitle || 'Product Video', duration: 60 };
+      const { metadata: meta, streamUrl } = await fetchVideoMetadataAndStream(targetUrl, {
+        onProgress: updateProgress,
+      });
 
-      const realDuration = await getMediaDurationSec(candPreviewPath);
-      if (realDuration && realDuration > 5) {
-        meta.duration = realDuration;
+      const compliance = checkVideoMetadataCompliance(meta, productTitle, options);
+      if (!compliance.eligible) {
+        console.warn(`[Job ${jobId}] ⛔ [Filter 1/3 Ditolak] ${candidateLabel || targetUrl}: ${compliance.reason}`);
+        const metaErr = new Error(`Metadata video ditolak: ${compliance.reason}`);
+        metaErr.isAiRejection = true;
+        metaErr.rejectionReason = compliance.reason;
+        throw metaErr;
       }
 
-      // 3. Ekstrak frame preview
-      const frameMsg = candidateLabel
-        ? `[${candidateLabel}] Mengekstrak frame untuk verifikasi produk & faceless QC...`
-        : 'Mengekstrak frame preview untuk analisa AI...';
-      updateProgress({ step: 'frames_raw', message: frameMsg, progress: 38, status: 'running' });
+      console.log(`[Job ${jobId}] ✅ [Filter 1/3 Lolos] Metadata valid (${meta.title}, ${meta.duration}s). Mengambil stream URL...`);
 
-      const { frames: rawFrames } = await extractFrames(candPreviewPath, rawFramesDir, updateProgress, {
-        sampleIntervalSec: 1,
+      // ── TAHAP 2: SAMPLING 30 FRAME DARI STREAM URL (~2MB KUOTA) ──
+      const sampleMsg = candidateLabel
+        ? `[${candidateLabel}] [Filter 2/3] Sampling 30 frame dari stream URL (~2MB kuota)...`
+        : '[Filter 2/3] Sampling 30 frame langsung dari stream URL YouTube...';
+      updateProgress({ step: 'stream_sampling', message: sampleMsg, progress: 28, status: 'running' });
+
+      const { frames: rawFrames } = await sampleFramesFromStream(streamUrl, rawFramesDir, {
+        duration: meta.duration,
         maxSampleFrames: 30,
+        onProgress: updateProgress,
       });
 
       if (!rawFrames || rawFrames.length < 5) {
@@ -978,17 +989,32 @@ export async function runStage1Pipeline({
         throw frameErr;
       }
 
-      // 4. Analisa visual AI
+      // ── TAHAP 2b: ANALISA LOKAL AREA 9:16 (0 TOKEN AI) ──
+      const localCheck = inspectFramesLocally(rawFrames, {
+        aspectRatio: options.aspectRatio || '9:16',
+        onProgress: updateProgress,
+      });
+      if (!localCheck.eligible) {
+        console.warn(`[Job ${jobId}] ⛔ [Filter 2/3 Ditolak Lokal] ${candidateLabel || targetUrl}: ${localCheck.reason}`);
+        const localErr = new Error(`Analisa lokal ditolak: ${localCheck.reason}`);
+        localErr.isAiRejection = true;
+        localErr.rejectionReason = localCheck.reason;
+        throw localErr;
+      }
+
+      console.log(`[Job ${jobId}] ✅ [Filter 2/3 Lolos] Area 9:16 bersih dari subtitle/logo lokal. Mengirim ke AI Vision...`);
+
+      // ── TAHAP 3: VERIFIKASI AI VISION (QUALITY ASSURANCE FINAL) ──
       const visionMsg = candidateLabel
-        ? `[${candidateLabel}] AI (${aiProvider}) menganalisa frame produk dan QC bebas wajah...`
-        : `AI (${aiProvider}) menganalisa frame produk dan menentukan cuplikan terbaik...`;
+        ? `[${candidateLabel}] [Filter 3/3] AI (${aiProvider}) verifikasi produk & QC bebas wajah...`
+        : `[Filter 3/3] AI (${aiProvider}) menganalisa frame produk dan menentukan cuplikan terbaik...`;
       updateProgress({ step: 'gemini_vision', message: visionMsg, progress: 48, status: 'running' });
 
       const hl = await selectHighlightWithAI({
         apiKey,
         aiProvider,
         frames: rawFrames,
-        videoPath: candPreviewPath,
+        videoPath: null, // Zero 360p download! Uses stream-sampled visual frames
         videoMetadata: meta,
         productTitle,
         productDescription,
@@ -1005,7 +1031,8 @@ export async function runStage1Pipeline({
         throw noClipErr;
       }
 
-      return { highlight: hl, videoMeta: meta, previewVideoPath: candPreviewPath };
+      console.log(`[Job ${jobId}] 🎉 [Filter 3/3 Lolos] AI menyetujui video! Ditemukan ${hl.clips.length} cuplikan produk bersih.`);
+      return { highlight: hl, videoMeta: meta, previewVideoPath: null };
     };
 
     // Evaluasi video dari cache jika tersedia

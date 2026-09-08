@@ -5,6 +5,7 @@ import net from 'net';
 import { fileURLToPath } from 'url';
 import { getYtDlpPath, getFFmpegPath } from './binaryChecker.js';
 import { getVideoDimensions } from './videoRenderer.js';
+import { trackBandwidth } from './bandwidthTracker.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -689,6 +690,9 @@ export async function downloadYouTubeVideo(url, outputDir, videoId, onProgress =
             }
           }
         }
+        const videoSize = fs.statSync(downloadedFile).size;
+        trackBandwidth('videoDownload', videoSize, `Download video 1080p (${path.basename(downloadedFile)} - ${(videoSize / (1024 * 1024)).toFixed(2)} MB)`);
+
         onProgress({ step: 'download', message: `Video download (${qualityLabel}) completed successfully.`, progress: 35 });
         return { filePath: downloadedFile, metadata };
       }

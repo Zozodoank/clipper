@@ -5,6 +5,7 @@ import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import { applyTalingPhonetics } from './phoneticData.js';
 import { getFFmpegPath } from './binaryChecker.js';
 import { applyEnglishLexicon, restoreStandardText } from './dictionaryService.js';
+import { trackBandwidth } from './bandwidthTracker.js';
 
 // Default Microsoft Edge TTS Voice: id-ID-GadisNeural (Indonesian female natural voice)
 export const DEFAULT_EDGE_VOICE = 'id-ID-GadisNeural';
@@ -806,8 +807,19 @@ export async function generateVoiceoverTTS({
   lexicon = {},
 }) {
   const provider = (process.env.TTS_PROVIDER || 'edge_tts').toLowerCase().trim();
+  let result;
   if (provider === 'fish_audio') {
-    return generateVoiceoverFishAudio({ script, outputPath, modelId, onProgress, jobId, lexicon });
+    result = await generateVoiceoverFishAudio({ script, outputPath, modelId, onProgress, jobId, lexicon });
+  } else {
+    result = await generateVoiceoverEdgeTTS({ script, outputPath, targetDurationSec, voice, onProgress, jobId, lexicon });
   }
-  return generateVoiceoverEdgeTTS({ script, outputPath, targetDurationSec, voice, onProgress, jobId, lexicon });
+
+  if (result && result.audioPath && fs.existsSync(result.audioPath)) {
+    try {
+      const audioBytes = fs.statSync(result.audioPath).size;
+      trackBandwidth('voiceoverTTS', audioBytes, `Audio voiceover (${path.basename(result.audioPath)} - ${(audioBytes / 1024).toFixed(1)} KB)`);
+    } catch {}
+  }
+
+  return result;
 }

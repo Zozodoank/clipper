@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Video, Sparkles, Settings, Cpu, ShieldCheck, FolderOpen, Loader2, RotateCw, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Video, Sparkles, Settings, Cpu, ShieldCheck, FolderOpen, Loader2, RotateCw, AlertTriangle, CheckCircle2, Wifi } from 'lucide-react';
+import BandwidthModal from './BandwidthModal';
 
 export default function Navbar({ onOpenSettings, engineStatus }) {
   const [openingFolder, setOpeningFolder] = useState(false);
@@ -8,6 +9,44 @@ export default function Navbar({ onOpenSettings, engineStatus }) {
   const [isRestarting, setIsRestarting] = useState(false);
   const [restartStatusText, setRestartStatusText] = useState('');
   const [restartError, setRestartError] = useState(null);
+  const [showBandwidthModal, setShowBandwidthModal] = useState(false);
+  const [bandwidthStats, setBandwidthStats] = useState(engineStatus?.bandwidthStats || null);
+
+  const fetchBandwidthStats = async () => {
+    try {
+      const res = await fetch('/api/bandwidth-stats');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.stats) setBandwidthStats(data.stats);
+      }
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    fetchBandwidthStats();
+    const interval = setInterval(fetchBandwidthStats, 6000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (engineStatus?.bandwidthStats) {
+      setBandwidthStats(engineStatus.bandwidthStats);
+    }
+  }, [engineStatus]);
+
+  const handleResetBandwidth = async (scope = 'session') => {
+    try {
+      const res = await fetch('/api/bandwidth-stats/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.stats) setBandwidthStats(data.stats);
+      }
+    } catch (e) {}
+  };
 
   const handleOpenFolder = async () => {
     setOpeningFolder(true);
@@ -98,7 +137,25 @@ export default function Navbar({ onOpenSettings, engineStatus }) {
           </div>
 
           {/* Right side stats & settings */}
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 sm:gap-2.5">
+            {/* Internet Bandwidth Counter Display Badge */}
+            <button
+              onClick={() => setShowBandwidthModal(true)}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-300 text-xs font-semibold transition-all hover:scale-[1.02] active:scale-[0.98] group"
+              title="Klik untuk melihat rincian penggunaan kuota internet (MB)"
+            >
+              <div className="relative flex items-center justify-center">
+                <Wifi className="w-3.5 h-3.5 text-sky-400 group-hover:animate-pulse" />
+                <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></span>
+              </div>
+              <span className="font-mono font-bold text-white tracking-tight">
+                {bandwidthStats?.totalFormatted || '0.00 MB'}
+              </span>
+              <span className="text-[10px] text-sky-400/80 font-normal hidden md:inline">
+                Kuota
+              </span>
+            </button>
+
             {/* Quick Open Output Folder Button */}
             <button
               onClick={handleOpenFolder}
@@ -246,6 +303,14 @@ export default function Navbar({ onOpenSettings, engineStatus }) {
           </div>
         </div>
       )}
+      {/* Bandwidth Usage Detail Modal */}
+      <BandwidthModal
+        isOpen={showBandwidthModal}
+        onClose={() => setShowBandwidthModal(false)}
+        stats={bandwidthStats}
+        onRefresh={fetchBandwidthStats}
+        onReset={handleResetBandwidth}
+      />
     </>
   );
 }

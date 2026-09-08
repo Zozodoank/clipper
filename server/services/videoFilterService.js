@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { getYtDlpPath, getFFmpegPath } from './binaryChecker.js';
+import { trackBandwidth, trackSavedBandwidth } from './bandwidthTracker.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -95,7 +96,10 @@ export async function fetchVideoMetadataAndStream(url, { onProgress = () => {} }
     proc.on('close', (code) => {
       if (code === 0 && stdout) {
         try {
-          resolve(JSON.parse(stdout.trim()));
+          const parsedMeta = JSON.parse(stdout.trim());
+          const metaBytes = Buffer.byteLength(stdout || '', 'utf-8');
+          trackBandwidth('metadata', metaBytes, `Metadata video: ${(parsedMeta.title || '').slice(0, 40)}`);
+          resolve(parsedMeta);
         } catch (e) {
           reject(new Error(`Gagal membaca metadata JSON yt-dlp: ${e.message}`));
         }
@@ -353,9 +357,20 @@ export async function sampleFramesFromStream(streamUrl, outputDir, {
     });
   }
 
+  // Track internet data used by stream sampling (~1.5-2.5 MB)
+  let sampledBytes = 0;
+  for (const f of frameFiles) {
+    try {
+      sampledBytes += fs.statSync(path.join(outputDir, f)).size;
+    } catch {}
+  }
+  // Include network packet overhead (~200KB)
+  sampledBytes = Math.max(sampledBytes, 1.2 * 1024 * 1024);
+  trackBandwidth('streamSampling', sampledBytes, `Sampling 30 frame stream URL (~${(sampledBytes / (1024 * 1024)).toFixed(2)} MB)`);
+
   onProgress({
     step: 'stream_sampling_done',
-    message: `Berhasil mengambil ${frames.length} frame visual dari stream URL (~2MB kuota).`,
+    message: `Berhasil mengambil ${frames.length} frame visual dari stream URL (~${(sampledBytes / (1024 * 1024)).toFixed(1)} MB kuota).`,
     progress: 35,
   });
 

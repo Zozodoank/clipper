@@ -1,0 +1,35 @@
+{
+  "totalBytes": 0,
+  "savedBytes": 0,
+  "breakdown": {
+    "videoDownload": {
+      "bytes": 0,
+      "count": 0
+    },
+    "streamSampling": {
+      "bytes": 0,
+      "count": 0
+    },
+    "metadata": {
+      "bytes": 0,
+      "count": 0
+    },
+    "voiceoverTTS": {
+      "bytes": 0,
+      "count": 0
+    },
+    "aiRequests": {
+      "bytes": 0,
+      "count": 0
+    },
+    "discovery": {
+      "bytes": 0,
+      "count": 0
+    },
+    "other": {
+      "bytes": 0,
+      "count": 0
+    }
+  },
+  "recentLogs": []
+}

@@ -32,6 +32,11 @@ import {
   inspectFramesLocally
 } from './services/videoFilterService.js';
 import {
+  getBandwidthStats,
+  resetBandwidthStats,
+  trackSavedBandwidth
+} from './services/bandwidthTracker.js';
+import {
   cleanupTempFiles,
   deleteJobTempDirectory,
   deleteJobFiles
@@ -326,6 +331,7 @@ app.get('/api/health', async (req, res) => {
       fishAudioConfigured: Boolean(process.env.FISH_AUDIO_API_KEY && !process.env.FISH_AUDIO_API_KEY.startsWith('your_')),
     },
     envFilesLoaded: envFiles.map((envPath) => path.relative(path.resolve(__dirname, '..'), envPath).replace(/\\/g, '/')),
+    bandwidthStats: getBandwidthStats(),
     ready: binaryCheck.ffmpeg.available && binaryCheck.ytdlp.available,
   });
 });
@@ -961,6 +967,7 @@ export async function runStage1Pipeline({
 
       const compliance = checkVideoMetadataCompliance(meta, productTitle, options);
       if (!compliance.eligible) {
+        trackSavedBandwidth(35 * 1024 * 1024, `Hemat kuota (Filter 1 Metadata): ${compliance.reason}`);
         console.warn(`[Job ${jobId}] ⛔ [Filter 1/3 Ditolak] ${candidateLabel || targetUrl}: ${compliance.reason}`);
         const metaErr = new Error(`Metadata video ditolak: ${compliance.reason}`);
         metaErr.isAiRejection = true;
@@ -995,6 +1002,7 @@ export async function runStage1Pipeline({
         onProgress: updateProgress,
       });
       if (!localCheck.eligible) {
+        trackSavedBandwidth(35 * 1024 * 1024, `Hemat kuota (Filter 2 Lokal): ${localCheck.reason}`);
         console.warn(`[Job ${jobId}] ⛔ [Filter 2/3 Ditolak Lokal] ${candidateLabel || targetUrl}: ${localCheck.reason}`);
         const localErr = new Error(`Analisa lokal ditolak: ${localCheck.reason}`);
         localErr.isAiRejection = true;
@@ -2510,6 +2518,27 @@ app.post('/api/english-dictionary', (req, res) => {
     saveToEnglishDictionary(entries);
     const updated = loadEnglishDictionary();
     res.json({ success: true, count: Object.keys(updated).length, dictionary: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/bandwidth-stats – get real-time internet data usage and savings
+app.get('/api/bandwidth-stats', (req, res) => {
+  try {
+    const stats = getBandwidthStats();
+    res.json({ success: true, stats });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/bandwidth-stats/reset – reset bandwidth counter
+app.post('/api/bandwidth-stats/reset', (req, res) => {
+  try {
+    const scope = req.body?.scope || 'session';
+    const stats = resetBandwidthStats(scope);
+    res.json({ success: true, stats });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

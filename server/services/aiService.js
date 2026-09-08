@@ -7,6 +7,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { GoogleAIFileManager } from '@google/generative-ai/server';
 import { getMediaDurationSec } from './videoRenderer.js';
 import { saveToEnglishDictionary } from './dictionaryService.js';
+import { trackBandwidth } from './bandwidthTracker.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -734,6 +735,8 @@ Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
       }
 
       console.log(`[AIService Vision] Calling ${provider} with model: ${activeModel}...`);
+      const payloadBytes = frames.reduce((acc, f) => acc + (f.base64 ? f.base64.length : 15000), 0) + Buffer.byteLength(systemPrompt + userPrompt, 'utf-8');
+      trackBandwidth('aiRequests', payloadBytes, `AI Vision (${provider} - ${activeModel}): ${frames.length} frame`);
       const response = await client.chat.completions.create({
         model: activeModel,
         messages: [

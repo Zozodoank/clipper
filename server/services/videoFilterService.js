@@ -218,18 +218,19 @@ export function checkVideoMetadataCompliance(metadata, productTitle = '', option
     'vlog', 'daily vlog', 'a day in my life', 'podcast', 'reaction',
     'facecam', 'webcam', 'selfie', 'muka', 'wajah', 'grwm', 'get ready with me',
     'try on haul', 'try on', 'outfit', 'ootd', 'mukbang', 'skincare routine',
-    'makeup tutorial', 'gameplay', 'live stream', 'review jujur', 'pemakaian pribadi',
-    'pengalaman pribadi', 'kulitku', 'mukaku', 'wajahku', 'teteh', 'bunda', 'mamah',
-    'kakak', 'mas', 'mbak', 'abang', 'host', 'curhat', 'keseharian', 'keseharianku',
-    'kenalan', 'ngobrol', 'bincang', 'q&a', 'storytime', 'unboxing bareng', 'cobain bareng',
-    'halo guys', 'halo teman', 'halo semuanya', 'sama aku', 'bareng aku', 'review by',
-    'unbox with me', 'talking head', 'vlogger', 'blogger', 'creator', 'my thoughts',
-    'honest review', 'haul with me', 'my opinion', 'what i think', 'watch me'
+    'makeup tutorial', 'gameplay', 'live stream',
+    'pengalaman pribadi', 'kulitku', 'mukaku', 'wajahku',
+    'curhat', 'keseharianku', 'kenalan', 'ngobrol', 'bincang', 'q&a', 'storytime',
+    'halo guys', 'halo teman', 'halo semuanya', 'sama aku', 'bareng aku',
+    'unbox with me', 'talking head', 'vlogger', 'blogger',
+    'haul with me', 'watch me'
   ];
+  // Honorific/persona standalone words must use word boundaries (\b) so "memasang", "memasak", "kemasan" don't falsely match "mas"
+  const personaRegex = /\b(mas|mbak|abang|bunda|mamah|teteh|kakak|host|creator)\b/i;
 
   const descPreview = descLower.slice(0, 500);
-  const isFaceTitle = faceAndVlogKeywords.some(kw => titleLower.includes(kw));
-  const isFaceDesc = faceAndVlogKeywords.some(kw => descPreview.includes(kw));
+  const isFaceTitle = faceAndVlogKeywords.some(kw => titleLower.includes(kw)) || personaRegex.test(titleLower);
+  const isFaceDesc = faceAndVlogKeywords.some(kw => descPreview.includes(kw)) || personaRegex.test(descPreview);
 
   if (isFaceTitle || isFaceDesc) {
     return { eligible: false, reason: 'Format video terindikasi berpusat pada wajah / vlogger / persona manusia.' };

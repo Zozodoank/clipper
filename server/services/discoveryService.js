@@ -545,14 +545,13 @@ export async function discoverYouTubeCandidatesForProduct({
 
   // Dynamic search query candidate sets depending on searchIteration for deeper retry diversity
   const baseQueryCandidates = [
-    `"${compactTitle}" review cara pakai`,
+    `${compactTitle} review cara pakai`,
     `${compactTitle} demo cara pakai`,
-    `"${compactTitle}" tes fungsi peragaan`,
     `${compactTitle} review pemakaian`,
-    `"${compactTitle}" demonstrasi cara kerja`,
-    `"${compactTitle}" tutorial pemakaian`,
-    `"${compactTitle}" cara penggunaan`,
-    `"${compactTitle}" review produk`,
+    `${compactTitle} tes fungsi peragaan`,
+    `${compactTitle} cara penggunaan`,
+    `${compactTitle} review produk`,
+    `${compactTitle} unboxing review`,
     `${coreTitle} review`,
     compactTitle,
   ].filter(Boolean);
@@ -573,8 +572,11 @@ export async function discoverYouTubeCandidatesForProduct({
         return vid && !excludeSet.has(vid);
       });
 
-      if (freshResults.length > 0) {
-        candidates = freshResults;
+      // 2. Only accept if the query produced compliant candidate(s) (5-15 min, faceless, proper title)
+      const cleanResults = freshResults.filter((c) => isLikelyCleanYouTubeCandidate(c, productWords));
+
+      if (cleanResults.length > 0) {
+        candidates = cleanResults;
         usedQuery = query;
         break;
       }
@@ -582,14 +584,14 @@ export async function discoverYouTubeCandidatesForProduct({
     await delayWithJitter(300, 600);
   }
 
-  // Fallback: If all results were previously used, search exact core title
+  // Fallback: If all results were previously used or cleanResults was empty, search exact core title
   if (!candidates.length) {
     const fallbackResults = await searchYouTubeVideos(`${compactTitle} review`, { limit, onProgress });
     const nonExcluded = (fallbackResults || []).filter((c) => {
       const vid = c.id || extractVideoId(c.url);
-      return vid && !excludeSet.has(vid);
+      return vid && !excludeSet.has(vid) && isLikelyCleanYouTubeCandidate(c, productWords);
     });
-    candidates = nonExcluded.length > 0 ? nonExcluded : (fallbackResults || []);
+    candidates = nonExcluded;
   }
 
   const cleanCandidates = candidates
@@ -602,8 +604,8 @@ export async function discoverYouTubeCandidatesForProduct({
     .filter((candidate) => candidate.matchScore > 0)
     .sort((a, b) => b.matchScore - a.matchScore);
 
-  // Return candidates strictly prioritized by highest matchScore (no random shuffling of top tier)
-  return cleanCandidates.length > 0 ? cleanCandidates : candidates;
+  // Return strictly vetted, compliant candidates (5-15 min, clean content); NEVER leak disqualified raw candidates
+  return cleanCandidates;
 }
 
 export function delayWithJitter(minMs, maxMs) {

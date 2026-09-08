@@ -196,16 +196,16 @@ async function searchWithRapidApi(query, limit = 10) {
     const items = data.data || data.results || [];
     return items
       .filter(item => item.type === 'video' || item.videoId || item.id)
-      .slice(0, limit)
       .map(item => ({
         id: item.videoId || item.id,
         title: item.title || 'YouTube Video',
         url: item.videoId ? `https://www.youtube.com/watch?v=${item.videoId}` : (item.url || ''),
-        duration: Number(item.lengthSeconds || item.duration) || 60,
+        duration: Number(item.lengthSeconds || item.duration) || 0,
         channel: item.channelTitle || item.author || '',
         description: (item.description || '').slice(0, 500)
       }))
-      .filter(item => item.id && item.url);
+      .filter(item => item.id && item.url && (item.duration === 0 || (item.duration >= 300 && item.duration <= 900)))
+      .slice(0, limit);
   } catch (e) {
     return null;
   }
@@ -385,7 +385,8 @@ async function downloadWithYouTubeMediaDownloader(url, outputPath, onProgress, {
 
 async function searchDirectYouTubeWeb(query, limit = 10) {
   try {
-    const res = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, {
+    // &sp=EgQQASgB enforces YouTube duration filter: Medium (4-20 minutes), eliminating shorts (<1 min)
+    const res = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgQQASgB`, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
         'Accept-Language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7'
@@ -407,10 +408,15 @@ async function searchDirectYouTubeWeb(query, limit = 10) {
           const title = v.title?.runs?.map(r => r.text).join('') || v.title?.simpleText || 'YouTube Video';
           const durationStr = v.lengthText?.simpleText || '';
           const parts = durationStr.replace(/[^0-9:]/g, ':').split(':').map(Number);
-          let duration = 60;
+          let duration = 0;
           if (parts.length === 3) duration = (parts[0] * 3600) + (parts[1] * 60) + parts[2];
           else if (parts.length === 2) duration = (parts[0] * 60) + parts[1];
           else if (parts.length === 1 && parts[0] > 0) duration = parts[0];
+
+          // Filter out videos with known duration < 5 min (300s) or > 15 min (900s)
+          if (duration > 0 && (duration < 300 || duration > 900)) {
+            continue;
+          }
 
           const channel = v.ownerText?.runs?.[0]?.text || '';
           const desc = v.detailedMetadataSnippets?.[0]?.snippetText?.runs?.map(r => r.text).join('') || '';
@@ -418,7 +424,7 @@ async function searchDirectYouTubeWeb(query, limit = 10) {
             id: v.videoId,
             title,
             url: `https://www.youtube.com/watch?v=${v.videoId}`,
-            duration: duration || 60,
+            duration: duration || 0,
             channel,
             description: desc.slice(0, 500)
           });
@@ -481,6 +487,7 @@ export async function searchYouTubeVideos(query, { limit = 10, onProgress = () =
       '--dump-json',
       '--no-playlist',
       '--skip-download',
+      '--match-filter', 'duration >= 300 & duration <= 900',
       searchTarget
     ];
 
@@ -506,11 +513,11 @@ export async function searchYouTubeVideos(query, { limit = 10, onProgress = () =
           id: item.id,
           title: item.title || 'YouTube Video',
           url: item.webpage_url || item.original_url || (item.id ? `https://www.youtube.com/watch?v=${item.id}` : ''),
-          duration: Number(item.duration) || 60,
+          duration: Number(item.duration) || 0,
           channel: item.uploader || item.channel || '',
           description: (item.description || '').slice(0, 500),
         }))
-        .filter((item) => item.id && item.url);
+        .filter((item) => item.id && item.url && (item.duration === 0 || (item.duration >= 300 && item.duration <= 900)));
     }
   } catch (err) {
     console.warn(`[Downloader] yt-dlp search fallback warning: ${err.message}`);

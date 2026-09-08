@@ -607,14 +607,15 @@ RULE 2: EXACT PHYSICAL PRODUCT MATCH VERIFICATION:
 - If rejected for wrong product:
   {"status": "reject", "detectedProduct": "<nama produk yang tampak>", "isExactProductMatch": false, "reason": "Produk di video (<nama produk>) tidak cocok dengan produk Shopee (${effectiveTitle})"}
 
-RULE 3: ABSOLUTE ZERO HUMAN FACES & ZERO HUMAN BODIES (STRICT FACELESS MANDATE):
-- The final video output MUST BE 100% FACELESS AND HUMAN-FREE!
-- DILARANG MENAMPILKAN WAJAH ATAU MANUSIA DALAM VIDEO OUTPUT!
-- ZERO TOLERANCE FOR FACES: Dilarang keras memilih frame yang menampilkan wajah manusia (tampak depan, samping, menunduk, buram, pantulan cermin/kaca/logam, atau orang di background).
-- ZERO TOLERANCE FOR BODIES: Dilarang menampilkan kepala, rambut, leher, dada, torso, atau badan manusia. Dilarang vlogger berbicara atau orang berdiri memegang produk.
-- The ONLY permitted human element is HANDS/FINGERS ONLY actively demonstrating, holding, pressing, or operating the product against a tabletop/neutral background.
-- If the video contains human faces/people, or does NOT contain at least 5 distinct faceless product demonstration moments:
-  {"status": "reject", "isFacelessAndHumanFree": false, "hasFaceOrHumanInSelectedFrames": true, "reason": "Video menampilkan wajah atau manusia. Video affiliate wajib 100% bebas dari wajah dan manusia (hanya peragaan tangan pada produk)."}
+RULE 3: STRICT WHOLE-VIDEO FACELESS MANDATE (ZERO TOLERANCE FOR FACES ANYWHERE IN THE VIDEO):
+- MANDATORY WHOLE-VIDEO INSPECTION: Inspect ALL ${frames.length} sampled frames from first to last.
+- CRITICAL: Does ANY frame (even just ONE frame) show a human face, head, hair, neck, torso, or person talking (e.g. host, vlogger, presenter, influencer, or bystander)?
+  * IF YES -> REJECT THE ENTIRE VIDEO IMMEDIATELY (status: "reject")!
+  * DILARANG KERAS MEMILIH FRAME TANGAN DARI VIDEO YANG ADA VLOGGER/ORANGNYA!
+  * Do NOT cherry-pick hands-only frames from a video that has a human presenter/vlogger in other scenes! If a person/face appears anywhere in the footage, the entire video is DISQUALIFIED!
+- PERMITTED FOOTAGE TYPE: ONLY 100% pure faceless tabletop footage is permitted where the camera is focused strictly on the product and countertop from start to finish, with HANDS/FINGERS ONLY actively operating the product.
+- If ANY frame contains a human face or person:
+  {"status": "reject", "hasHumanOrFaceAnywhereInFrames": true, "isFacelessIn916Frame": false, "reason": "Video ditolak: Menampilkan wajah atau orang/vlogger (wajib 100% video faceless tabletop dari awal sampai akhir)."}
 
 RULE 4: REAL AUTHENTIC PHYSICAL FOOTAGE (NO AI/CGI SLOP, NO TALKING HEADS):
 - REJECT if AI-generated / synthetic / CGI / 3D animated / cartoon video.
@@ -635,7 +636,7 @@ RULE 5: WATERMARKS, SOCIAL MEDIA LOGOS & CHANNEL IDENTITIES (9:16 CROP TOLERANCE
 
 CRITERIA FOR ACCEPTANCE (ALL MUST BE TRUE):
 1. Exactly matches target Shopee product: "${effectiveTitle}".
-2. 100% Faceless & Human-Free in selected frames (hands only).
+2. 100% Entirely Faceless: Absolutely ZERO human faces, heads, necks, or bodies anywhere across all ${frames.length} frames (hands/fingers operating on tabletop only).
 3. 100% Clean from hardburned speech subtitles/captions inside 9:16 frame (physical text/labels on the product are 100% allowed).
 4. 100% Clean from watermarks, social media logos, and channel identities inside the 9:16 central frame (outer left/right watermarks that get cropped/covered are acceptable).
 5. Real authentic physical demonstration.
@@ -683,17 +684,18 @@ ${frames.map((f, i) => `#${i + 1} (${f.timeFormatted})`).join(', ')}
 Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
 1. Exact Product Match: Does the physical item in the video match "${effectiveTitle}" exactly?
    - If DIFFERENT product or compilation: output {"status": "reject", "detectedProduct": "<nama produk>", "isExactProductMatch": false, "reason": "Produk di video tidak cocok dengan link Shopee"}
-2. Faceless QC: Selected frames MUST NEVER contain any human face, head, or body in the central 9:16 frame! Only hands-on product demonstration allowed.
-   - If no faceless product demo frames exist: output {"status": "reject", "isFacelessIn916Frame": false, "hasFaceIn916Frame": true, "reason": "Video menampilkan wajah atau manusia"}
+2. Faceless QC: Inspect ALL ${frames.length} frames. Does ANY frame show a human face, head, hair, or person talking?
+   - If ANY face or person is visible in ANY frame: output {"status": "reject", "hasHumanOrFaceAnywhereInFrames": true, "isFacelessIn916Frame": false, "hasFaceIn916Frame": true, "reason": "Video ditolak: Menampilkan wajah/orang (wajib 100% faceless tabletop)"}
+   - Dilarang memilih frame tangan dari video yang ada vlogger/orangnya!
 3. Subtitle & Text QC: Do the selected frames contain hardcoded speech captions, dialogue subtitles, or digital text overlays in the 9:16 frame?
    - NOTE: Physical text, brand names, or button markings printed/molded ON THE PHYSICAL PRODUCT are 100% ACCEPTABLE and NOT subtitles!
    - If speech captions, dialogue subtitles, or text overlays are visible: output {"status": "reject", "hasSubtitlesIn916Frame": true, "reason": "Video ditolak: Mengandung subtitle / teks caption ucapan bawaan."}
 4. Watermark & Logo QC (9:16 Crop Tolerance):
    - Watermark/logo di pojok KIRI atau KANAN video (di luar area tengah 9:16) TETAP DITERIMA karena akan terpotong/tertutup pilar.
    - Hanya tolak jika watermark digital, logo TikTok/YouTube, atau identitas channel MASUK KE AREA 9:16 TENGAH: output {"status": "reject", "hasWatermarkIn916Frame": true, "reason": "Video ditolak: Watermark masuk ke dalam frame 9:16."}
-5. If there are at least 5 clean frames demonstrating the product (100% faceless in 9:16, zero watermark inside 9:16, zero subtitles, matching product):
+5. If there are at least 5 clean frames demonstrating the product (100% entirely faceless across all frames, zero watermark inside 9:16, zero subtitles, matching product):
    - Select 5 to 8 frame indices in "frames" array.
-   - Output {"status": "accept", "detectedProduct": "<nama produk>", "isExactProductMatch": true, "isFacelessIn916Frame": true, "hasSubtitlesIn916Frame": false, "hasFaceIn916Frame": false, "hasWatermarkIn916Frame": false, "hasSocialOrChannelLogoIn916Frame": false, "frames": [indices], "productHook": "Kalau ..., fix ...!", "hasProductBrand": false}`;
+   - Output {"status": "accept", "detectedProduct": "<nama produk>", "isExactProductMatch": true, "isFacelessIn916Frame": true, "hasHumanOrFaceAnywhereInFrames": false, "hasSubtitlesIn916Frame": false, "hasFaceIn916Frame": false, "hasWatermarkIn916Frame": false, "hasSocialOrChannelLogoIn916Frame": false, "frames": [indices], "productHook": "Kalau ..., fix ...!", "hasProductBrand": false}`;
 
   const messageContent = [
     { type: 'text', text: userPrompt },
@@ -758,7 +760,13 @@ Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
       const rawStatus = String(parsed.status || '').toLowerCase().trim();
       const isRejectStatus = rawStatus === 'reject' || rawStatus === 'rejected' || rawStatus === 'ditolak';
       const isMatchFalse = parsed.isProductMatch === false || parsed.isExactProductMatch === false || parsed.isUsableSourceVideo === false;
-      const hasFace = parsed.hasFaceIn916Frame === true || parsed.hasFaceOrHumanInSelectedFrames === true || parsed.isFacelessIn916Frame === false || parsed.isFacelessAndHumanFree === false;
+      const hasFace = parsed.hasFaceIn916Frame === true ||
+        parsed.hasFaceOrHumanInSelectedFrames === true ||
+        parsed.hasHumanOrFaceAnywhereInFrames === true ||
+        parsed.hasHumanOrFaceInVideo === true ||
+        parsed.isFacelessIn916Frame === false ||
+        parsed.isFacelessAndHumanFree === false ||
+        parsed.isEntirelyFaceless === false;
       const hasSubtitles = parsed.hasSubtitlesIn916Frame === true || parsed.hasSubtitlesOrBurnedText === true || parsed.hasBurnedText === true;
       const hasWatermarkInFrame = parsed.hasWatermarkIn916Frame === true || parsed.hasCenterObstructingWatermark === true;
       const hasSocialOrChannelInFrame = parsed.hasSocialOrChannelLogoIn916Frame === true || parsed.hasSocialMediaOrChannelIdentityIn916Frame === true;

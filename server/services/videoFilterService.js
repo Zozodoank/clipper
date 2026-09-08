@@ -218,10 +218,21 @@ export function checkVideoMetadataCompliance(metadata, productTitle = '', option
     'vlog', 'daily vlog', 'a day in my life', 'podcast', 'reaction',
     'facecam', 'webcam', 'selfie', 'muka', 'wajah', 'grwm', 'get ready with me',
     'try on haul', 'try on', 'outfit', 'ootd', 'mukbang', 'skincare routine',
-    'makeup tutorial', 'gameplay', 'live stream'
+    'makeup tutorial', 'gameplay', 'live stream', 'review jujur', 'pemakaian pribadi',
+    'pengalaman pribadi', 'kulitku', 'mukaku', 'wajahku', 'teteh', 'bunda', 'mamah',
+    'kakak', 'mas', 'mbak', 'abang', 'host', 'curhat', 'keseharian', 'keseharianku',
+    'kenalan', 'ngobrol', 'bincang', 'q&a', 'storytime', 'unboxing bareng', 'cobain bareng',
+    'halo guys', 'halo teman', 'halo semuanya', 'sama aku', 'bareng aku', 'review by',
+    'unbox with me', 'talking head', 'vlogger', 'blogger', 'creator', 'my thoughts',
+    'honest review', 'haul with me', 'my opinion', 'what i think', 'watch me'
   ];
-  if (faceAndVlogKeywords.some(kw => titleLower.includes(kw))) {
-    return { eligible: false, reason: 'Format video terindikasi berpusat pada wajah / vlogger / podcast.' };
+
+  const descPreview = descLower.slice(0, 500);
+  const isFaceTitle = faceAndVlogKeywords.some(kw => titleLower.includes(kw));
+  const isFaceDesc = faceAndVlogKeywords.some(kw => descPreview.includes(kw));
+
+  if (isFaceTitle || isFaceDesc) {
+    return { eligible: false, reason: 'Format video terindikasi berpusat pada wajah / vlogger / persona manusia.' };
   }
 
   // 5. Filter Watermark & Repost Sosmed
@@ -395,14 +406,16 @@ export function inspectFramesLocally(frames, { aspectRatio = '9:16', onProgress 
   const ffmpeg = getFFmpegPath();
   let subtitleBandCount = 0;
   let blackFrameCount = 0;
+  let upperFaceSkinCount = 0;
 
-  // Inspect frames using fast FFmpeg rawvideo pixel stream (grayscale)
+  // Inspect frames using fast FFmpeg rawvideo pixel stream (grayscale & RGB)
   // Center 9:16 area is [iw*0.25 to iw*0.75].
   // Bottom subtitle band is [ih*0.75 to ih*1.0].
+  // Upper face area is [ih*0.08 to ih*0.48] (where vlogger/talking-head faces appear).
   for (const f of frames) {
     if (!f.filePath || !fs.existsSync(f.filePath)) continue;
 
-    // Crop bottom 25% of center 9:16, scale to 100x50 raw grayscale
+    // 1. Crop bottom 25% of center 9:16 for subtitle detection
     const res = spawnSync(ffmpeg, [
       '-y',
       '-i', f.filePath,
@@ -435,6 +448,51 @@ export function inspectFramesLocally(frames, { aspectRatio = '9:16', onProgress 
         subtitleBandCount++;
       }
     }
+
+    // 2. Crop upper 40% of center 9:16 for talking-head / face presence detection
+    // Hands on tabletop demonstrate at the bottom/center, leaving the upper 40% free of skin tones!
+    const faceRes = spawnSync(ffmpeg, [
+      '-y',
+      '-i', f.filePath,
+      '-vf', 'crop=w=iw*0.5:h=ih*0.4:x=iw*0.25:y=ih*0.08,scale=64:48',
+      '-f', 'rawvideo',
+      '-pix_fmt', 'rgb24',
+      '-'
+    ]);
+
+    if (faceRes.status === 0 && faceRes.stdout && faceRes.stdout.length >= 3) {
+      const rgbBuf = faceRes.stdout;
+      const numPixels = Math.floor(rgbBuf.length / 3);
+      let skinPixels = 0;
+
+      for (let i = 0; i < rgbBuf.length; i += 3) {
+        const r = rgbBuf[i];
+        const g = rgbBuf[i + 1];
+        const b = rgbBuf[i + 2];
+
+        // Normalized skin-tone detection in daylight / studio lighting
+        const isSkin = (r > 95 && g > 40 && b > 20 &&
+          (Math.max(r, g, b) - Math.min(r, g, b) > 15) &&
+          Math.abs(r - g) > 15 &&
+          r > g && r > b);
+
+        if (isSkin) skinPixels++;
+      }
+
+      const skinRatio = skinPixels / numPixels;
+      if (skinRatio > 0.28) {
+        upperFaceSkinCount++;
+      }
+    }
+  }
+
+  // Rejection threshold: If > 35% of frames have dominant human face/body in upper 9:16 zone
+  const faceRatio = upperFaceSkinCount / frames.length;
+  if (faceRatio > 0.35) {
+    return {
+      eligible: false,
+      reason: `Analisa visual lokal mendeteksi keberadaan wajah/tubuh manusia di area atas frame (${Math.round(faceRatio * 100)}% frame terindikasi vlogger/orang). Wajib faceless!`
+    };
   }
 
   // Rejection threshold: If > 40% of frames have persistent subtitle strips in the bottom 9:16 zone

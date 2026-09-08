@@ -199,12 +199,16 @@ function loadJobsFromDisk() {
       const obj = JSON.parse(raw);
       let cleaned = false;
       for (const [jobId, jobData] of Object.entries(obj)) {
-        // Purge any failed / error jobs so the history only displays valid, successful jobs
-        if (jobData.stage === 'error' || jobData.lastError || (jobData.stage === 'running' && !jobData.silentLocalPath)) {
-          delete obj[jobId];
-          deleteJobFiles(jobId, outputDir, tempDir);
-          cleaned = true;
-          continue;
+        const hasFinal = jobData.finalLocalPath && fs.existsSync(jobData.finalLocalPath);
+        const hasSilent = jobData.silentLocalPath && fs.existsSync(jobData.silentLocalPath);
+        // If video media exists on disk, ALWAYS preserve it so user history is never lost!
+        if (!hasFinal && !hasSilent) {
+          if (jobData.stage === 'error' || (jobData.stage === 'running' && !jobData.silentLocalPath)) {
+            delete obj[jobId];
+            deleteJobFiles(jobId, outputDir, tempDir);
+            cleaned = true;
+            continue;
+          }
         }
         activeJobs.set(jobId, jobData);
       }
@@ -1083,10 +1087,13 @@ export async function runStage1Pipeline({
     // Evaluasi video dari cache jika tersedia
     if (rawVideoPath) {
       try {
-        updateProgress({ step: 'frames_raw', message: 'Mengekstrak frame video 1080p untuk analisa AI...', progress: 38, status: 'running' });
+        const rawDur = Number(videoMeta?.duration) || 300;
+        const rawInterval = Math.max(1, Math.floor(rawDur / 20));
+        updateProgress({ step: 'frames_raw', message: `Mengekstrak 20 frame video 1080p untuk analisa AI (interval ${rawInterval}s)...`, progress: 38, status: 'running' });
         const { frames: rawFrames } = await extractFrames(rawVideoPath, rawFramesDir, updateProgress, {
-          sampleIntervalSec: 1,
+          sampleIntervalSec: rawInterval,
           maxSampleFrames: 20,
+          duration: rawDur,
         });
         highlight = await selectHighlightWithAI({
           apiKey,
@@ -1301,19 +1308,82 @@ export async function runStage1Pipeline({
     });
 
     updateProgress({ step: 'gpt_scripting', message: 'AI generating Kotak Scene, Context, Naskah...', progress: 80, status: 'running' });
-    const scriptData = await generateAdAdvisorScriptWithAI({
-      apiKey,
-      aiProvider,
-      trimmedFrames,
-      videoMetadata: videoMeta,
-      productTitle,
-      productDescription,
-      shopeeLink,
-      productHook: highlight.productHook,
-      segmentDuration: highlight.duration,
-      sceneDuration,
-      onProgress: updateProgress,
-    });
+    let scriptData;
+    try {
+      scriptData = await generateAdAdvisorScriptWithAI({
+        apiKey,
+        aiProvider,
+        trimmedFrames,
+        videoMetadata: videoMeta,
+        productTitle,
+        productDescription,
+        shopeeLink,
+        productHook: highlight.productHook,
+        segmentDuration: highlight.duration,
+        sceneDuration,
+        onProgress: updateProgress,
+      });
+    } catch (scriptErr) {
+      console.warn(`[Job ${jobId}] AI Scripting failed (${scriptErr.message}). Menggunakan smart fallback naskah Shopee...`);
+      const fallbackHook = highlight.productHook || `Masih repot pakai alat lama yang bikin capek? Untung ada ${productTitle || 'produk ini'}!`;
+      const fallbackVoiceScript = `[00:00] ${fallbackHook}
+[00:04] Praktis digunakan, kualitas premium, dan bikin kerjaan cepat beres.
+[00:09] Bahannya tebal, awet, dan nyaman dipakai sehari-hari.
+[00:14] Harganya murah meriah banget, gak bikin kantong jebol!
+[00:18] Langsung checkout di keranjang pojok kiri bawah sekarang juga!`;
+
+      scriptData = {
+        sampleContext: {
+          productName: productTitle || videoMeta?.title || 'Produk Pilihan',
+          videoDuration: `${Math.round(highlight.duration || 24)} detik`,
+          targetAudience: 'Pengguna harian dan pembeli Shopee',
+          coreProblem: 'Cara konvensional yang merepotkan dan memakan waktu',
+          keyFeatures: ['Praktis & Ringkas', 'Kualitas Teruji', 'Mudah Digunakan'],
+          buyingTrigger: 'Harga murah meriah dan solusi instan',
+        },
+        scenes: [
+          {
+            sceneNumber: 1,
+            timeRange: '00:00 - 00:04',
+            visualDescription: 'Demonstrasi pembuka produk',
+            voiceover: fallbackHook,
+            adAdvisorNotes: 'Hook visual pembuka',
+          },
+          {
+            sceneNumber: 2,
+            timeRange: '00:04 - 00:09',
+            visualDescription: 'Tampilan produk utama',
+            voiceover: 'Praktis digunakan, kualitas premium, dan bikin kerjaan cepat beres.',
+            adAdvisorNotes: 'Pengenalan manfaat',
+          },
+          {
+            sceneNumber: 3,
+            timeRange: '00:09 - 00:14',
+            visualDescription: 'Fitur dan keunggulan',
+            voiceover: 'Bahannya tebal, awet, dan nyaman dipakai sehari-hari.',
+            adAdvisorNotes: 'Bukti kualitas',
+          },
+          {
+            sceneNumber: 4,
+            timeRange: '00:14 - 00:18',
+            visualDescription: 'Penawaran harga terbaik',
+            voiceover: 'Harganya murah meriah banget, gak bikin kantong jebol!',
+            adAdvisorNotes: 'Price appeal',
+          },
+          {
+            sceneNumber: 5,
+            timeRange: '00:18 - 00:22',
+            visualDescription: 'Ajakan checkout keranjang kuning',
+            voiceover: 'Langsung checkout di keranjang pojok kiri bawah sekarang juga!',
+            adAdvisorNotes: 'CTA konversi tinggi',
+          },
+        ],
+        voiceoverScript: fallbackVoiceScript,
+        aiStudioPrompt: fallbackVoiceScript,
+        caption: `Rekomendasi terbaik! ${productTitle || 'Produk viral'} praktis dan berkualitas. Langsung checkout ya! #racunshopee #shopeehaul #viral #rekomendasi`,
+        lexicon_to_replace: {},
+      };
+    }
 
     cleanupTempFiles([], [rawFramesDir, trimmedFramesDir]);
 
@@ -1347,19 +1417,28 @@ export async function runStage1Pipeline({
 
     let ttsSucceeded = false;
     let ttsResult = null;
-    try {
-      ttsResult = await generateVoiceoverTTS({
-        script: scriptData.voiceoverScript || rawVoiceScript,
-        outputPath: autoVoiceoverPath,
-        targetDurationSec: silentDurationSec,
-        onProgress: (msg) => updateProgress({ step: 'tts_generating', message: `🎙️ ${msg}`, progress: 86, status: 'running' }),
-        jobId,
-        lexicon: scriptData.lexicon_to_replace || {},
-      });
-      ttsSucceeded = true;
-    } catch (ttsErr) {
-      console.error(`[Job ${jobId}] Edge-TTS Error:`, ttsErr.message);
-      throw ttsErr;
+    for (let ttsAttempt = 0; ttsAttempt < 3; ttsAttempt++) {
+      try {
+        if (ttsAttempt > 0) {
+          console.log(`[Job ${jobId}] Retrying Edge-TTS (attempt ${ttsAttempt + 1})...`);
+          await new Promise(r => setTimeout(r, 2000));
+        }
+        ttsResult = await generateVoiceoverTTS({
+          script: scriptData.voiceoverScript || rawVoiceScript,
+          outputPath: autoVoiceoverPath,
+          targetDurationSec: silentDurationSec,
+          onProgress: (msg) => updateProgress({ step: 'tts_generating', message: `🎙️ ${msg}`, progress: 86, status: 'running' }),
+          jobId,
+          lexicon: scriptData.lexicon_to_replace || {},
+        });
+        ttsSucceeded = true;
+        break;
+      } catch (ttsErr) {
+        console.error(`[Job ${jobId}] Edge-TTS Attempt ${ttsAttempt + 1} Error:`, ttsErr.message);
+        if (ttsAttempt === 2) {
+          console.warn(`[Job ${jobId}] TTS gagal setelah 3 percobaan. Video 1080p tetap disimpan di history sebagai awaiting_voiceover.`);
+        }
+      }
     }
 
     if (ttsSucceeded && fs.existsSync(autoVoiceoverPath)) {
@@ -1531,6 +1610,46 @@ export async function runStage1Pipeline({
 
     // Immediately clean up temporary files so disk storage is freed
     deleteJobTempDirectory(jobId, tempDir);
+
+    const hasSilentVideo = silentOutputPath && fs.existsSync(silentOutputPath);
+    const hasRawVideo = rawVideoPath && fs.existsSync(rawVideoPath);
+
+    // If 1080p video was already downloaded or rendered into silent 9:16, NEVER delete or purge it!
+    if (hasSilentVideo || hasRawVideo) {
+      console.log(`[Job ${jobId}] ✅ Video asset exists (${hasSilentVideo ? 'silent 9:16' : 'raw 1080p'}). Preserving job in history as awaiting_voiceover.`);
+      const currentJob = activeJobs.get(jobId) || jobMeta;
+      const preservedJob = {
+        ...currentJob,
+        ...extraJobMeta,
+        stage: 'awaiting_voiceover',
+        status: 'awaiting_voiceover',
+        lastError: error.message,
+        errorAt: new Date().toISOString(),
+        silentLocalPath: hasSilentVideo ? silentOutputPath : null,
+        silentVideoUrl: hasSilentVideo ? `/api/video/${silentFileName}` : null,
+        downloadedVideoPath: hasRawVideo ? rawVideoPath : null,
+        hasSilentVideo: Boolean(hasSilentVideo),
+        hasFinalVideo: false,
+        productTitle: productTitle || videoMeta?.title,
+        productDescription: productDescription || '',
+        youtubeUrl: currentYoutubeUrl,
+        shopeeLink: effectiveShopeeLink || shopeeLink || '',
+        videoTitle: videoMeta?.title,
+        highlight,
+      };
+      activeJobs.set(jobId, preservedJob);
+      persistJob(jobId, preservedJob);
+
+      updateProgress({
+        step: 'awaiting_voiceover',
+        message: `Video 1080p tersimpan! (${error.message}). Siap untuk Retry Voiceover.`,
+        progress: 100,
+        status: 'awaiting_voiceover',
+        result: preservedJob,
+      });
+
+      return preservedJob;
+    }
 
     const isAuto = Boolean(extraJobMeta?.isAutoGenerated);
     if (isAuto) {
@@ -1752,10 +1871,22 @@ async function runAutoStage1Worker(run) {
           break; // Success! Move to next product keyword immediately
         } catch (err) {
           console.warn(`[Auto] Candidate rejected for ${product.title}:`, err.message);
-          // Delete any temporary files/directories created during this candidate attempt
-          deleteJobFiles(autoJobId, outputDir, tempDir);
-          activeJobs.delete(autoJobId);
-          deletePersistedJob(autoJobId);
+          // Delete temporary files ONLY IF the job did NOT already save a media asset
+          const existingJob = activeJobs.get(autoJobId);
+          const hasSavedMedia = existingJob && (existingJob.finalLocalPath || existingJob.silentLocalPath || existingJob.downloadedVideoPath);
+          if (!hasSavedMedia) {
+            deleteJobFiles(autoJobId, outputDir, tempDir);
+            activeJobs.delete(autoJobId);
+            deletePersistedJob(autoJobId);
+          } else {
+            run.successfulJobs++;
+            jobSuccess = true;
+            updateAutoRun(run, {
+              message: `✅ [${run.successfulJobs}/${run.maxJobs}] Video 1080p tersimpan (Menunggu Voiceover): "${product.title.slice(0, 30)}..."`,
+              progress: Math.round((run.successfulJobs / run.maxJobs) * 100),
+            });
+            break;
+          }
 
           run.failures.push({ productTitle: product.title, error: err.message, time: new Date().toISOString() });
           

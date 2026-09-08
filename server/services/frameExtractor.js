@@ -39,8 +39,17 @@ export async function extractFrames(videoPath, framesDir, onProgress = () => {},
     }
   }
 
-  const safeInterval = Math.max(0.5, Number(sampleIntervalSec) || 1);
   const safeMaxFrames = Math.max(1, Math.floor(Number(maxSampleFrames) || 20));
+  let safeInterval = Number(sampleIntervalSec);
+  if (!safeInterval || isNaN(safeInterval)) {
+    if (duration && Number(duration) > 0) {
+      safeInterval = Math.max(1, Math.floor(Number(duration) / safeMaxFrames));
+    } else {
+      safeInterval = 1;
+    }
+  } else {
+    safeInterval = Math.max(0.5, safeInterval);
+  }
   onProgress({ step: 'frames', message: `Extracting source timeline frames (1 frame every ${safeInterval}s)...`, progress: 40 });
 
   return new Promise((resolve, reject) => {

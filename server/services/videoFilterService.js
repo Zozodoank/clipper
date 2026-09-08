@@ -289,46 +289,55 @@ export async function sampleFramesFromStream(streamUrl, outputDir, {
   const ffmpegPath = getFFmpegPath();
   const safeMax = Math.max(5, Math.min(20, Number(maxSampleFrames) || 20));
   const safeDuration = Math.max(10, Number(duration) || 60);
-  const sampleInterval = Math.max(1, Math.floor(safeDuration / safeMax));
+
+  // Generate evenly distributed timestamps across the video timeline (avoiding extreme 0s and last seconds)
+  const interval = safeDuration / (safeMax + 1);
+  const samplePoints = [];
+  for (let i = 1; i <= safeMax; i++) {
+    const ts = Math.max(1, Math.min(Math.floor(safeDuration - 2), Math.round(i * interval)));
+    samplePoints.push({ index: i, timestamp: ts });
+  }
 
   onProgress({
     step: 'stream_sampling',
-    message: `Sampling ${safeMax} frame visual langsung dari stream URL (1 frame setiap ${sampleInterval}s)...`,
+    message: `Sampling cepat ${safeMax} keyframe visual langsung dari stream URL (fast seek paralel)...`,
     progress: 25,
   });
 
-  const outputPattern = path.join(outputDir, 'frame_%04d.jpg');
+  console.log(`[VideoFilterService] Fast seek sampling ${safeMax} frames across ${safeDuration}s from stream...`);
 
-  // FFmpeg extracts frames directly from HTTP stream URL.
-  // Using lightweight JPEG (-q:v 3) keeps frames compact (~30KB) to prevent AI payload overload!
-  const args = [
-    '-y',
-    '-ss', '1',
-    '-i', streamUrl,
-    '-vf', `fps=1/${sampleInterval},scale=-2:360`,
-    '-q:v', '3',
-    '-frames:v', String(safeMax),
-    outputPattern
-  ];
+  // Fast seek each timestamp with concurrency limit (5 parallel workers)
+  const concurrency = 5;
+  const executing = [];
+  for (const point of samplePoints) {
+    const frameFile = `frame_${String(point.index).padStart(4, '0')}.jpg`;
+    const outputPath = path.join(outputDir, frameFile);
 
-  console.log(`[VideoFilterService] Sampling stream frames with FFmpeg: ${ffmpegPath} ${args.join(' ')}`);
-
-  await new Promise((resolve, reject) => {
-    const proc = spawn(ffmpegPath, args);
-    let stderr = '';
-
-    proc.stderr.on('data', (d) => stderr += d.toString());
-
-    proc.on('close', (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`FFmpeg stream sampling failed (code ${code}): ${stderr.slice(-300)}`));
-      }
+    const p = new Promise((resolve) => {
+      // Input seeking (-ss before -i) fetches only the keyframe near timestamp via HTTP Range headers
+      const proc = spawn(ffmpegPath, [
+        '-y',
+        '-ss', String(point.timestamp),
+        '-reconnect', '1',
+        '-reconnect_streamed', '1',
+        '-reconnect_delay_max', '4',
+        '-i', streamUrl,
+        '-frames:v', '1',
+        '-vf', 'scale=-2:360',
+        '-q:v', '3',
+        outputPath
+      ]);
+      proc.on('close', () => resolve());
+      proc.on('error', () => resolve());
     });
 
-    proc.on('error', reject);
-  });
+    const e = p.then(() => executing.splice(executing.indexOf(e), 1));
+    executing.push(e);
+    if (executing.length >= concurrency) {
+      await Promise.race(executing);
+    }
+  }
+  await Promise.all(executing);
 
   const frameFiles = fs.readdirSync(outputDir)
     .filter(f => f.endsWith('.png') || f.endsWith('.jpg'))
@@ -338,13 +347,17 @@ export async function sampleFramesFromStream(streamUrl, outputDir, {
     throw new Error('Tidak ada frame yang berhasil diekstrak dari stream URL.');
   }
 
+  const pointMap = new Map(samplePoints.map(p => [`frame_${String(p.index).padStart(4, '0')}.jpg`, p.timestamp]));
+
   const frames = [];
   for (let i = 0; i < frameFiles.length; i++) {
     const filename = frameFiles[i];
     const filePath = path.join(outputDir, filename);
 
     const frameNumber = parseInt(filename.replace('frame_', '').replace('.png', '').replace('.jpg', ''), 10);
-    const timestampInSeconds = Math.max(0, (frameNumber - 1) * sampleInterval);
+    const timestampInSeconds = pointMap.get(filename) !== undefined
+      ? pointMap.get(filename)
+      : Math.max(0, Math.round(i * interval));
 
     const mins = Math.floor(timestampInSeconds / 60).toString().padStart(2, '0');
     const secs = Math.floor(timestampInSeconds % 60).toString().padStart(2, '0');

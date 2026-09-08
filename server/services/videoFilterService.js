@@ -364,8 +364,13 @@ export async function sampleFramesFromStream(streamUrl, outputDir, {
 
 /**
  * ── TAHAP 2: ANALISA LOKAL AREA 9:16 (0 TOKEN AI) ───────────────────────────
- * Inspects frames in the 9:16 central region to detect persistent subtitles,
- * watermarks, or solid/blank frames before calling AI Vision.
+ * Memeriksa frame visual HANYA pada area tengah rasio 9:16.
+ * CATATAN PENTING:
+ * Di KEDUA project (clipper maupun YTCLIPER), bagian kiri dan kanan video 16:9
+ * akan DIBUANG (di-crop keluar pada clipper, dan tertutup pilar pada YTCLIPER).
+ * Oleh karena itu, jika ada watermark/logo di sayap kiri atau kanan, video
+ * TETAP DITERIMA di kedua project karena bagian tersebut tidak akan tampil!
+ * Yang diperiksa dan wajib 100% bersih hanyalah area tengah 9:16.
  */
 export function inspectFramesLocally(frames, { aspectRatio = '9:16', onProgress = () => {} } = {}) {
   if (!Array.isArray(frames) || frames.length < 5) {

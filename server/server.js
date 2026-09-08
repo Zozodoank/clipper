@@ -1921,6 +1921,36 @@ app.post('/api/upload-voiceover', upload.single('audio'), async (req, res) => {
   }
 });
 
+/** Helper function to automatically sync final videos to Android MyProject on Termux */
+function syncVideoToAndroidStorage(finalOutputPath, finalFileName, projectName = 'clipper') {
+  if (process.platform !== 'android' && process.platform !== 'linux') return;
+  if (!finalOutputPath || !fs.existsSync(finalOutputPath)) return;
+
+  const candidateDirs = [
+    path.join('/storage/emulated/0/MyProject', projectName),
+    path.join(process.env.HOME || '', 'storage', 'shared', 'MyProject', projectName),
+    path.join('/sdcard/MyProject', projectName),
+    path.join('/storage/emulated/0/MyProject'),
+    path.join(process.env.HOME || '', 'storage', 'shared', 'MyProject'),
+    path.join('/sdcard/MyProject'),
+  ];
+
+  for (const dir of candidateDirs) {
+    try {
+      const parent = path.dirname(dir);
+      if (fs.existsSync(parent) || fs.existsSync(dir)) {
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        const targetPath = path.join(dir, finalFileName);
+        fs.copyFileSync(finalOutputPath, targetPath);
+        console.log(`[Android Sync] ✅ Video final otomatis disalin ke MyProject HP: ${targetPath}`);
+        return targetPath;
+      }
+    } catch (err) {
+      // Continue to next candidate
+    }
+  }
+}
+
 /** Helper function to process voiceover & final video merge for a single job */
 async function processJobVoiceover(jobId, customScript = null, options = {}) {
   let job = activeJobs.get(jobId);
@@ -2014,6 +2044,9 @@ async function processJobVoiceover(jobId, customScript = null, options = {}) {
     });
 
     cleanupTempFiles([srtPath]);
+
+    // Automatically sync final video to Android MyProject / shared storage if running on Termux/Android
+    syncVideoToAndroidStorage(finalOutputPath, finalFileName, 'clipper');
 
     const cacheBuster = Date.now();
     const updatedJob = {

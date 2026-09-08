@@ -188,20 +188,15 @@ export function checkVideoMetadataCompliance(metadata, productTitle = '', option
   const tagsLower = (metadata.tags || []).map(t => String(t).toLowerCase());
   const combinedText = `${titleLower} ${descLower} ${tagsLower.join(' ')}`;
 
-  // 2. Filter Subtitle & Closed Captions (CC)
+  // 2. Filter Subtitle Hardburned pada Judul / Deskripsi / Tags
+  // Catatan: Soft Closed Captions (CC) di YouTube (metadata.subtitles) adalah teks eksternal yang TIDAK
+  // ter-render pada pixel stream/MP4. Subtitle hardburned yang sesungguhnya dideteksi via OCR di Tahap 2.
   const subtitleKeywords = [
     'sub indo', 'subtitle', 'subtitles', 'sub english', 'eng sub',
     'terjemahan', 'lirik', 'lyrics', 'lyric', 'cc sub'
   ];
   if (subtitleKeywords.some(kw => combinedText.includes(kw))) {
     return { eligible: false, reason: 'Terdeteksi indikasi teks subtitle bawaan pada judul/deskripsi/tags.' };
-  }
-
-  // Cek jika ada track subtitle manual (misal track 'id', 'en', 'ms')
-  const subtitleTracks = Object.keys(metadata.subtitles || {});
-  if (subtitleTracks.length > 0) {
-    // Video memiliki hardburned or manual subtitle tracks
-    return { eligible: false, reason: `Terdeteksi subtitle tracks manual (${subtitleTracks.join(', ')}).` };
   }
 
   // 3. Filter Iklan & Sponsor Komersial

@@ -26,13 +26,13 @@ export default function App() {
     ttsProvider: 'gemini_tts',
     ttsModel: 'gemini-2.5-flash-preview-tts',
     ttsFallbackModel: 'gemini-3.1-flash-tts-preview',
-    ttsVoice: 'Aoede',
+    ttsVoice: 'Despina',
     sceneDuration: 3.3,
     renderMode: 'stage_80',
     hflip: false,
     speedMultiplier: 1,
     enableSubtitles: true,
-    voice: 'Aoede',
+    voice: 'Despina',
   });
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -67,7 +67,7 @@ export default function App() {
             ttsProvider: prev.ttsProvider || data.tts.provider || 'gemini_tts',
             ttsModel: prev.ttsModel || data.tts.model || 'gemini-2.5-flash-preview-tts',
             ttsFallbackModel: prev.ttsFallbackModel || data.tts.fallbackModel || 'gemini-3.1-flash-tts-preview',
-            ttsVoice: prev.ttsVoice || data.tts.voice || 'Aoede',
+            ttsVoice: prev.ttsVoice || data.tts.voice || 'Despina',
           } : {})
         }));
       }

@@ -7,7 +7,7 @@ const __dirname = path.dirname(__filename);
 const MD_PATH = path.join(__dirname, '..', 'TALING_DICTIONARY.md');
 
 /**
- * Modul Fonetik Bahasa Indonesia untuk Model TTS (Fish Audio - Angelica)
+ * Modul Fonetik Bahasa Indonesia untuk Model TTS
  * Memetakan kata dasar taling (/e/ atau /ɛ/) ke bentuk beraksen 'é' agar model TTS
  * melafalkannya dengan tepat, sekaligus menjaga vokal pepet (/ə/) tetap 'e' biasa.
  */

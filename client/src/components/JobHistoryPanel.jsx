@@ -201,6 +201,7 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
           ttsModel: settings?.ttsModel,
           ttsFallbackModel: settings?.ttsFallbackModel,
           ttsVoice: settings?.ttsVoice,
+          apiKey: settings?.geminiApiKey,
         }),
       });
       const data = await res.json();
@@ -245,6 +246,7 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
           ttsModel: settings?.ttsModel,
           ttsFallbackModel: settings?.ttsFallbackModel,
           ttsVoice: settings?.ttsVoice,
+          apiKey: settings?.geminiApiKey,
         }),
       });
       const data = await res.json();
@@ -312,6 +314,7 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
           ttsModel: settings?.ttsModel,
           ttsFallbackModel: settings?.ttsFallbackModel,
           ttsVoice: settings?.ttsVoice,
+          apiKey: settings?.geminiApiKey,
         }),
       });
       const data = await res.json();
@@ -358,6 +361,13 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
       const res = await fetch(`/api/jobs/${job.jobId}/auto-retry/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ttsProvider: settings?.ttsProvider,
+          ttsModel: settings?.ttsModel,
+          ttsFallbackModel: settings?.ttsFallbackModel,
+          ttsVoice: settings?.ttsVoice,
+          apiKey: settings?.geminiApiKey,
+        }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) {

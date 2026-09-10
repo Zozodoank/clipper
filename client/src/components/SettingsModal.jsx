@@ -12,13 +12,13 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings, 
       ttsProvider: 'gemini_tts',
       ttsModel: 'gemini-2.5-flash-preview-tts',
       ttsFallbackModel: 'gemini-3.1-flash-tts-preview',
-      ttsVoice: 'Aoede',
+      ttsVoice: 'Despina',
       sceneDuration: 3.3,
       renderMode: 'stage_80',
       hflip: false,
       speedMultiplier: 1,
       enableSubtitles: true,
-      voice: 'Aoede',
+      voice: 'Despina',
     });
   };
 
@@ -263,27 +263,20 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings, 
                 {/* Voice Selector */}
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-300 mb-1">
-                    Karakter Suara Gemini:
+                    Karakter Suara Gemini (Voice ID):
                   </label>
-                  <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5">
-                    {['Aoede', 'Kore', 'Leda', 'Zephyr', 'Puck', 'Charon', 'Fenrir'].map((v) => {
-                      const isSelected = (settings.ttsVoice || 'Aoede') === v;
-                      return (
-                        <button
-                          key={v}
-                          type="button"
-                          onClick={() => setSettings({ ...settings, ttsVoice: v })}
-                          className={`py-1.5 px-1 rounded-lg text-xs font-medium border text-center transition-all ${
-                            isSelected
-                              ? 'bg-blue-600 border-blue-400 text-white font-bold shadow-sm'
-                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
-                          }`}
-                        >
-                          {v}
-                        </button>
-                      );
-                    })}
+                  <div className="flex items-center justify-between p-2.5 bg-slate-950 border border-blue-500/50 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-blue-400 animate-pulse" />
+                      <span className="font-bold text-xs text-white">Despina</span>
+                    </div>
+                    <span className="text-[10px] text-blue-300 bg-blue-500/20 px-2 py-0.5 rounded border border-blue-500/30 font-medium">
+                      Female • Suara Utama Gemini Flash TTS
+                    </span>
                   </div>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Karakter suara Gemini Flash TTS yang digunakan adalah <strong>Despina</strong> (Natural &amp; Jernih).
+                  </p>
                 </div>
 
                 <div className="p-2 bg-blue-950/30 border border-blue-800/40 rounded-lg text-[10px] text-blue-300/90 leading-relaxed">

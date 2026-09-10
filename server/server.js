@@ -284,7 +284,7 @@ function isQuotaErrorMessage(msg = '') {
   const lower = String(msg).toLowerCase();
   return lower.includes('saldo') || lower.includes('insufficient') ||
     lower.includes('balance') || lower.includes('quota') || lower.includes('kuota') ||
-    lower.includes('credit') || lower.includes('fish audio');
+    lower.includes('credit') || lower.includes('resource_exhausted') || lower.includes('429');
 }
 
 // ─── API Routes ──────────────────────────────────────────────────────────────
@@ -341,11 +341,10 @@ app.get('/api/health', async (req, res) => {
       fallbackModel: process.env.GEMINI_TTS_FALLBACK_MODEL || DEFAULT_GEMINI_TTS_FALLBACK_MODEL,
       voice: process.env.GEMINI_TTS_VOICE || DEFAULT_GEMINI_TTS_VOICE,
       voices: GEMINI_TTS_VOICES,
-      defaultVoice: (process.env.TTS_PROVIDER || 'gemini_tts') === 'gemini_tts' ? 'Aoede (Gemini Flash)' : 'Gadis (Edge-TTS Neural)',
+      defaultVoice: (process.env.TTS_PROVIDER || 'gemini_tts') === 'gemini_tts' ? 'Despina (Gemini Flash)' : 'Gadis (Edge-TTS Neural)',
       voiceName: process.env.GEMINI_TTS_VOICE || DEFAULT_GEMINI_TTS_VOICE,
       geminiConfigured: geminiKeySet,
       edgeTtsConfigured: true,
-      fishAudioConfigured: Boolean(process.env.FISH_AUDIO_API_KEY && !process.env.FISH_AUDIO_API_KEY.startsWith('your_')),
     },
     envFilesLoaded: envFiles.map((envPath) => path.relative(path.resolve(__dirname, '..'), envPath).replace(/\\/g, '/')),
     bandwidthStats: getBandwidthStats(),
@@ -675,7 +674,15 @@ async function runAutoRetryWorker(jobId, run) {
             productTitle: targetTitle,
             productDescription: job.productDescription,
             apiKey: undefined,
-            options: { aiProvider: effectiveAiProvider, autoSearchFallback: false },
+            options: {
+              aiProvider: effectiveAiProvider,
+              autoSearchFallback: false,
+              ttsProvider: run.ttsProvider || job.ttsProvider || process.env.TTS_PROVIDER || 'gemini_tts',
+              ttsModel: run.ttsModel || job.ttsModel || process.env.GEMINI_TTS_MODEL || DEFAULT_GEMINI_TTS_MODEL,
+              ttsFallbackModel: run.ttsFallbackModel || job.ttsFallbackModel || process.env.GEMINI_TTS_FALLBACK_MODEL || DEFAULT_GEMINI_TTS_FALLBACK_MODEL,
+              ttsVoice: run.ttsVoice || job.ttsVoice || process.env.GEMINI_TTS_VOICE || DEFAULT_GEMINI_TTS_VOICE,
+              geminiApiKey: run.geminiApiKey || job.geminiApiKey || process.env.GEMINI_API_KEY,
+            },
             requireCleanGeminiPlan: true,
             onProgress: (p) => updateJobProgress(jobId, {
               ...p,
@@ -773,6 +780,14 @@ app.post('/api/jobs/:jobId/auto-retry/start', async (req, res) => {
     return res.json({ success: true, autoRetry: publicAutoRetryState(existingRun) });
   }
 
+  const { ttsProvider, ttsModel, ttsFallbackModel, ttsVoice, geminiApiKey, apiKey } = req.body || {};
+
+  if (ttsProvider) job.ttsProvider = ttsProvider;
+  if (ttsModel) job.ttsModel = ttsModel;
+  if (ttsFallbackModel) job.ttsFallbackModel = ttsFallbackModel;
+  if (ttsVoice) job.ttsVoice = ttsVoice;
+  if (geminiApiKey || apiKey) job.geminiApiKey = geminiApiKey || apiKey;
+
   const run = {
     jobId,
     status: 'running',
@@ -780,6 +795,11 @@ app.post('/api/jobs/:jobId/auto-retry/start', async (req, res) => {
     searchIteration: 0,
     currentVideoTitle: '',
     message: `Memulai Auto Retry untuk "${job.productTitle}"...`,
+    ttsProvider: ttsProvider || job.ttsProvider,
+    ttsModel: ttsModel || job.ttsModel,
+    ttsFallbackModel: ttsFallbackModel || job.ttsFallbackModel,
+    ttsVoice: ttsVoice || job.ttsVoice,
+    geminiApiKey: geminiApiKey || apiKey || job.geminiApiKey,
     startedAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

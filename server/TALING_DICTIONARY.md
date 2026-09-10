@@ -1,11 +1,11 @@
-# Kamus Fonetik TTS Rindi (Fish Audio)
+# Kamus Fonetik TTS Voiceover
 
-File ini adalah daftar kata taling (/e/ atau /ɛ/) yang diubah otomatis menjadi beraksen `é` sebelum dikirim ke TTS Fish Audio.
+File ini adalah daftar kata taling (/e/ atau /ɛ/) untuk penyesuaian pelafalan voiceover.
 
 ### 📝 Cara Penggunaan & Pengeditan Manual:
-1. **Mengaktifkan Kata**: Tulis `kata_asli = kata_fonetik` (contoh: `keren = kéren`).
-2. **Menonaktifkan Kata** (jika Rindi sudah fasih mengucapkannya dengan huruf 'e' biasa): Beri tanda pagar `#` di depannya (contoh: `# meja = méja`).
-3. **Mengubah Pelafalan**: Cukup ubah kata di sebelah kanan tanda `=` (contoh: `capek = capé`).
+1. **Mengaktifkan Kata**: Tulis `kata_asli = kata_fonetik` (contoh: `keren = keren`).
+2. **Menonaktifkan Kata**: Beri tanda pagar `#` di depannya (contoh: `# meja = meja`).
+3. **Mengubah Pelafalan**: Cukup ubah kata di sebelah kanan tanda `=` (contoh: `capek = cape`).
 4. **Perubahan Otomatis**: Setiap kali Anda menyimpan file ini, server akan langsung membaca perubahan tanpa perlu restart.
 
 ---

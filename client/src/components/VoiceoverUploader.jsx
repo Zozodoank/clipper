@@ -74,6 +74,7 @@ export default function VoiceoverUploader({
           ttsModel: settings?.ttsModel,
           ttsFallbackModel: settings?.ttsFallbackModel,
           ttsVoice: settings?.ttsVoice,
+          apiKey: settings?.geminiApiKey,
         }),
       });
 
@@ -119,25 +120,25 @@ export default function VoiceoverUploader({
     }
   };
 
-  const handleChange = (e) => {
-    e.preventDefault();
+  const handleFileSelect = (e) => {
     if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
+      const file = e.target.files[0];
+      if (file.type.includes('audio') || file.name.match(/\.(mp3|wav|m4a|aac|ogg)$/i)) {
+        setSelectedFile(file);
+      } else {
+        alert('Format audio harus .mp3, .wav, atau .m4a');
+      }
     }
   };
 
-  const handleManualUpload = async () => {
-    if (!selectedFile) {
-      alert('Silakan pilih file audio voiceover terlebih dahulu.');
-      return;
-    }
+  const handleUploadAudio = async () => {
+    if (!selectedFile) return;
 
     setIsUploading(true);
-
     const formData = new FormData();
+    formData.append('voiceover', selectedFile);
     formData.append('jobId', jobId);
-    formData.append('audio', selectedFile);
-    if (editableScript && editableScript.trim()) {
+    if (editableScript.trim()) {
       formData.append('customScript', editableScript.trim());
     }
 
@@ -164,7 +165,7 @@ export default function VoiceoverUploader({
 
   const activeTtsProvider = result?.ttsProvider || settings?.ttsProvider || 'gemini_tts';
   const isGemini = activeTtsProvider === 'gemini_tts';
-  const displayVoice = result?.ttsVoice || settings?.ttsVoice || (isGemini ? 'Aoede (Gemini Flash)' : 'Gadis (Edge-TTS Neural)');
+  const displayVoice = result?.ttsVoice || settings?.ttsVoice || (isGemini ? 'Despina (Gemini Flash)' : 'Gadis (Edge-TTS Neural)');
   const providerBadge = isGemini ? 'Gemini Flash TTS' : 'Edge-TTS Neural';
 
   return (

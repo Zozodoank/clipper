@@ -10,37 +10,19 @@ import { trackBandwidth } from './bandwidthTracker.js';
 // Default Google Gemini Flash TTS Models (Free Tier: 10 RPD)
 export const DEFAULT_GEMINI_TTS_MODEL = 'gemini-2.5-flash-preview-tts';
 export const DEFAULT_GEMINI_TTS_FALLBACK_MODEL = 'gemini-3.1-flash-tts-preview';
-export const DEFAULT_GEMINI_TTS_VOICE = 'Aoede';
+export const DEFAULT_GEMINI_TTS_VOICE = 'Despina';
 
 export const GEMINI_TTS_VOICES = [
-  { id: 'Aoede', name: 'Aoede (Female, Breezy - Rekomendasi)', gender: 'female' },
-  { id: 'Kore', name: 'Kore (Female, Firm)', gender: 'female' },
-  { id: 'Leda', name: 'Leda (Female, Youthful)', gender: 'female' },
-  { id: 'Zephyr', name: 'Zephyr (Female, Bright)', gender: 'female' },
-  { id: 'Puck', name: 'Puck (Male, Upbeat)', gender: 'male' },
-  { id: 'Charon', name: 'Charon (Male, Informative)', gender: 'male' },
-  { id: 'Fenrir', name: 'Fenrir (Male, Excitable)', gender: 'male' },
+  { id: 'Despina', name: 'Despina (Female - Suara Utama Gemini Flash TTS)', gender: 'female' },
 ];
 
 // Default Microsoft Edge TTS Voice: id-ID-GadisNeural (Indonesian female natural voice)
 export const DEFAULT_EDGE_VOICE = 'id-ID-GadisNeural';
 export const DEFAULT_EDGE_VOICE_NAME = 'Gadis (Edge-TTS Neural)';
 
-// Default Fish Audio Model ID (legacy fallback): RINDI
-export const DEFAULT_FISH_MODEL_ID = '9c94fb1d0504466898beb87481df9fa1';
-export const DEFAULT_FISH_VOICE_NAME = 'RINDI';
-
-// Supported emotional tone and audio effect tags in Fish Audio S2.1 Pro
-export const VALID_FISH_TAGS = new Set([
-  'excited', 'emphasis', 'soft', 'whispering', 'breathy',
-  'angry', 'sad', 'embarrassed',
-  'pause', 'long pause', 'sighing', 'laughing', 'chuckling'
-]);
-
 /**
- * Phonetic adaptations for Indonesian words on multilingual TTS models.
- * Solves common mispronunciation issues (such as "banget" sounding like "ban" + "et",
- * and distinguishing taling /e/ vs pepet /ə/ for Fish Audio Angelica).
+ * Phonetic adaptations for Indonesian words on TTS models.
+ * Solves common mispronunciation issues (such as "banget" sounding like "ban" + "et").
  */
 export function applyIndonesianPhoneticFixes(text, { useTaling = false } = {}) {
   if (!text || typeof text !== 'string') return '';
@@ -156,64 +138,6 @@ export function applyIndonesianPhoneticFixes(text, { useTaling = false } = {}) {
     .replace(/\b(\d+)\s*watt\b/gi, '$1 wat');
 }
 
-/**
- * Prepares the script for Fish Audio S2.1 Pro TTS:
- * - Preserves supported emotion & pacing tags: [excited], [emphasis], [soft], [pause], etc.
- * - Strips timestamps, speaker markers, and unsupported brackets.
- * - Applies phonetic Indonesian corrections.
- */
-export function prepareScriptForFishTTS(rawScript, lexicon = {}) {
-  if (!rawScript || typeof rawScript !== 'string') return '';
-
-  let text = rawScript;
-
-  // Extract text after Speaker 1 if script has section headers
-  const speakerMatch = text.match(/(?:Speaker\s*\d*(?:\s*-[^\n\r:]+)?|SPEAKER\s*\d*)[\s\r\n:]+([\s\S]*)$/i);
-  if (speakerMatch && speakerMatch[1].trim()) {
-    text = speakerMatch[1].trim();
-  }
-
-  // Remove timestamp markers like [00:00], [00:05], (00:00)
-  text = text.replace(/\[\s*\d{1,2}:\d{2}(?::\d{2})?\s*\]/g, ' ');
-  text = text.replace(/\(\s*\d{1,2}:\d{2}(?::\d{2})?\s*\)/g, ' ');
-
-  // Filter brackets: Keep ONLY valid Fish Audio emotion/effect tags, strip unsupported ones
-  text = text.replace(/\[\s*([a-zA-Z\s_-]{2,30})\s*\]/g, (match, tag) => {
-    const normalizedTag = tag.trim().toLowerCase();
-    if (VALID_FISH_TAGS.has(normalizedTag)) {
-      return ` [${normalizedTag}] `;
-    }
-    return ' ';
-  });
-
-  // Remove parenthesized directions like (hook), (cta), (senyum), etc.
-  text = text.replace(/\(\s*(?:hook|cta|problem|solution|intrigue|desire|urgency|information|senyum|tunjuk|close-up|cut to)[^)]*\)/gi, ' ');
-
-  // Remove leftover markdown headers, bold/italics, bullet points, asterisks, hashtags
-  text = text.replace(/^#+\s+/gm, '');
-  text = text.replace(/[*_~`]/g, '');
-  text = text.replace(/^[-•*]\s+/gm, '');
-  text = text.replace(/#\w+/g, '');
-
-  // Expand common symbols
-  text = text.replace(/%/g, ' persen ');
-  text = text.replace(/&/g, ' dan ');
-  text = text.replace(/\+/g, ' plus ');
-
-  // Clean whitespace and normalize lines
-  const lines = text
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(line => line.length > 0 && !/^Speaker\s*\d/i.test(line));
-
-  const consolidated = lines.join(' ').replace(/\s{2,}/g, ' ').trim();
-
-  // Convert English terms using LLM/custom phonetic lexicon before Indonesian phonetics
-  const englishApplied = applyEnglishLexicon(consolidated, lexicon);
-
-  // Apply phonetic fixes for Indonesian voiceover (Fish Audio uses taling accents é)
-  return applyIndonesianPhoneticFixes(englishApplied, { useTaling: true });
-}
 
 /**
  * Produces clean standard Indonesian text for video subtitles:
@@ -316,21 +240,6 @@ export function prepareScriptForEdgeTTS(rawScript, lexicon = {}) {
  */
 export const cleanScriptForTTS = prepareScriptForEdgeTTS;
 
-/**
- * Helper to test whether an error is due to Fish Audio quota exhaustion
- */
-export function isFishAudioQuotaError(statusCode, responseText = '') {
-  if (statusCode === 402 || statusCode === 429) return true;
-  const lower = String(responseText).toLowerCase();
-  return lower.includes('insufficient') ||
-    lower.includes('quota') ||
-    lower.includes('credit') ||
-    lower.includes('balance') ||
-    lower.includes('saldo') ||
-    lower.includes('rate limit') ||
-    lower.includes('exceeded') ||
-    lower.includes('free tier limit');
-}
 
 /**
  * Parses raw script into scene lines with target timestamps and emotion tags.
@@ -707,106 +616,6 @@ export async function generateVoiceoverEdgeTTS({
   }
 }
 
-/**
- * Generate Voiceover Audio via Fish Audio API (S2.1 Pro)
- * Legacy fallback when TTS_PROVIDER=fish_audio is explicitly set.
- */
-export async function generateVoiceoverFishAudio({
-  script,
-  outputPath,
-  modelId = null,
-  onProgress = null,
-  jobId = '',
-  lexicon = {},
-}) {
-  const ttsText = prepareScriptForFishTTS(script, lexicon);
-  const subtitleText = cleanScriptForSubtitles(script, lexicon);
-
-  if (!ttsText || ttsText.length < 3) {
-    throw new Error('Naskah suara kosong setelah dibersihkan dari tag/timestamp.');
-  }
-
-  const log = (msg) => {
-    console.log(`[Fish Audio${jobId ? ` ${jobId}` : ''}] ${msg}`);
-    if (onProgress) onProgress(msg);
-  };
-
-  const apiKey = (process.env.FISH_AUDIO_API_KEY || '').trim();
-  if (!apiKey || apiKey.startsWith('your_') || apiKey.endsWith('_here')) {
-    const err = new Error('FISH_AUDIO_API_KEY belum disetel di server/.env. Silakan isi API key Fish Audio Anda.');
-    err.isConfigError = true;
-    throw err;
-  }
-
-  const referenceId = (
-    modelId ||
-    process.env.FISH_AUDIO_MODEL_ID ||
-    DEFAULT_FISH_MODEL_ID
-  ).trim();
-
-  log(`Menghasilkan voice over RINDI (${ttsText.length} karakter): "${ttsText.slice(0, 60)}..."`);
-
-  const outDir = path.dirname(outputPath);
-  if (!fs.existsSync(outDir)) {
-    fs.mkdirSync(outDir, { recursive: true });
-  }
-
-  let response;
-  try {
-    response = await fetch('https://api.fish.audio/v1/tts', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'model': 's2.1-pro-free',
-      },
-      body: JSON.stringify({
-        text: ttsText,
-        reference_id: referenceId,
-        format: 'mp3',
-      }),
-    });
-  } catch (networkErr) {
-    throw new Error(`Gagal menghubungi server Fish Audio: ${networkErr.message}`);
-  }
-
-  if (!response.ok) {
-    const rawError = await response.text().catch(() => '');
-    console.error(`[Fish Audio Error HTTP ${response.status}]`, rawError);
-
-    if (isFishAudioQuotaError(response.status, rawError)) {
-      const quotaErr = new Error(
-        'Kuota harian Fish Audio (S2.1 Pro) telah habis. Proses dihentikan dan Anda dapat menekan tombol Retry besok ketika kuota direset.'
-      );
-      quotaErr.isQuotaError = true;
-      quotaErr.canRetry = true;
-      quotaErr.statusCode = response.status;
-      throw quotaErr;
-    }
-
-    throw new Error(`Fish Audio API HTTP ${response.status}: ${rawError || response.statusText}`);
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-
-  if (buffer.length < 500) {
-    throw new Error('Hasil audio Fish Audio kosong atau file rusak.');
-  }
-
-  fs.writeFileSync(outputPath, buffer);
-  log(`✅ Berhasil menghasilkan voice over RINDI! Ukuran: ${(buffer.length / 1024).toFixed(1)} KB`);
-
-  return {
-    audioPath: outputPath,
-    provider: 'fish_audio',
-    voice: 'RINDI',
-    modelId: referenceId,
-    sizeBytes: buffer.length,
-    cleanScript: subtitleText,
-    spokenScript: ttsText,
-  };
-}
 
 /**
  * Prepares the script for Google Gemini Flash TTS:
@@ -997,6 +806,25 @@ export async function generateVoiceoverGeminiTTS({
     throw err;
   }
 
+  // Measure raw duration for 24kHz 16-bit mono PCM (48,000 bytes/sec)
+  const rawDuration = +(audioBuffer.length / 48000).toFixed(2);
+  let audioFilterArgs = [];
+  let appliedTempo = 1.0;
+
+  // Duration synchronization: If targetDurationSec is specified, ensure speech fits video duration cleanly!
+  if (targetDurationSec && Number(targetDurationSec) > 0) {
+    const targetDur = Number(targetDurationSec);
+    // Voiceover should ideally finish slightly before the video clip ends (~0.6s buffer)
+    const maxTargetAudioDur = Math.max(5, targetDur - 0.6);
+    if (rawDuration > maxTargetAudioDur) {
+      appliedTempo = Math.min(1.4, +(rawDuration / maxTargetAudioDur).toFixed(4));
+      if (appliedTempo > 1.02) {
+        log(`Menyesuaikan tempo suara Gemini (${rawDuration}s -> ~${maxTargetAudioDur.toFixed(1)}s, speed: ${appliedTempo}x) agar sesuai durasi video (${targetDur.toFixed(1)}s)...`);
+        audioFilterArgs = ['-filter:a', `atempo=${appliedTempo.toFixed(4)}`];
+      }
+    }
+  }
+
   // Convert raw PCM / WAV buffer to MP3 using FFmpeg
   log(`Mengonversi audio Gemini ke format MP3...`);
   const ffmpeg = getFFmpegPath();
@@ -1008,7 +836,8 @@ export async function generateVoiceoverGeminiTTS({
     const inputArgs = isWav
       ? `-i "${tempAudioPath}"`
       : `-f s16le -ar 24000 -ac 1 -i "${tempAudioPath}"`;
-    const cmd = `"${ffmpeg}" -y ${inputArgs} -c:a libmp3lame -b:a 128k "${outputPath}"`;
+    const filterArgStr = audioFilterArgs.length > 0 ? audioFilterArgs.join(' ') : '';
+    const cmd = `"${ffmpeg}" -y ${inputArgs} ${filterArgStr} -c:a libmp3lame -b:a 128k "${outputPath}"`;
     execSync(cmd, { stdio: 'pipe' });
   } finally {
     if (fs.existsSync(tempAudioPath)) {
@@ -1017,9 +846,8 @@ export async function generateVoiceoverGeminiTTS({
   }
 
   const stats = fs.statSync(outputPath);
-  // Duration calculation: For 24kHz 16-bit mono PCM (48,000 bytes/sec)
-  const calculatedDuration = +(audioBuffer.length / 48000).toFixed(2);
-  log(`✅ Berhasil menghasilkan voice over Gemini (${usedModel})! Ukuran: ${(stats.size / 1024).toFixed(1)} KB`);
+  const calculatedDuration = +(rawDuration / appliedTempo).toFixed(2);
+  log(`✅ Berhasil menghasilkan voice over Gemini (${usedModel})! Durasi: ${calculatedDuration}s, Ukuran: ${(stats.size / 1024).toFixed(1)} KB`);
 
   return {
     audioPath: outputPath,
@@ -1052,9 +880,7 @@ export async function generateVoiceoverTTS({
 }) {
   const activeProvider = (provider || process.env.TTS_PROVIDER || 'gemini_tts').toLowerCase().trim();
   let result;
-  if (activeProvider === 'fish_audio') {
-    result = await generateVoiceoverFishAudio({ script, outputPath, modelId, onProgress, jobId, lexicon });
-  } else if (activeProvider === 'edge_tts') {
+  if (activeProvider === 'edge_tts') {
     result = await generateVoiceoverEdgeTTS({ script, outputPath, targetDurationSec, voice, onProgress, jobId, lexicon });
   } else {
     // Default to Google Gemini Flash TTS (Primary: gemini-2.5-flash-preview-tts, Fallback: gemini-3.1-flash-tts-preview)

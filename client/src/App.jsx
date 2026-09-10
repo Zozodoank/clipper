@@ -90,8 +90,8 @@ export default function App() {
     setResult(null);
 
     const activeEngineName = (settings.aiProvider === 'gemini' || engineStatus?.activeAiEngine === 'gemini')
-      ? 'Google Gemini Direct'
-      : 'OpenRouter';
+      ? 'Gemini File API + Gemini'
+      : 'FFmpeg + OpenRouter';
 
     setProgressState({
       step: 'start',

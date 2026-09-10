@@ -165,28 +165,15 @@ function getAiClientConfig({ apiKeyOverride, aiProvider } = {}) {
   loadEnvFromDisk();
 
   const reqProvider = (aiProvider || '').trim().toLowerCase();
-  const envEngine = (process.env.ACTIVE_AI_ENGINE || '').trim().toLowerCase();
-  const openRouterKeys = getOpenRouterKeys(apiKeyOverride);
+  const envEngine = (process.env.ACTIVE_AI_ENGINE || 'gemini').trim().toLowerCase();
+  const selectedEngine = reqProvider || envEngine || 'gemini';
 
-  // If Gemini Direct is requested (via provider option, .env ACTIVE_AI_ENGINE=gemini, or AIzaSy API key)
-  const forceGeminiDirect = (
-    apiKeyOverride?.startsWith('AIzaSy') ||
-    reqProvider === 'gemini_direct' ||
-    reqProvider === 'gemini' ||
-    envEngine === 'gemini' ||
-    envEngine === 'gemini_direct' ||
-    (openRouterKeys.length === 0)
-  );
-  if (forceGeminiDirect) {
-    const geminiConf = getDirectGeminiClientConfig({ apiKeyOverride });
-    if (geminiConf) {
-      console.log(`[AIService] Initialize Direct Google Gemini Client (${geminiConf.models[0]})...`);
-      return geminiConf;
+  // Pola 2: FFmpeg + OpenRouter (hanya jika dipilih secara eksplisit oleh pengguna, bukan fallback)
+  if (selectedEngine === 'openrouter') {
+    const openRouterKeys = getOpenRouterKeys(apiKeyOverride);
+    if (openRouterKeys.length === 0) {
+      throw new Error('OPENROUTER_API_KEY belum disetel di server/.env untuk Pola FFmpeg + OpenRouter.');
     }
-  }
-
-  // Priority 1: OpenRouter (high quality free vision models: openrouter/free, Nemotron 30B, Llama 3.2 Vision)
-  if (openRouterKeys.length > 0) {
     const safeIndex = currentOpenRouterKeyIndex % openRouterKeys.length;
     currentOpenRouterKeyIndex++;
 
@@ -209,14 +196,14 @@ function getAiClientConfig({ apiKeyOverride, aiProvider } = {}) {
     };
   }
 
-  // Priority 2: Direct Google Gemini API fallback
-  const directGemini = getDirectGeminiClientConfig({ apiKeyOverride });
-  if (directGemini) {
-    console.log(`[AIService] Initialize Direct Google Gemini Client (${directGemini.models[0]})...`);
-    return directGemini;
+  // Pola 1: Gemini File API + Gemini Direct (Jadikan DEFAULT)
+  const geminiConf = getDirectGeminiClientConfig({ apiKeyOverride });
+  if (geminiConf) {
+    console.log(`[AIService] Initialize Direct Google Gemini Client (${geminiConf.models[0]})...`);
+    return geminiConf;
   }
 
-  throw new Error('API Key belum disetel di server/.env. Silakan tambahkan OPENROUTER_API_KEY atau GEMINI_API_KEY di file server/.env.');
+  throw new Error('GEMINI_API_KEY belum disetel di server/.env untuk Pola Gemini File API + Gemini.');
 }
 
 const DEFAULT_REFRAME = {
@@ -864,40 +851,45 @@ export async function selectHighlightWithAI({
   onProgress = () => { }
 }) {
   const reqProvider = (aiProvider || '').trim().toLowerCase();
-  const envEngine = (process.env.ACTIVE_AI_ENGINE || '').trim().toLowerCase();
-  const forceGemini = (reqProvider === 'gemini_direct' || reqProvider === 'gemini' || envEngine === 'gemini');
+  const envEngine = (process.env.ACTIVE_AI_ENGINE || 'gemini').trim().toLowerCase();
+  const selectedEngine = reqProvider || envEngine || 'gemini';
+  const isGeminiMode = selectedEngine === 'gemini' || selectedEngine === 'gemini_direct';
   const geminiKey = getDirectGeminiApiKey(apiKey);
 
-  if (forceGemini && geminiKey && youtubeUrl && (youtubeUrl.includes('youtube.com') || youtubeUrl.includes('youtu.be'))) {
-    console.log('[AIService Vision] Gemini Direct provider requested. Analyzing with native YouTube Stream URL (0 MB local quota)...');
-    return await analyzeYouTubeVideoWithGemini({
-      youtubeUrl,
-      apiKey,
-      productTitle,
-      productDescription,
-      shopeeLink,
-      sceneDuration,
-      allowFallbackClips,
-      totalDuration: videoMetadata?.duration || 600,
-      onProgress,
-    });
+  // Pola 1: Gemini File API + Gemini (Jadikan DEFAULT)
+  if (isGeminiMode) {
+    if (geminiKey && youtubeUrl && (youtubeUrl.includes('youtube.com') || youtubeUrl.includes('youtu.be'))) {
+      console.log('[AIService Vision] Pola Gemini: Menganalisa via native YouTube Stream URL (0 MB kuota lokal)...');
+      return await analyzeYouTubeVideoWithGemini({
+        youtubeUrl,
+        apiKey,
+        productTitle,
+        productDescription,
+        shopeeLink,
+        sceneDuration,
+        allowFallbackClips,
+        totalDuration: videoMetadata?.duration || 600,
+        onProgress,
+      });
+    }
+
+    if (geminiKey && videoPath && fs.existsSync(videoPath)) {
+      console.log('[AIService Vision] Pola Gemini: Menganalisa via Gemini File API...');
+      return await analyzeVideoWithGeminiFileApi({
+        videoPath,
+        apiKey,
+        productTitle,
+        productDescription,
+        shopeeLink,
+        sceneDuration,
+        allowFallbackClips,
+        onProgress,
+      });
+    }
   }
 
-  if (forceGemini && videoPath && fs.existsSync(videoPath)) {
-    console.log('[AIService Vision] Gemini Direct provider requested. Analyzing with Gemini File API...');
-    return await analyzeVideoWithGeminiFileApi({
-      videoPath,
-      apiKey,
-      productTitle,
-      productDescription,
-      shopeeLink,
-      sceneDuration,
-      allowFallbackClips,
-      onProgress,
-    });
-  }
-
-  let activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
+  // Jika Pola 2 (FFmpeg + OpenRouter) atau Pola 1 fallback ke frame analisis via Gemini Direct
+  let activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider: selectedEngine });
   let { client, models: modelFallbackList, provider } = activeConfig;
   let activeModel = modelFallbackList[0];
 
@@ -1236,53 +1228,14 @@ Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
       const isFatalAuthOrBilling = status === 401 || status === 402 || msg.includes('balance') || msg.includes('credits');
       const isOverloaded = status === 503 || status === 529 || status === 429 || msg.includes('overload') || msg.includes('overloaded') || msg.includes('rate limit');
 
-      // Fallback ke Google Gemini Direct API jika OpenRouter bermasalah, overload, atau habis saldo
-      if (!hasFallenBackToGemini) {
-        const geminiKey = getDirectGeminiApiKey(apiKey);
-        if (geminiKey && (isFatalAuthOrBilling || isOverloaded || attempt >= totalRetries - 1)) {
-          if (videoPath && fs.existsSync(videoPath)) {
-            clearInterval(heartbeat);
-            console.warn(`[AIService Vision] OpenRouter ${isOverloaded ? 'overloaded' : 'error'} (${err.message}). Beralih ke Google Gemini File API fallback...`);
-            onProgress({
-              step: 'gemini_vision',
-              message: 'OpenRouter overloaded/gagal. Mengaktifkan fallback Google Gemini File API...',
-              progress: 47,
-            });
-            return await analyzeVideoWithGeminiFileApi({
-              videoPath,
-              apiKey,
-              productTitle,
-              productDescription,
-              shopeeLink,
-              sceneDuration,
-              allowFallbackClips,
-              onProgress,
-            });
-          }
-
-          const geminiFallback = getDirectGeminiClientConfig({ apiKeyOverride: apiKey });
-          if (geminiFallback) {
-            console.warn(`[AIService Vision] OpenRouter ${isOverloaded ? 'overloaded' : 'error'} (${err.message}). Beralih langsung ke Google Gemini Direct API fallback (${geminiFallback.models[0]})...`);
-            onProgress({
-              step: 'gemini_vision',
-              message: `OpenRouter overloaded. Mengaktifkan direct fallback Google Gemini API (${geminiFallback.models[0]})...`,
-              progress: 47,
-            });
-            hasFallenBackToGemini = true;
-            client = geminiFallback.client;
-            modelFallbackList = geminiFallback.models;
-            provider = geminiFallback.provider;
-            totalRetries = modelFallbackList.length;
-            attempt = -1; // Reset agar loop berikutnya mulai dari model Gemini pertama
-            continue;
-          }
-        }
-      }
-
       if (attempt < totalRetries - 1) {
-        console.warn(`[AIService Vision] AI model ${activeModel} failed (attempt ${attempt + 1}, status: ${status}, error: ${msg}). Trying next fallback model...`);
+        console.warn(`[AIService Vision] AI model ${activeModel} (${provider}) gagal (attempt ${attempt + 1}, status: ${status}, error: ${msg}). Mencoba model berikutnya...`);
         continue;
       }
+
+      clearInterval(heartbeat);
+      console.error(`[AIService ${provider} ${activeModel}] Error:`, err);
+      throw new Error(formatApiError(err, activeModel, provider));
 
       clearInterval(heartbeat);
       console.error(`[AIService ${provider} ${activeModel}] Error:`, err);
@@ -1544,28 +1497,8 @@ Return strict JSON in this format:
       const isFatalAuthOrBilling = status === 401 || status === 402 || msg.includes('balance') || msg.includes('credits');
       const isOverloaded = status === 503 || status === 529 || status === 429 || msg.includes('overload') || msg.includes('overloaded') || msg.includes('rate limit');
 
-      // Fallback langsung ke Google Gemini Direct API jika OpenRouter bermasalah, overload, atau habis saldo
-      if (!hasFallenBackToGemini) {
-        const geminiFallback = getDirectGeminiClientConfig({ apiKeyOverride: apiKey });
-        if (geminiFallback && (isFatalAuthOrBilling || isOverloaded || attempt >= totalRetries - 1)) {
-          console.warn(`[AIService Scripting] OpenRouter ${isOverloaded ? 'overloaded' : 'error'} (${err.message}). Beralih langsung ke Google Gemini Direct API fallback (${geminiFallback.models[0]})...`);
-          onProgress({
-            step: 'gpt_scripting',
-            message: `OpenRouter overloaded. Mengaktifkan direct fallback Google Gemini API (${geminiFallback.models[0]})...`,
-            progress: 78,
-          });
-          hasFallenBackToGemini = true;
-          client = geminiFallback.client;
-          modelFallbackList = geminiFallback.models;
-          provider = geminiFallback.provider;
-          totalRetries = modelFallbackList.length;
-          attempt = -1; // Reset agar loop berikutnya mulai dari model Gemini pertama
-          continue;
-        }
-      }
-
       if (attempt < totalRetries - 1) {
-        console.warn(`[AIService Scripting] AI model ${activeModel} failed (attempt ${attempt + 1}, status: ${status}, error: ${msg}). Trying next fallback model...`);
+        console.warn(`[AIService Scripting] AI model ${activeModel} (${provider}) gagal (attempt ${attempt + 1}, status: ${status}, error: ${msg}). Mencoba model berikutnya...`);
         continue;
       }
 

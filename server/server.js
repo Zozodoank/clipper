@@ -303,17 +303,15 @@ app.get('/api/health', async (req, res) => {
   ).trim().replace(/^["']|["']$/g, '');
   const geminiKeySet = Boolean(rawGeminiKey && !rawGeminiKey.startsWith('your_') && !rawGeminiKey.endsWith('_here'));
 
-  const envActive = (process.env.ACTIVE_AI_ENGINE || '').trim().toLowerCase();
-  let activeAiEngine = 'none';
-  if (envActive === 'gemini' && geminiKeySet) {
-    activeAiEngine = 'gemini';
-  } else if (envActive === 'openrouter' && openRouterKeySet) {
+  const envActive = (process.env.ACTIVE_AI_ENGINE || 'gemini').trim().toLowerCase();
+  let activeAiEngine = 'gemini';
+  if (envActive === 'openrouter' && openRouterKeySet) {
     activeAiEngine = 'openrouter';
-  } else if (geminiKeySet && !openRouterKeySet) {
+  } else if (geminiKeySet) {
     activeAiEngine = 'gemini';
   } else if (openRouterKeySet) {
     activeAiEngine = 'openrouter';
-  } else if (geminiKeySet) {
+  } else {
     activeAiEngine = 'gemini';
   }
 
@@ -334,7 +332,7 @@ app.get('/api/health', async (req, res) => {
     geminiModel: 'gemini-1.5-flash',
     geminiFileApiConfigured: geminiKeySet,
     activeAiEngine,
-    defaultAiProvider: activeAiEngine !== 'none' ? activeAiEngine : 'openrouter',
+    defaultAiProvider: activeAiEngine !== 'none' ? activeAiEngine : 'gemini',
     tts: {
       available: true,
       provider: process.env.TTS_PROVIDER || 'gemini_tts',
@@ -978,16 +976,14 @@ export async function runStage1Pipeline({
       }
     }
 
-    const envEngine = (process.env.ACTIVE_AI_ENGINE || '').trim().toLowerCase();
+    const envEngine = (process.env.ACTIVE_AI_ENGINE || 'gemini').trim().toLowerCase();
     const rawOpenRouterKey = (process.env.OPENROUTER_API_KEY || '').trim();
     const openRouterKeySet = Boolean(rawOpenRouterKey && !rawOpenRouterKey.startsWith('your_') && !rawOpenRouterKey.endsWith('_here'));
     const rawGeminiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '').trim();
     const geminiKeySet = Boolean(rawGeminiKey && !rawGeminiKey.startsWith('your_') && !rawGeminiKey.endsWith('_here'));
     const defaultProvider = envEngine === 'openrouter'
       ? 'openrouter'
-      : envEngine === 'gemini'
-        ? 'gemini'
-        : (openRouterKeySet ? 'openrouter' : (geminiKeySet ? 'gemini' : 'openrouter'));
+      : (geminiKeySet ? 'gemini' : (openRouterKeySet ? 'openrouter' : 'gemini'));
     const aiProvider = options.aiProvider || jobMeta.aiProvider || defaultProvider;
     const sceneDuration = Number(options.sceneDuration) || 3.3;
 

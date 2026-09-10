@@ -61,21 +61,24 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings, 
 
             <div className="grid grid-cols-1 gap-2.5 pt-1">
               
-              {/* Option 1: Google Gemini Direct */}
+              {/* Option 1: Pola Gemini File API + Gemini (DEFAULT) */}
               <div
                 onClick={() => setSettings({ ...settings, aiProvider: 'gemini' })}
-                className={`p-3 rounded-xl border text-left cursor-pointer transition-all relative ${
+                className={`p-3.5 rounded-xl border text-left cursor-pointer transition-all relative ${
                   currentProvider === 'gemini'
                     ? 'bg-blue-950/40 border-blue-500 text-white shadow-lg shadow-blue-950/50 ring-1 ring-blue-500/50'
                     : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-850'
                 }`}
               >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-bold text-xs flex items-center gap-1.5">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-bold text-xs flex items-center gap-1.5 text-blue-300">
                     <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-                    Google Gemini Direct (Primary / Fast)
+                    Pola Gemini File API + Gemini
                   </span>
                   <div className="flex items-center gap-1">
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-blue-500/20 text-blue-300 border-blue-500/40">
+                      DEFAULT
+                    </span>
                     <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
                       isGeminiReady
                         ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
@@ -84,38 +87,41 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings, 
                       {isGeminiReady ? 'READY IN .ENV' : 'MISSING KEY'}
                     </span>
                     {currentProvider === 'gemini' && (
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-blue-500/20 text-blue-300 border-blue-500/30">
-                        ACTIVE
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-emerald-500/20 text-emerald-300 border-emerald-500/30 flex items-center gap-0.5">
+                        <Check className="w-2.5 h-2.5" /> ACTIVE
                       </span>
                     )}
                   </div>
                 </div>
-                <div className="text-[11px] font-mono font-semibold mb-1 text-blue-300">
-                  gemini-1.5-flash (File API Fallback)
+                <div className="text-[11px] font-mono font-semibold mb-1 text-blue-200/90">
+                  Gemini File API (Analisa Video) + Gemini Direct (Script, Caption &amp; Hashtag)
                 </div>
-                <p className="text-[10px] leading-tight opacity-80">
-                  Direct Google Gemini API dengan File API. Dipakai sebagai secondary fallback otomatis jika OpenRouter limit/gagal, atau saat dipilih langsung.
+                <p className="text-[10px] leading-relaxed text-slate-400">
+                  Analisa video langsung menggunakan Google Gemini File API (stream/file) dan pembuatan naskah voiceover, caption, serta hashtag via model Gemini Direct. Pilihan default utama: cepat, akurat, hemat bandwidth, dan tanpa cross-fallback.
                 </p>
                 {currentProvider === 'gemini' && (
                   <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-blue-400 animate-ping" />
                 )}
               </div>
 
-              {/* Option 2: OpenRouter Multi-Model */}
+              {/* Option 2: Pola FFmpeg + OpenRouter (Manual - BUKAN Fallback) */}
               <div
                 onClick={() => setSettings({ ...settings, aiProvider: 'openrouter' })}
-                className={`p-3 rounded-xl border text-left cursor-pointer transition-all relative ${
+                className={`p-3.5 rounded-xl border text-left cursor-pointer transition-all relative ${
                   currentProvider === 'openrouter'
                     ? 'bg-emerald-950/40 border-emerald-500 text-white shadow-lg shadow-emerald-950/50 ring-1 ring-emerald-500/50'
                     : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-850'
                 }`}
               >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-bold text-xs flex items-center gap-1.5">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-bold text-xs flex items-center gap-1.5 text-emerald-300">
                     <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                    OpenRouter Free Tier (Utama)
+                    Pola FFmpeg + OpenRouter
                   </span>
                   <div className="flex items-center gap-1">
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-slate-800 text-slate-300 border-slate-700">
+                      MANUAL (BUKAN FALLBACK)
+                    </span>
                     <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
                       isOpenRouterReady
                         ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
@@ -124,17 +130,17 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings, 
                       {isOpenRouterReady ? 'READY IN .ENV' : 'MISSING KEY'}
                     </span>
                     {currentProvider === 'openrouter' && (
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-emerald-500/20 text-emerald-300 border-emerald-500/30">
-                        ACTIVE
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-emerald-500/20 text-emerald-300 border-emerald-500/30 flex items-center gap-0.5">
+                        <Check className="w-2.5 h-2.5" /> ACTIVE
                       </span>
                     )}
                   </div>
                 </div>
-                <div className="text-[11px] font-mono font-semibold mb-1 text-emerald-300">
-                  OpenRouter Free &bull; Llama 3.2 Vision &bull; Nemotron 30B
+                <div className="text-[11px] font-mono font-semibold mb-1 text-emerald-200/90">
+                  FFmpeg Frame Extraction (Analisa Video) + OpenRouter Free (Script, Caption &amp; Hashtag)
                 </div>
-                <p className="text-[10px] leading-tight opacity-80">
-                  Prioritas utama model vision gratis berkualitas tinggi tanpa watermark &amp; bebas subtitle bawaan. Otomatis fallback ke Gemini Direct.
+                <p className="text-[10px] leading-relaxed text-slate-400">
+                  Analisa video melalui ekstraksi frame berkala via FFmpeg dan pembuatan naskah voiceover, caption, serta hashtag via model OpenRouter Free (:free). Hanya aktif jika Anda pilih secara manual (bukan fallback otomatis).
                 </p>
                 {currentProvider === 'openrouter' && (
                   <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />

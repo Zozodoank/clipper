@@ -67,24 +67,41 @@ function loadEnvFromDisk() {
   }
 }
 
+// Daftar model OpenRouter gratis 100% (tidak pernah memotong saldo / dilarang menggunakan openrouter/auto)
 const defaultOpenRouterModels = [
   "openrouter/free",
-  "openrouter/auto",
   "google/gemini-2.0-flash-exp:free",
   "meta-llama/llama-3.2-11b-vision-instruct:free",
   "minimax/minimax-m3:free",
   "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
 ];
 
+function isBannedOpenRouterModel(modelName) {
+  const m = String(modelName || '').trim().toLowerCase();
+  return (
+    m === 'openrouter/auto' ||
+    m === 'openrouter:auto' ||
+    m === 'auto' ||
+    m.endsWith('/auto') ||
+    m.endsWith(':auto')
+  );
+}
+
 function getEffectiveOpenRouterModels() {
   loadEnvFromDisk();
   const customModel = (process.env.OPENROUTER_MODEL || '').trim();
   const models = [];
   if (customModel && !customModel.startsWith('your_') && !customModel.endsWith('_here')) {
-    models.push(customModel);
+    if (isBannedOpenRouterModel(customModel)) {
+      console.warn(`[AIService] ⚠️ Model '${customModel}' DITOLAK / DILARANG karena dapat menguras saldo OpenRouter (berbayar/auto-routing). Menggunakan model gratis (:free) saja.`);
+    } else {
+      models.push(customModel);
+    }
   }
   for (const m of defaultOpenRouterModels) {
-    if (!models.includes(m)) models.push(m);
+    if (!models.includes(m) && !isBannedOpenRouterModel(m)) {
+      models.push(m);
+    }
   }
   return models;
 }
@@ -167,7 +184,7 @@ function getAiClientConfig({ apiKeyOverride, aiProvider } = {}) {
     }
   }
 
-  // Priority 1: OpenRouter (high quality free vision models: MiniMax M3, openrouter/free, openrouter/auto, Nemotron 30B)
+  // Priority 1: OpenRouter (high quality free vision models: MiniMax M3, openrouter/free, Nemotron 30B)
   if (openRouterKeys.length > 0) {
     const safeIndex = currentOpenRouterKeyIndex % openRouterKeys.length;
     currentOpenRouterKeyIndex++; 

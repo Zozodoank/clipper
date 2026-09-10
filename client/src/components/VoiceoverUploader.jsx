@@ -17,6 +17,7 @@ import {
 export default function VoiceoverUploader({
   jobId,
   result,
+  settings,
   voiceoverScript,
   aiStudioPrompt,
   onUploadSuccess,
@@ -52,7 +53,7 @@ export default function VoiceoverUploader({
 
   const hasAudioAlready = Boolean(result?.voiceoverAudioUrl || result?.hasFinalVideo || result?.stage === 'completed');
 
-  // 1. One-click Automatic Voiceover Generator (Edge-TTS Gadis)
+  // 1. One-click Automatic Voiceover Generator (Gemini Flash TTS / Edge-TTS)
   const handleAutoGenerateTTS = async () => {
     if (!editableScript || !editableScript.trim()) {
       alert('Naskah voiceover tidak boleh kosong.');
@@ -69,6 +70,10 @@ export default function VoiceoverUploader({
         body: JSON.stringify({
           jobId,
           customScript: editableScript.trim(),
+          ttsProvider: settings?.ttsProvider,
+          ttsModel: settings?.ttsModel,
+          ttsFallbackModel: settings?.ttsFallbackModel,
+          ttsVoice: settings?.ttsVoice,
         }),
       });
 
@@ -157,6 +162,11 @@ export default function VoiceoverUploader({
     }
   };
 
+  const activeTtsProvider = result?.ttsProvider || settings?.ttsProvider || 'gemini_tts';
+  const isGemini = activeTtsProvider === 'gemini_tts';
+  const displayVoice = result?.ttsVoice || settings?.ttsVoice || (isGemini ? 'Aoede (Gemini Flash)' : 'Gadis (Edge-TTS Neural)');
+  const providerBadge = isGemini ? 'Gemini Flash TTS' : 'Edge-TTS Neural';
+
   return (
     <div className="glass-panel-glow rounded-2xl p-6 shadow-xl border-emerald-500/30 relative overflow-hidden">
       {/* Decorative Blur */}
@@ -165,20 +175,26 @@ export default function VoiceoverUploader({
       {/* Header */}
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center border ${
+            isGemini ? 'bg-blue-500/20 border-blue-500/30 text-blue-400' : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+          }`}>
             <Volume2 className="w-4 h-4" />
           </div>
           <div>
             <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <span>Voiceover AI Otomatis (Suara Gadis)</span>
-              <span className="text-[10px] uppercase font-bold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                Edge-TTS Neural
+              <span>Voiceover AI Otomatis</span>
+              <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${
+                isGemini
+                  ? 'bg-blue-500/20 text-blue-300 border-blue-500/30'
+                  : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+              }`}>
+                {providerBadge}
               </span>
             </h3>
             <p className="text-xs text-slate-400">
               {hasAudioAlready
-                ? 'Suara narasi wanita Indonesia Gadis sudah otomatis terpasang & subtitle tersinkron.'
-                : 'Suara narasi wanita Indonesia Gadis otomatis disintesis via Edge-TTS & disinkronkan ke video 9:16.'}
+                ? `Suara narasi ${displayVoice} sudah otomatis terpasang & subtitle tersinkron.`
+                : `Suara narasi ${displayVoice} otomatis disintesis via ${providerBadge} & disinkronkan ke video 9:16.`}
             </p>
           </div>
         </div>
@@ -197,7 +213,7 @@ export default function VoiceoverUploader({
           <div className="flex items-center justify-between text-xs">
             <span className="font-semibold text-slate-300 flex items-center gap-1.5">
               <Music className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Preview Suara: <strong className="text-emerald-300">{result.ttsVoice || 'Gadis (Edge-TTS Neural)'}</strong></span>
+              <span>Preview Suara: <strong className={isGemini ? 'text-blue-300' : 'text-emerald-300'}>{displayVoice}</strong></span>
             </span>
             <span className="text-[11px] text-slate-500 font-mono">Audio Sinkron 9:16</span>
           </div>
@@ -236,18 +252,20 @@ export default function VoiceoverUploader({
           className={`w-full py-3 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-lg ${
             isGeneratingTTS || isUploading
               ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
+              : isGemini
+              ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-500 hover:from-blue-500 hover:to-indigo-400 text-white shadow-blue-500/20 hover:scale-[1.01] active:scale-[0.99]'
               : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 text-white shadow-emerald-500/20 hover:scale-[1.01] active:scale-[0.99]'
           }`}
         >
           {isGeneratingTTS ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Menghasilkan Voiceover Gadis (Edge-TTS)...</span>
+              <span>Menghasilkan Voiceover ({providerBadge})...</span>
             </>
           ) : (
             <>
               <Sparkles className="w-4 h-4" />
-              <span>Generate Ulang Suara Gadis & Render Video</span>
+              <span>Generate Ulang Suara ({displayVoice}) &amp; Render Video</span>
             </>
           )}
         </button>

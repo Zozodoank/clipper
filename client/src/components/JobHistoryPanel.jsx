@@ -26,7 +26,7 @@ function StageBadge({ stage }) {
   );
 }
 
-export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId, refreshSignal = 0 }) {
+export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId, refreshSignal = 0, settings }) {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
@@ -185,7 +185,7 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
     }
   };
 
-  // 1. Single-Job Generate TTS & Merge Video via Edge-TTS (Gadis) with AI Phonetic Detection
+  // 1. Single-Job Generate TTS & Merge Video via Gemini Flash / Edge-TTS with AI Phonetic Detection
   const handleGenerateTTSForJob = async (e, job) => {
     e.stopPropagation();
     if (processingTtsId || batchStatus.isRunning) return;
@@ -195,7 +195,13 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
       const res = await fetch('/api/retry-job-tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId: job.jobId }),
+        body: JSON.stringify({
+          jobId: job.jobId,
+          ttsProvider: settings?.ttsProvider,
+          ttsModel: settings?.ttsModel,
+          ttsFallbackModel: settings?.ttsFallbackModel,
+          ttsVoice: settings?.ttsVoice,
+        }),
       });
       const data = await res.json();
 
@@ -233,7 +239,13 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
       const res = await fetch('/api/retry-job-tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId: job.jobId }),
+        body: JSON.stringify({
+          jobId: job.jobId,
+          ttsProvider: settings?.ttsProvider,
+          ttsModel: settings?.ttsModel,
+          ttsFallbackModel: settings?.ttsFallbackModel,
+          ttsVoice: settings?.ttsVoice,
+        }),
       });
       const data = await res.json();
 
@@ -282,12 +294,26 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
     e.stopPropagation();
     if (awaitingVoiceoverJobs.length === 0) return;
 
-    if (!confirm(`Generate TTS otomatis untuk ${awaitingVoiceoverJobs.length} job yang menunggu dengan Edge-TTS (Gadis)?\n\nSistem di server akan memproses seluruh video satu per satu secara berurutan tanpa terputus.`)) {
+    const isGemini = (settings?.ttsProvider || 'gemini_tts') === 'gemini_tts';
+    const ttsEngineLabel = isGemini
+      ? `Gemini Flash (${settings?.ttsModel || 'gemini-2.5-flash-preview-tts'})`
+      : 'Edge-TTS (Gadis)';
+
+    if (!confirm(`Generate TTS otomatis untuk ${awaitingVoiceoverJobs.length} job yang menunggu dengan ${ttsEngineLabel}?\n\nSistem di server akan memproses seluruh video satu per satu secara berurutan tanpa terputus.`)) {
       return;
     }
 
     try {
-      const res = await fetch('/api/batch-tts/start', { method: 'POST' });
+      const res = await fetch('/api/batch-tts/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ttsProvider: settings?.ttsProvider,
+          ttsModel: settings?.ttsModel,
+          ttsFallbackModel: settings?.ttsFallbackModel,
+          ttsVoice: settings?.ttsVoice,
+        }),
+      });
       const data = await res.json();
 
       if (!res.ok || !data.success) {
@@ -698,7 +724,12 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
                       )}
                       {isAwaitingVoiceover && (
                         <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                          ✨ Siap TTS Gadis
+                          ✨ Siap TTS
+                        </span>
+                      )}
+                      {job.ttsVoice && job.stage === 'completed' && (
+                        <span className="text-[10px] text-blue-400 font-semibold bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20">
+                          🎙️ {job.ttsVoice}
                         </span>
                       )}
                     </div>
@@ -718,7 +749,7 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
                                 ? 'bg-slate-800 text-slate-400 border border-slate-700 cursor-not-allowed'
                                 : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-400 text-white shadow-emerald-500/20 hover:scale-[1.02] active:scale-[0.98]'
                             }`}
-                            title="Generate suara Gadis & satukan subtitle ke video final secara otomatis"
+                            title="Generate suara voiceover & satukan subtitle ke video final secara otomatis"
                           >
                             {isProcessingThis ? (
                               <>

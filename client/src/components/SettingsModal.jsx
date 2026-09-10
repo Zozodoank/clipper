@@ -9,13 +9,16 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings, 
   const resetDefaults = () => {
     setSettings({
       aiProvider: engineStatus?.activeAiEngine || 'gemini',
+      ttsProvider: 'gemini_tts',
+      ttsModel: 'gemini-2.5-flash-preview-tts',
+      ttsFallbackModel: 'gemini-3.1-flash-tts-preview',
+      ttsVoice: 'Aoede',
       sceneDuration: 3.3,
       renderMode: 'stage_80',
       hflip: false,
       speedMultiplier: 1,
       enableSubtitles: true,
-      enableTts: false,
-      voice: 'alloy',
+      voice: 'Aoede',
     });
   };
 
@@ -145,23 +148,156 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings, 
             </p>
           </div>
 
-          {/* Voiceover TTS Engine Information */}
-          <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+          {/* Voiceover TTS Engine Configuration */}
+          <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-4">
             <div className="flex items-center justify-between">
               <span className="font-semibold text-slate-200 flex items-center gap-1.5 text-sm">
                 <Volume2 className="w-4 h-4 text-emerald-400" />
-                <span>Mesin Voiceover: Microsoft Edge TTS</span>
+                <span>Mesin Voiceover (Text-to-Speech)</span>
               </span>
-              <span className="text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                Voice: Gadis (Neural)
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
+                (settings.ttsProvider || 'gemini_tts') === 'gemini_tts'
+                  ? 'text-blue-400 bg-blue-500/10 border-blue-500/30'
+                  : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
+              }`}>
+                {(settings.ttsProvider || 'gemini_tts') === 'gemini_tts' ? 'Gemini Flash TTS' : 'Edge-TTS'}
               </span>
             </div>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Menggunakan Microsoft Edge TTS Neural Bahasa Indonesia model <strong className="text-emerald-300">Gadis</strong> (<code className="text-slate-300 font-mono text-[10px]">id-ID-GadisNeural</code>).
-            </p>
-            <p className="text-[11px] text-emerald-400/90">
-              ✨ <em>100% Gratis & tanpa batas kuota (unmetered), tanpa perlu API key, bersuara jernih dan natural dengan kamus fonetik otomatis.</em>
-            </p>
+
+            {/* Provider Options */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* Option 1: Google Gemini Flash TTS (Default) */}
+              <div
+                onClick={() => setSettings({ ...settings, ttsProvider: 'gemini_tts' })}
+                className={`p-3 rounded-xl border text-left cursor-pointer transition-all relative ${
+                  (settings.ttsProvider || 'gemini_tts') === 'gemini_tts'
+                    ? 'bg-blue-950/40 border-blue-500 text-white shadow-lg shadow-blue-950/50 ring-1 ring-blue-500/50'
+                    : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-850'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold text-xs flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                    Google Gemini TTS
+                  </span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-blue-500/20 text-blue-300 border-blue-500/30">
+                    DEFAULT
+                  </span>
+                </div>
+                <div className="text-[11px] font-mono font-semibold mb-1 text-blue-300">
+                  {settings.ttsModel || 'gemini-2.5-flash-preview-tts'}
+                </div>
+                <p className="text-[10px] leading-tight text-slate-400">
+                  Free Tier (10 RPD) dengan suara natural studio Google. Fallback otomatis ke model Gemini cadangan (bukan Edge TTS).
+                </p>
+                {(settings.ttsProvider || 'gemini_tts') === 'gemini_tts' && (
+                  <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-blue-400 animate-ping" />
+                )}
+              </div>
+
+              {/* Option 2: Microsoft Edge TTS */}
+              <div
+                onClick={() => setSettings({ ...settings, ttsProvider: 'edge_tts' })}
+                className={`p-3 rounded-xl border text-left cursor-pointer transition-all relative ${
+                  (settings.ttsProvider || 'gemini_tts') === 'edge_tts'
+                    ? 'bg-emerald-950/40 border-emerald-500 text-white shadow-lg shadow-emerald-950/50 ring-1 ring-emerald-500/50'
+                    : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-850'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold text-xs flex items-center gap-1.5">
+                    <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                    Microsoft Edge TTS
+                  </span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-emerald-500/20 text-emerald-300 border-emerald-500/30">
+                    MANUAL ONLY
+                  </span>
+                </div>
+                <div className="text-[11px] font-mono font-semibold mb-1 text-emerald-300">
+                  id-ID-GadisNeural
+                </div>
+                <p className="text-[10px] leading-tight text-slate-400">
+                  Bebas batas kuota harian (unmetered). Hanya aktif bila Anda memilih opsi ini (bukan fallback otomatis).
+                </p>
+                {(settings.ttsProvider || 'gemini_tts') === 'edge_tts' && (
+                  <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                )}
+              </div>
+            </div>
+
+            {/* Detailed Gemini TTS Controls */}
+            {(settings.ttsProvider || 'gemini_tts') === 'gemini_tts' && (
+              <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Primary Model */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      Model Utama (Primary):
+                    </label>
+                    <select
+                      value={settings.ttsModel || 'gemini-2.5-flash-preview-tts'}
+                      onChange={(e) => setSettings({ ...settings, ttsModel: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:border-blue-500 focus:outline-none"
+                    >
+                      <option value="gemini-2.5-flash-preview-tts">gemini-2.5-flash-preview-tts (Default)</option>
+                      <option value="gemini-3.1-flash-tts-preview">gemini-3.1-flash-tts-preview</option>
+                    </select>
+                  </div>
+
+                  {/* Fallback Model */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      Model Cadangan (Fallback):
+                    </label>
+                    <select
+                      value={settings.ttsFallbackModel || 'gemini-3.1-flash-tts-preview'}
+                      onChange={(e) => setSettings({ ...settings, ttsFallbackModel: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:border-blue-500 focus:outline-none"
+                    >
+                      <option value="gemini-3.1-flash-tts-preview">gemini-3.1-flash-tts-preview (Default Fallback)</option>
+                      <option value="gemini-2.5-flash-preview-tts">gemini-2.5-flash-preview-tts</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Voice Selector */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                    Karakter Suara Gemini:
+                  </label>
+                  <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5">
+                    {['Aoede', 'Kore', 'Leda', 'Zephyr', 'Puck', 'Charon', 'Fenrir'].map((v) => {
+                      const isSelected = (settings.ttsVoice || 'Aoede') === v;
+                      return (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => setSettings({ ...settings, ttsVoice: v })}
+                          className={`py-1.5 px-1 rounded-lg text-xs font-medium border text-center transition-all ${
+                            isSelected
+                              ? 'bg-blue-600 border-blue-400 text-white font-bold shadow-sm'
+                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                          }`}
+                        >
+                          {v}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="p-2 bg-blue-950/30 border border-blue-800/40 rounded-lg text-[10px] text-blue-300/90 leading-relaxed">
+                  🛡️ <strong>Info Kuota Free Tier:</strong> Google Gemini Flash TTS dibatasi <strong>10 RPD</strong> per API key. Sesuai preferensi Anda, jika kuota harian habis, sistem <em>tidak akan</em> mengalihkan (fallback) secara otomatis ke Edge TTS.
+                </div>
+              </div>
+            )}
+
+            {/* Edge TTS Notice */}
+            {(settings.ttsProvider || 'gemini_tts') === 'edge_tts' && (
+              <div className="p-2.5 bg-emerald-950/30 border border-emerald-800/40 rounded-lg text-[11px] text-emerald-300/90 leading-relaxed">
+                🎙️ <strong>Edge TTS Aktif:</strong> Menggunakan suara <code className="text-white font-bold">id-ID-GadisNeural</code>. Bebas kuota harian. Opsi ini aktif karena dipilih secara eksplisit.
+              </div>
+            )}
           </div>
 
           {/* Scene Duration / Pacing - Shopee FYP Formula */}

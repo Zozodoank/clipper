@@ -7,6 +7,21 @@ import { getFFmpegPath } from './binaryChecker.js';
 import { applyEnglishLexicon, restoreStandardText } from './dictionaryService.js';
 import { trackBandwidth } from './bandwidthTracker.js';
 
+// Default Google Gemini Flash TTS Models (Free Tier: 10 RPD)
+export const DEFAULT_GEMINI_TTS_MODEL = 'gemini-2.5-flash-preview-tts';
+export const DEFAULT_GEMINI_TTS_FALLBACK_MODEL = 'gemini-3.1-flash-tts-preview';
+export const DEFAULT_GEMINI_TTS_VOICE = 'Aoede';
+
+export const GEMINI_TTS_VOICES = [
+  { id: 'Aoede', name: 'Aoede (Female, Breezy - Rekomendasi)', gender: 'female' },
+  { id: 'Kore', name: 'Kore (Female, Firm)', gender: 'female' },
+  { id: 'Leda', name: 'Leda (Female, Youthful)', gender: 'female' },
+  { id: 'Zephyr', name: 'Zephyr (Female, Bright)', gender: 'female' },
+  { id: 'Puck', name: 'Puck (Male, Upbeat)', gender: 'male' },
+  { id: 'Charon', name: 'Charon (Male, Informative)', gender: 'male' },
+  { id: 'Fenrir', name: 'Fenrir (Male, Excitable)', gender: 'male' },
+];
+
 // Default Microsoft Edge TTS Voice: id-ID-GadisNeural (Indonesian female natural voice)
 export const DEFAULT_EDGE_VOICE = 'id-ID-GadisNeural';
 export const DEFAULT_EDGE_VOICE_NAME = 'Gadis (Edge-TTS Neural)';
@@ -794,24 +809,267 @@ export async function generateVoiceoverFishAudio({
 }
 
 /**
- * Main TTS entry point: Defaults to Edge-TTS Gadis (free & unmetered).
+ * Prepares the script for Google Gemini Flash TTS:
+ * - Strips timestamps, speaker markers, brackets, and markdown.
+ * - Applies English dictionary replacement and standard Indonesian phonetics.
+ */
+export function prepareScriptForGeminiTTS(rawScript, lexicon = {}) {
+  if (!rawScript || typeof rawScript !== 'string') return '';
+
+  let text = rawScript;
+
+  // Extract text after Speaker 1 if script has section headers
+  const speakerMatch = text.match(/(?:Speaker\s*\d*(?:\s*-[^\n\r:]+)?|SPEAKER\s*\d*)[\s\r\n:]+([\s\S]*)$/i);
+  if (speakerMatch && speakerMatch[1].trim()) {
+    text = speakerMatch[1].trim();
+  }
+
+  // Remove timestamp markers like [00:00], [00:05], (00:00)
+  text = text.replace(/\[\s*\d{1,2}:\d{2}(?::\d{2})?\s*\]/g, ' ');
+  text = text.replace(/\(\s*\d{1,2}:\d{2}(?::\d{2})?\s*\)/g, ' ');
+
+  // Convert [pause] or [long pause] to natural punctuation pause
+  text = text.replace(/\[\s*(?:long\s*)?pause\s*\]/gi, ', ');
+
+  // Remove ALL bracketed tags (e.g. [excited], [soft], etc.)
+  text = text.replace(/\[\s*[^\]]+\s*\]/g, ' ');
+
+  // Remove parenthesized directions like (hook), (cta), (senyum), etc.
+  text = text.replace(/\(\s*(?:hook|cta|problem|solution|intrigue|desire|urgency|information|senyum|tunjuk|close-up|cut to)[^)]*\)/gi, ' ');
+
+  // Remove leftover markdown headers, bold/italics, bullet points, asterisks, hashtags
+  text = text.replace(/^#+\s+/gm, '');
+  text = text.replace(/[*_~`]/g, '');
+  text = text.replace(/^[-•*]\s+/gm, '');
+  text = text.replace(/#\w+/g, '');
+
+  // Expand common symbols
+  text = text.replace(/%/g, ' persen ');
+  text = text.replace(/&/g, ' dan ');
+  text = text.replace(/\+/g, ' plus ');
+
+  const lines = text
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line.length > 0 && !/^Speaker\s*\d/i.test(line));
+
+  const consolidated = lines.join(' ').replace(/\s{2,}/g, ' ').trim();
+
+  // Convert English terms using phonetic dictionary
+  const englishApplied = applyEnglishLexicon(consolidated, lexicon);
+
+  // Apply standard Indonesian phonetics without accent marks
+  return applyIndonesianPhoneticFixes(englishApplied, { useTaling: false });
+}
+
+/**
+ * Generate Voiceover Audio via Google Gemini Flash TTS (Free Tier - 10 RPD).
+ * Primary Model: gemini-2.5-flash-preview-tts
+ * Fallback Model: gemini-3.1-flash-tts-preview
+ * Prebuilt Voices: Aoede, Kore, Leda, Zephyr, Puck, Charon, Fenrir
+ */
+export async function generateVoiceoverGeminiTTS({
+  script,
+  outputPath,
+  targetDurationSec = null,
+  modelId = null,
+  fallbackModelId = null,
+  voice = null,
+  apiKey = null,
+  onProgress = null,
+  jobId = '',
+  lexicon = {},
+}) {
+  const ttsText = prepareScriptForGeminiTTS(script, lexicon);
+  const subtitleText = cleanScriptForSubtitles(script, lexicon);
+
+  if (!ttsText || ttsText.length < 3) {
+    throw new Error('Naskah suara kosong setelah dibersihkan dari tag/timestamp.');
+  }
+
+  const effectiveApiKey = (apiKey || process.env.GEMINI_API_KEY || '').trim();
+  if (!effectiveApiKey || effectiveApiKey.startsWith('your_') || effectiveApiKey.endsWith('_here')) {
+    const err = new Error('GEMINI_API_KEY belum disetel di server/.env. Silakan isi API key Google Gemini Anda.');
+    err.isConfigError = true;
+    throw err;
+  }
+
+  const primaryModel = (modelId || process.env.GEMINI_TTS_MODEL || DEFAULT_GEMINI_TTS_MODEL).trim();
+  const fallbackModel = (fallbackModelId || process.env.GEMINI_TTS_FALLBACK_MODEL || DEFAULT_GEMINI_TTS_FALLBACK_MODEL).trim();
+  const selectedVoice = (voice || process.env.GEMINI_TTS_VOICE || DEFAULT_GEMINI_TTS_VOICE).trim();
+
+  const log = (msg) => {
+    console.log(`[Gemini TTS${jobId ? ` ${jobId}` : ''}] ${msg}`);
+    if (onProgress) onProgress(msg);
+  };
+
+  const outDir = path.dirname(outputPath);
+  if (!fs.existsSync(outDir)) {
+    fs.mkdirSync(outDir, { recursive: true });
+  }
+
+  const modelsToTry = [primaryModel];
+  if (fallbackModel && fallbackModel !== primaryModel) {
+    modelsToTry.push(fallbackModel);
+  }
+
+  let lastError = null;
+  let audioBuffer = null;
+  let usedModel = primaryModel;
+
+  for (let mIdx = 0; mIdx < modelsToTry.length; mIdx++) {
+    const currentModel = modelsToTry[mIdx];
+    usedModel = currentModel;
+    try {
+      log(`Menghasilkan voice over dengan model ${currentModel} (Suara: ${selectedVoice}, ${ttsText.length} karakter)...`);
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${effectiveApiKey}`;
+      const payload = {
+        contents: [
+          {
+            parts: [
+              { text: ttsText }
+            ]
+          }
+        ],
+        generationConfig: {
+          responseModalities: ["AUDIO"],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: selectedVoice
+              }
+            }
+          }
+        }
+      };
+
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!resp.ok) {
+        const errBody = await resp.text().catch(() => '');
+        let parsedErr;
+        try { parsedErr = JSON.parse(errBody); } catch {}
+        const msg = parsedErr?.error?.message || errBody || resp.statusText;
+        const errObj = new Error(`Gemini TTS API HTTP ${resp.status}: ${msg}`);
+        errObj.status = resp.status;
+        errObj.statusCode = resp.status;
+        if (resp.status === 429 || msg.toLowerCase().includes('quota') || msg.toLowerCase().includes('resource_exhausted')) {
+          errObj.isQuotaError = true;
+          errObj.canRetry = true;
+        }
+        throw errObj;
+      }
+
+      const data = await resp.json();
+      const part = data.candidates?.[0]?.content?.parts?.[0];
+      const audioBase64 = part?.inlineData?.data;
+
+      if (!audioBase64) {
+        throw new Error(`Model ${currentModel} tidak mengembalikan data audio.`);
+      }
+
+      audioBuffer = Buffer.from(audioBase64, 'base64');
+      if (audioBuffer.length < 500) {
+        throw new Error(`Data audio dari ${currentModel} terlalu kecil atau kosong.`);
+      }
+
+      log(`Berhasil menerima audio dari ${currentModel} (${(audioBuffer.length / 1024).toFixed(1)} KB)`);
+      break; // Success!
+    } catch (err) {
+      lastError = err;
+      console.warn(`[Gemini TTS] Model ${currentModel} gagal:`, err.message);
+      if (mIdx < modelsToTry.length - 1) {
+        log(`Model ${currentModel} gagal (${err.message.slice(0, 60)}). Mencoba model fallback: ${modelsToTry[mIdx + 1]}...`);
+      }
+    }
+  }
+
+  if (!audioBuffer) {
+    // IMPORTANT: Edge TTS is NOT an automatic fallback (user explicitly requested Edge TTS not be fallback)
+    const err = new Error(`Gagal menghasilkan voice over dengan Gemini TTS (${modelsToTry.join(' & ')}): ${lastError?.message}`);
+    err.isQuotaError = lastError?.isQuotaError || false;
+    err.canRetry = true;
+    throw err;
+  }
+
+  // Convert raw PCM / WAV buffer to MP3 using FFmpeg
+  log(`Mengonversi audio Gemini ke format MP3...`);
+  const ffmpeg = getFFmpegPath();
+  const isWav = audioBuffer.length >= 4 && audioBuffer.toString('ascii', 0, 4) === 'RIFF';
+  const tempAudioPath = path.join(outDir, `temp_gemini_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${isWav ? 'wav' : 'raw'}`);
+  fs.writeFileSync(tempAudioPath, audioBuffer);
+
+  try {
+    const inputArgs = isWav
+      ? `-i "${tempAudioPath}"`
+      : `-f s16le -ar 24000 -ac 1 -i "${tempAudioPath}"`;
+    const cmd = `"${ffmpeg}" -y ${inputArgs} -c:a libmp3lame -b:a 128k "${outputPath}"`;
+    execSync(cmd, { stdio: 'pipe' });
+  } finally {
+    if (fs.existsSync(tempAudioPath)) {
+      try { fs.unlinkSync(tempAudioPath); } catch {}
+    }
+  }
+
+  const stats = fs.statSync(outputPath);
+  // Duration calculation: For 24kHz 16-bit mono PCM (48,000 bytes/sec)
+  const calculatedDuration = +(audioBuffer.length / 48000).toFixed(2);
+  log(`✅ Berhasil menghasilkan voice over Gemini (${usedModel})! Ukuran: ${(stats.size / 1024).toFixed(1)} KB`);
+
+  return {
+    audioPath: outputPath,
+    provider: 'gemini_tts',
+    voice: selectedVoice,
+    modelId: usedModel,
+    sizeBytes: stats.size,
+    cleanScript: subtitleText,
+    spokenScript: ttsText,
+    totalDuration: calculatedDuration,
+  };
+}
+
+/**
+ * Main TTS entry point: Defaults to Google Gemini Flash TTS (Free Tier: 10 RPD).
+ * Edge-TTS is only used when explicitly requested by user in settings.
  */
 export async function generateVoiceoverTTS({
   script,
   outputPath,
   targetDurationSec = null,
+  provider = null,
   voice = null,
   modelId = null,
+  fallbackModelId = null,
+  apiKey = null,
   onProgress = null,
   jobId = '',
   lexicon = {},
 }) {
-  const provider = (process.env.TTS_PROVIDER || 'edge_tts').toLowerCase().trim();
+  const activeProvider = (provider || process.env.TTS_PROVIDER || 'gemini_tts').toLowerCase().trim();
   let result;
-  if (provider === 'fish_audio') {
+  if (activeProvider === 'fish_audio') {
     result = await generateVoiceoverFishAudio({ script, outputPath, modelId, onProgress, jobId, lexicon });
-  } else {
+  } else if (activeProvider === 'edge_tts') {
     result = await generateVoiceoverEdgeTTS({ script, outputPath, targetDurationSec, voice, onProgress, jobId, lexicon });
+  } else {
+    // Default to Google Gemini Flash TTS (Primary: gemini-2.5-flash-preview-tts, Fallback: gemini-3.1-flash-tts-preview)
+    result = await generateVoiceoverGeminiTTS({
+      script,
+      outputPath,
+      targetDurationSec,
+      voice,
+      modelId,
+      fallbackModelId,
+      apiKey,
+      onProgress,
+      jobId,
+      lexicon,
+    });
   }
 
   if (result && result.audioPath && fs.existsSync(result.audioPath)) {

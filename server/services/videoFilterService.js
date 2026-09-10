@@ -636,13 +636,12 @@ export function inspectFramesLocally(frames, { aspectRatio = '9:16', onProgress 
     };
   }
 
-  // 6. Tolak jika video didominasi wajah / vlog manusia (> 45% frame atau > 12 frame terdeteksi)
-  // Kemunculan wajah sesekali ditoleransi lokal (scene wajah akan dibuang oleh AI & backend)
-  const faceRatio = humanFaceSkinCount / frameBuffers.length;
-  if (faceRatio > 0.45 || humanFaceSkinCount > 12) {
+  // 6. Tolak jika wajah manusia muncul lebih dari 5 frame (> 5 frame terdeteksi, batas maksimal toleransi 1-5 frame)
+  // Kemunculan wajah sesekali (1-5 frame) ditoleransi lokal (scene wajah akan dibuang oleh AI & backend)
+  if (humanFaceSkinCount > 5) {
     return {
       eligible: false,
-      reason: `Analisa visual lokal mendeteksi video didominasi wajah/vlog manusia (${humanFaceSkinCount}/${frameBuffers.length} frame). Tidak cukup cuplikan peragaan produk tangan yang bersih.`
+      reason: `Analisa visual lokal mendeteksi keberadaan wajah manusia melebihi batas toleransi (${humanFaceSkinCount} frame, batas maks 5 frame). Wajib video peragaan produk tangan yang bersih!`
     };
   }
 

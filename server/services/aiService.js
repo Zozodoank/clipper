@@ -353,8 +353,9 @@ If REJECTED:
 {
   "status": "reject",
   "detectedProduct": "<nama produk di video>",
-  "isExactProductMatch": false,
+  "isExactProductMatch": true,
   "isFacelessIn916Frame": false,
+  "hasHumanOrFaceAnywhereInVideo": false,
   "hasFaceIn916Frame": false,
   "hasAnimatedGraphicOverlayIn916Frame": false,
   "hasBumperPhotoInFrame": false,
@@ -365,8 +366,12 @@ If REJECTED:
   "hasFloatingTextIn916Frame": false,
   "hasOnlyPhysicalProductText": false,
   "isAiGeneratedOrSynthetic": false,
-  "reason": "<alasan penolakan spesifik dan akurat dalam bahasa Indonesia, misal: 'Terdapat grafis animasi overlay/stiker pada video', 'Foto bumper statis terdeteksi', 'Logo channel statis masuk ke frame 9:16', 'Menampilkan wajah orang/vlogger', 'Mengandung subtitle ucapan', atau 'Produk tidak cocok'>"
-}`;
+  "reason": "<PILIH SATU alasan akurat: 'Terdapat grafis animasi overlay/stiker pada video' ATAU 'Foto bumper statis terdeteksi' ATAU 'Logo channel statis masuk ke frame 9:16' ATAU 'Menampilkan wajah orang/vlogger' ATAU 'Mengandung subtitle ucapan' ATAU 'Produk tidak cocok'>"
+}
+
+CRITICAL RULES FOR REJECTION OUTPUT:
+1. "isExactProductMatch": Set to true if the item demonstrated in the video matches "${coreNoun}", even if rejected for policy. Set to false ONLY if the product is physically different.
+2. "reason": DILARANG KERAS MENGGABUNGKAN DUA ALASAN BERBEDA (seperti "produk tidak cocok dengan menampilkan wajah atau vlogger")! Berikan SATU alasan tunggal yang presisi. Stiker kartun, animasi, atau emoji BUKAN vlogger manusia!`;
 
   const candidateModels = ['gemini-3.6-flash', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-3.5-flash'];
   let parsed = null;
@@ -441,9 +446,15 @@ If REJECTED:
 
   if (shouldReject) {
     let rejectionMsg = reasonText;
-    if (!rejectionMsg) {
+
+    // Sanitize nonsensical AI conflations (e.g. "produk tidak cocok dengan menampilkan wajah atau vlogger")
+    const lower = (rejectionMsg || '').toLowerCase();
+    const hasConflation = lower.includes('tidak cocok') && (lower.includes('wajah') || lower.includes('vlog') || lower.includes('manusia') || lower.includes('orang'));
+    const isGraphicMisclassifiedAsFace = (hasGraphic || mentionsGraphicInReason) && (lower.includes('wajah') || lower.includes('vlog') || lower.includes('manusia'));
+
+    if (hasConflation || isGraphicMisclassifiedAsFace || !rejectionMsg) {
       if (hasGraphic || mentionsGraphicInReason) {
-        rejectionMsg = 'Video ditolak oleh AI: Mengandung grafis animasi overlay atau stiker tempelan di frame 9:16.';
+        rejectionMsg = 'Video ditolak oleh AI: Mengandung grafis animasi overlay, stiker kartun, atau elemen grafis tempelan di frame 9:16.';
       } else if (hasBumper || mentionsBumperInReason) {
         rejectionMsg = 'Video ditolak oleh AI: Mengandung foto bumper atau kartu intro statis pada video.';
       } else if (hasSocialOrChannelInFrame || hasStaticLogo || mentionsLogoInFrame) {
@@ -453,7 +464,7 @@ If REJECTED:
       } else if (hasSubtitles || hasFloatingText || mentionsSubtitlesInReason) {
         rejectionMsg = 'Video ditolak oleh AI: Mengandung subtitle, teks mengambang, atau stiker teks editan pada frame 9:16.';
       } else if (hasFace || mentionsFaceInReason) {
-        rejectionMsg = 'Video ditolak oleh AI: Menampilkan wajah atau manusia di dalam frame (wajib 100% faceless tabletop dari awal sampai akhir).';
+        rejectionMsg = 'Video ditolak oleh AI: Menampilkan wajah atau vlogger manusia di dalam video (wajib 100% faceless tabletop dari awal sampai akhir).';
       } else if (isSynthetic) {
         rejectionMsg = 'Video ditolak oleh AI: Terdeteksi video AI / animasi / CGI, bukan demonstrasi fisik nyata.';
       } else if (isMatchFalse) {
@@ -684,8 +695,9 @@ If REJECTED:
 {
   "status": "reject",
   "detectedProduct": "<nama produk di video>",
-  "isExactProductMatch": false,
+  "isExactProductMatch": true,
   "isFacelessIn916Frame": false,
+  "hasHumanOrFaceAnywhereInVideo": false,
   "hasFaceIn916Frame": false,
   "hasAnimatedGraphicOverlayIn916Frame": false,
   "hasBumperPhotoInFrame": false,
@@ -696,8 +708,12 @@ If REJECTED:
   "hasFloatingTextIn916Frame": false,
   "hasOnlyPhysicalProductText": false,
   "isAiGeneratedOrSynthetic": false,
-  "reason": "<alasan penolakan spesifik dan akurat dalam bahasa Indonesia, misal: 'Terdapat grafis animasi overlay/stiker pada video', 'Foto bumper statis terdeteksi', 'Logo channel statis masuk ke frame 9:16', 'Menampilkan wajah orang/vlogger', 'Mengandung subtitle ucapan', atau 'Produk tidak cocok'>"
-}`;
+  "reason": "<PILIH SATU alasan akurat: 'Terdapat grafis animasi overlay/stiker pada video' ATAU 'Foto bumper statis terdeteksi' ATAU 'Logo channel statis masuk ke frame 9:16' ATAU 'Menampilkan wajah orang/vlogger' ATAU 'Mengandung subtitle ucapan' ATAU 'Produk tidak cocok'>"
+}
+
+CRITICAL RULES FOR REJECTION OUTPUT:
+1. "isExactProductMatch": Set to true if the item demonstrated in the video matches "${coreNoun}", even if rejected for policy. Set to false ONLY if the product is physically different.
+2. "reason": DILARANG KERAS MENGGABUNGKAN DUA ALASAN BERBEDA (seperti "produk tidak cocok dengan menampilkan wajah atau vlogger")! Berikan SATU alasan tunggal yang presisi. Stiker kartun, animasi, atau emoji BUKAN vlogger manusia!`;
 
     const candidateModels = ['gemini-1.5-flash', 'gemini-flash-latest'];
     let parsed = null;
@@ -772,9 +788,15 @@ If REJECTED:
 
     if (shouldReject) {
       let rejectionMsg = reasonText;
-      if (!rejectionMsg) {
+
+      // Sanitize nonsensical AI conflations (e.g. "produk tidak cocok dengan menampilkan wajah atau vlogger")
+      const lower = (rejectionMsg || '').toLowerCase();
+      const hasConflation = lower.includes('tidak cocok') && (lower.includes('wajah') || lower.includes('vlog') || lower.includes('manusia') || lower.includes('orang'));
+      const isGraphicMisclassifiedAsFace = (hasGraphic || mentionsGraphicInReason) && (lower.includes('wajah') || lower.includes('vlog') || lower.includes('manusia'));
+
+      if (hasConflation || isGraphicMisclassifiedAsFace || !rejectionMsg) {
         if (hasGraphic || mentionsGraphicInReason) {
-          rejectionMsg = 'Video ditolak oleh AI: Mengandung grafis animasi overlay atau stiker tempelan di frame 9:16.';
+          rejectionMsg = 'Video ditolak oleh AI: Mengandung grafis animasi overlay, stiker kartun, atau elemen grafis tempelan di frame 9:16.';
         } else if (hasBumper || mentionsBumperInReason) {
           rejectionMsg = 'Video ditolak oleh AI: Mengandung foto bumper atau kartu intro statis pada video.';
         } else if (hasSocialOrChannelInFrame || hasStaticLogo || mentionsLogoInFrame) {
@@ -784,7 +806,7 @@ If REJECTED:
         } else if (hasSubtitles || hasFloatingText || mentionsSubtitlesInReason) {
           rejectionMsg = 'Video ditolak oleh AI: Mengandung subtitle, teks mengambang, atau stiker teks editan pada frame 9:16.';
         } else if (hasFace || mentionsFaceInReason) {
-          rejectionMsg = 'Video ditolak oleh AI: Menampilkan wajah atau manusia di dalam frame (wajib 100% faceless tabletop dari awal sampai akhir).';
+          rejectionMsg = 'Video ditolak oleh AI: Menampilkan wajah atau vlogger manusia di dalam video (wajib 100% faceless tabletop dari awal sampai akhir).';
         } else if (isSynthetic) {
           rejectionMsg = 'Video ditolak oleh AI: Terdeteksi video AI / animasi / CGI, bukan demonstrasi fisik nyata.';
         } else if (isMatchFalse) {
@@ -1038,8 +1060,9 @@ If REJECTED:
 {
   "status": "reject",
   "detectedProduct": "<nama produk di video>",
-  "isExactProductMatch": false,
+  "isExactProductMatch": true,
   "isFacelessIn916Frame": false,
+  "hasHumanOrFaceAnywhereInFrames": false,
   "hasFaceIn916Frame": false,
   "hasAnimatedGraphicOverlayIn916Frame": false,
   "hasBumperPhotoInFrame": false,
@@ -1050,8 +1073,12 @@ If REJECTED:
   "hasFloatingTextIn916Frame": false,
   "hasOnlyPhysicalProductText": false,
   "isAiGeneratedOrSynthetic": false,
-  "reason": "<alasan penolakan yang jelas dalam bahasa Indonesia, misal: 'Terdapat grafis animasi overlay/stiker pada video', 'Foto bumper statis terdeteksi', 'Logo channel statis masuk ke frame 9:16', 'Menampilkan wajah vlogger', 'Mengandung subtitle ucapan'>"
-}`;
+  "reason": "<PILIH SATU alasan akurat: 'Terdapat grafis animasi overlay/stiker pada video' ATAU 'Foto bumper statis terdeteksi' ATAU 'Logo channel statis masuk ke frame 9:16' ATAU 'Menampilkan wajah orang/vlogger' ATAU 'Mengandung subtitle ucapan' ATAU 'Produk tidak cocok'>"
+}
+
+CRITICAL RULES FOR REJECTION OUTPUT:
+1. "isExactProductMatch": Set to true if the item demonstrated in the video matches "${effectiveTitle}", even if rejected for policy. Set to false ONLY if the product is physically different.
+2. "reason": DILARANG KERAS MENGGABUNGKAN DUA ALASAN BERBEDA (seperti "produk tidak cocok dengan menampilkan wajah atau vlogger")! Berikan SATU alasan tunggal yang presisi. Stiker kartun, animasi, atau emoji BUKAN vlogger manusia!`;
 
   // Bound frames to at most 20 keyframes for OpenRouter / Vision APIs to prevent token exhaustion and rate limits
   let evalFrames = frames || [];
@@ -1183,7 +1210,13 @@ Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
 
       if (shouldReject) {
         let rejectionMsg = reasonText;
-        if (!rejectionMsg) {
+
+        // Sanitize nonsensical AI conflations (e.g. "produk tidak cocok dengan menampilkan wajah atau vlogger")
+        const lower = (rejectionMsg || '').toLowerCase();
+        const hasConflation = lower.includes('tidak cocok') && (lower.includes('wajah') || lower.includes('vlog') || lower.includes('manusia') || lower.includes('orang'));
+        const isGraphicMisclassifiedAsFace = (hasGraphic || mentionsGraphicInReason) && (lower.includes('wajah') || lower.includes('vlog') || lower.includes('manusia'));
+
+        if (hasConflation || isGraphicMisclassifiedAsFace || !rejectionMsg) {
           if (hasGraphic || mentionsGraphicInReason) {
             rejectionMsg = 'Video ditolak: Mengandung grafis animasi overlay, stiker kartun, atau elemen grafis tempelan di frame 9:16.';
           } else if (hasBumper || mentionsBumperInReason) {
@@ -1195,7 +1228,7 @@ Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
           } else if (hasSubtitles || hasFloatingText || mentionsSubtitlesInReason) {
             rejectionMsg = 'Video ditolak: Mengandung subtitle, teks mengambang, atau stiker teks editan pada frame 9:16.';
           } else if (hasFace || mentionsFaceInReason) {
-            rejectionMsg = 'Video ditolak: Menampilkan wajah atau manusia di dalam frame (wajib 100% faceless tabletop peragaan tangan).';
+            rejectionMsg = 'Video ditolak: Menampilkan wajah atau vlogger manusia di dalam frame (wajib 100% faceless tabletop peragaan tangan).';
           } else if (isSynthetic) {
             rejectionMsg = 'Video ditolak: Terdeteksi video AI / animasi / CGI, bukan demonstrasi fisik nyata.';
           } else if (isMatchFalse) {

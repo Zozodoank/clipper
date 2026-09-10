@@ -1033,6 +1033,45 @@ export async function runStage1Pipeline({
 
       console.log(`[Job ${jobId}] ✅ [Filter 1/3 Lolos] Metadata valid (${meta.title}, ${meta.duration}s).`);
 
+      // ── TAHAP 2: SAMPLING CEPAT & INSPEKSI VISUAL LOKAL (0 TOKEN AI, HEMAT KUOTA GEMINI) ──
+      // Verifikasi bumper statis, logo channel statis, grafis animasi overlay, teks mengambang, subtitle & wajah lokal
+      let preSampledFrames = null;
+      if (streamUrl) {
+        try {
+          const sampleMsg = candidateLabel
+            ? `[${candidateLabel}] [Filter 2/3] Verifikasi visual lokal (bumper, logo, grafis, teks & wajah)...`
+            : '[Filter 2/3] Verifikasi visual lokal (bumper, logo, grafis, teks & wajah)...';
+          updateProgress({ step: 'stream_sampling', message: sampleMsg, progress: 28, status: 'running' });
+
+          const { frames: sampled } = await sampleFramesFromStream(streamUrl, rawFramesDir, {
+            duration: meta.duration,
+            maxSampleFrames: 15,
+            onProgress: updateProgress,
+          });
+
+          if (sampled && sampled.length >= 5) {
+            preSampledFrames = sampled;
+            const localCheck = inspectFramesLocally(sampled, {
+              aspectRatio: options.aspectRatio || '9:16',
+              onProgress: updateProgress,
+            });
+
+            if (!localCheck.eligible) {
+              trackSavedBandwidth(35 * 1024 * 1024, `Hemat kuota (Filter 2 Lokal): ${localCheck.reason}`);
+              console.warn(`[Job ${jobId}] ⛔ [Filter 2/3 Ditolak Lokal] ${candidateLabel || targetUrl}: ${localCheck.reason}`);
+              const localErr = new Error(`Analisa lokal ditolak: ${localCheck.reason}`);
+              localErr.isAiRejection = true;
+              localErr.rejectionReason = localCheck.reason;
+              throw localErr;
+            }
+            console.log(`[Job ${jobId}] ✅ [Filter 2/3 Lolos] Area 9:16 bersih dari bumper, logo statis, grafis, teks & wajah.`);
+          }
+        } catch (localErr) {
+          if (localErr.isAiRejection) throw localErr;
+          console.warn(`[Job ${jobId}] Sampling stream lokal dilewati, melanjutkan ke AI... (${localErr.message})`);
+        }
+      }
+
       // ── JALUR 1: GOOGLE GEMINI NATIVE YOUTUBE STREAM (0 MB KUOTA LOKAL, 1.500 REQ/HARI) ──
       const reqEngine = (options.aiProvider || aiProvider || process.env.ACTIVE_AI_ENGINE || '').toLowerCase();
       const isGeminiEngine = reqEngine === 'gemini' || reqEngine === 'gemini_direct' || (process.env.GEMINI_API_KEY && reqEngine !== 'openrouter');
@@ -1068,16 +1107,20 @@ export async function runStage1Pipeline({
       }
 
       // ── JALUR 2: OPENROUTER / STREAM SAMPLING LOKAL DENGAN 20 KEYFRAME ──
-      const sampleMsg = candidateLabel
-        ? `[${candidateLabel}] [Filter 2/3] Sampling 20 keyframe dari stream URL (~0.8MB kuota)...`
-        : '[Filter 2/3] Sampling 20 keyframe langsung dari stream URL YouTube...';
-      updateProgress({ step: 'stream_sampling', message: sampleMsg, progress: 28, status: 'running' });
+      let rawFrames = preSampledFrames;
+      if (!rawFrames || rawFrames.length < 5) {
+        const sampleMsg = candidateLabel
+          ? `[${candidateLabel}] [Filter 2/3] Sampling 20 keyframe dari stream URL (~0.8MB kuota)...`
+          : '[Filter 2/3] Sampling 20 keyframe langsung dari stream URL YouTube...';
+        updateProgress({ step: 'stream_sampling', message: sampleMsg, progress: 28, status: 'running' });
 
-      const { frames: rawFrames } = await sampleFramesFromStream(streamUrl, rawFramesDir, {
-        duration: meta.duration,
-        maxSampleFrames: 20,
-        onProgress: updateProgress,
-      });
+        const sampleRes = await sampleFramesFromStream(streamUrl, rawFramesDir, {
+          duration: meta.duration,
+          maxSampleFrames: 20,
+          onProgress: updateProgress,
+        });
+        rawFrames = sampleRes.frames;
+      }
 
       if (!rawFrames || rawFrames.length < 5) {
         const frameErr = new Error(`Video tidak memiliki cukup frame visual (${rawFrames?.length || 0} frames).`);
@@ -1085,22 +1128,6 @@ export async function runStage1Pipeline({
         frameErr.rejectionReason = 'Frame video tidak mencukupi untuk dianalisa.';
         throw frameErr;
       }
-
-      // ── TAHAP 2b: ANALISA LOKAL AREA 9:16 (0 TOKEN AI) ──
-      const localCheck = inspectFramesLocally(rawFrames, {
-        aspectRatio: options.aspectRatio || '9:16',
-        onProgress: updateProgress,
-      });
-      if (!localCheck.eligible) {
-        trackSavedBandwidth(35 * 1024 * 1024, `Hemat kuota (Filter 2 Lokal): ${localCheck.reason}`);
-        console.warn(`[Job ${jobId}] ⛔ [Filter 2/3 Ditolak Lokal] ${candidateLabel || targetUrl}: ${localCheck.reason}`);
-        const localErr = new Error(`Analisa lokal ditolak: ${localCheck.reason}`);
-        localErr.isAiRejection = true;
-        localErr.rejectionReason = localCheck.reason;
-        throw localErr;
-      }
-
-      console.log(`[Job ${jobId}] ✅ [Filter 2/3 Lolos] Area 9:16 bersih dari subtitle/logo lokal. Mengirim ke AI Vision...`);
 
       // ── TAHAP 3: VERIFIKASI AI VISION (QUALITY ASSURANCE FINAL) ──
       const visionMsg = candidateLabel

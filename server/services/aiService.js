@@ -1499,8 +1499,18 @@ STRICT RULES FOR VOICE OVER:
    - Plain text block formatted for Google AI Studio TTS Playground (Scene, Sample Context, Speaker 1 with timestamps and emotion tags).
 
 5. 'caption':
-   - Caption with emojis, Problem-Solution hook, benefits, CTA ("Cek keranjang pojok kiri bawah!"), and hashtags (#racunshopee, #spillracun, #racunbelanja, #shopeevideo, #fyp).
-   - NO URLs/links, NO Chinese characters.
+   - High-converting, full-length Social Media Affiliate Caption for Instagram Reels, TikTok, and Shopee Video.
+   - It MUST contain the following 5 structured sections separated by double newlines:
+     1) Hook headline with emojis (catchy problem-question or FOMO statement, e.g. "🔥 Masih repot pakai botol biasa yang bikin boros & berantakan? 🧼✨").
+     2) Problem-Solution & product intro (1-2 compelling sentences explaining why this product is a game changer).
+     3) Key advantages / benefits (3-4 bullet points using '✅', e.g. "Keunggulan Utama:\n✅ Sekali tekan busa melimpah\n✅ Desain 2-in-1 hemat tempat...").
+     4) Urgency & Call to Action (CTA): "Buruan checkout sekarang mumpung lagi diskon spesial & gratis ongkir! 🔥\n\n🛒 Cek produk di bio / keranjang kuning sekarang sebelum kehabisan ya!"
+     5) Hashtags: 10-15 viral, affiliate, and niche-relevant hashtags (e.g. #racunshopee #shopeehaul #spillracun #racuntiktok #racunbelanja #reelsviral #affiliateindonesia #barangunik #fyp + specific category tags).
+   - STRICT RULES FOR CAPTION:
+     * DILARANG KERAS HANYA MENULISKAN 1 KALIMAT HOOK SAJA! Caption WAJIB lengkap, panjang, dan berbobot.
+     * DILARANG menyertakan link URL/Shopee/tautan web apa pun di dalam caption teks.
+     * DILARANG menggunakan karakter China/Mandarin/Hanzi (100% Bahasa Indonesia).
+     * DILARANG menuliskan ajakan "cek komentar pertama".
 
 6. 'lexicon_to_replace' (Deteksi Istilah / Kata Bahasa Inggris Otomatis):
    - Deteksi SEMUA kata, merk, atau istilah bahasa Inggris yang ada di naskah voiceover maupun judul/deskripsi produk (misal: 'steak', 'juicy', 'online', 'chopper', 'mini chopper', 'food chopper', 'stainless steel', 'air fryer', 'food grade', 'rechargeable', 'wireless', 'magic', 'brush', 'sponge', 'cleaner', 'fry pan', dll).
@@ -1531,7 +1541,14 @@ PENTING - ATURAN DURASI, TIMESTAMP & TEMPO NASKAH:
 7. KATA "keju" DAN "beres" WAJIB DITULIS PERSIS: "keju" dan "beres" (keju=keju, beres=beres) tanpa tanda kecil atau aksen di atas huruf e.
 8. DILARANG KERAS menyebutkan nama platform media sosial atau marketplace apa pun (seperti Shopee, TikTok, Instagram, YouTube, Facebook, Reels, medsos, dll) di naskah voiceover maupun Kotak Scene!
 9. JANGAN PERNAH gunakan kata "link di bio" di dalam naskah voiceover. Selalu gunakan ajakan seperti "Cek produk di bawah sekarang", "Klik produk di bawah", atau "Checkout produk di bawah sebelum kehabisan".
-10. PADA BAGIAN 'CAPTION': DILARANG KERAS menuliskan link Shopee, URL, tautan web apa pun, karakter China/Mandarin (seperti 朋友们), dan ajakan cek komentar pertama! Cukup sertakan hook, deskripsi manfaat, CTA di bio (misal: 'Cek produk di bio ya!'), dan hashtag viral.
+10. PADA BAGIAN 'CAPTION' (WAJIB LENGKAP 5 STRUKTUR, DILARANG CUMA 1 KALIMAT):
+    Susun caption lengkap profesional yang siap copy-paste langsung ke Instagram Reels / TikTok / Shopee Video:
+    - Bagian 1: Headline Hook & Emojis pemancing perhatian (masalah/pertanyaan relate).
+    - Bagian 2: Solusi & penjelasan produk mengapa wajib punya (1-2 kalimat menarik).
+    - Bagian 3: Keunggulan Utama (3-4 bullet points dengan tanda '✅').
+    - Bagian 4: Urgensi & CTA jelas ("Buruan checkout mumpung diskon!", "🛒 Cek produk di bio / keranjang kuning sekarang sebelum kehabisan ya!").
+    - Bagian 5: 10-15 hashtag viral relevan (#racunshopee #shopeehaul #spillracun #reelsviral #affiliateindonesia #barangunik dll).
+    - DILARANG KERAS menuliskan URL/link web, karakter China (Mandarin/Hanzi), dan DILARANG hanya membuat 1 kalimat pendek!
 11. Gunakan ejaan bahasa Indonesia baku yang wajar (misal: keren, elegan, praktis, keju, beres) tanpa menambahkan tanda aksen é atau è.
 12. WAJIB 100% Bahasa Indonesia: DILARANG KERAS menyertakan tulisan/karakter China (Mandarin/Hanzi) di seluruh output (naskah, visual, scene, caption, prompt).
 
@@ -1556,7 +1573,7 @@ Return strict JSON in this format:
   ],
   "voiceoverScript": "[00:00] Masih repot marut keju pakai alat lama?\\n[00:05] Kenalin parutan serbaguna ini...\\n[00:30] Cek produk di bawah sekarang!",
   "aiStudioPrompt": "Scene\\nStudio dapur modern...\\n\\nSample Context\\nDurasi voice over 30 detik. Iklan affiliate viral...\\n\\nSpeaker 1\\n[00:00] [intrigue] Masih repot...\\n[00:05] [excited] Kenalin...\\n[00:30] [excited] Cek produk di bawah sekarang!",
-  "caption": "Teks caption lengkap dengan hook, manfaat, ajakan cek bio, dan hashtag viral...",
+  "caption": "🔥 Masih repot pakai cara lama yang bikin boros & berantakan? 🧼✨\\n\\nKenalin solusinya! Produk ini bikin pekerjaan harian kamu jadi 2x lebih cepat, praktis, dan hasilnya jauh lebih rapi maksimal 😍\\n\\nKeunggulan Utama:\\n✅ Desain praktis, inovatif, dan mudah digunakan\\n✅ Kualitas bahan premium, awet, dan tahan lama\\n✅ Hemat waktu, tenaga, dan bikin lebih efisien\\n✅ Bikin ruangan jadi lebih bersih, rapi, dan estetik\\n\\nBuruan checkout sekarang mumpung lagi diskon spesial & gratis ongkir! 🔥\\n\\n🛒 Cek produk di bio / keranjang kuning sekarang sebelum kehabisan ya!\\n\\n#racunshopee #shopeehaul #spillracun #racuntiktok #racunbelanja #reelsviral #affiliateindonesia #barangunik #perabotandapur #dapurminimalis #fyp",
   "lexicon_to_replace": {
     "istilah_inggris": "pelafalan_fonetik_indonesia"
   }
@@ -1664,26 +1681,15 @@ Return strict JSON in this format:
 [00:21] [excited] Cek keranjang pojok kiri bawah sekarang juga!`;
   }
 
-  let caption = (parsed.caption || '').trim();
-  // Strictly strip URLs, Shopee links, Chinese characters (朋友们), and unwanted comment CTAs
-  caption = caption
-    .replace(/(?:🛒\s*)?(?:link\s+(?:produk|shopee|pembelian)?\s*:\s*)?https?:\/\/[^\s]+/gi, '')
-    .replace(/(?:🛒\s*)?(?:link\s+(?:produk|shopee|pembelian)?\s*:\s*)?shope\.ee\/[^\s]+/gi, '')
-    .replace(/(?:🛒\s*)?(?:cek\s+selengkapnya\s+)?(?:cek\s+)?(?:link\s+)?(?:di\s+)?(?:kolom\s+)?komentar\s+(?:pertama|ke-1|1|pin|bawah)?(?:\s+ya)?(?:\s*[,!?. -]*[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+)*(?:\s*[,!?. -])*/gi, '')
-    .replace(/cek\s+selengkapnya\s+di\s+komentar(?:\s*[,!?.])?/gi, '')
-    .replace(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+/gu, '')
-    .replace(/^[ \t]*[,!?. -]+[ \t]*$/gm, '')
-    .replace(/^[ \t]*[,!?. -]+(?=\s*#)/gm, '')
-    .replace(/,\s*([!?.])/g, '$1')
-    .replace(/,\s*,+/g, ',')
-    .replace(/[ \t]+([,!?.])/g, '$1')
-    .replace(/[ \t]{2,}/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-
-  if (!caption) {
-    caption = `🔥 Racun Belanja Viral: ${effectiveTitle}!\n\n${effectiveDesc ? effectiveDesc + '\n\n' : ''}Buruan checkout sekarang mumpung lagi diskon spesial!\n\n🛒 Cek produk di bio sekarang ya!\n\n#racunbelanja #racuntiktok #reelsviral #affiliateindonesia #spillracun`;
-  }
+  let rawCaption = (parsed.caption || '').trim();
+  let caption = formatEnrichedCaption({
+    caption: rawCaption,
+    productTitle: effectiveTitle,
+    productDescription: effectiveDesc,
+    sampleContext: parsed.sampleContext,
+    scenes,
+    platform: 'clipper'
+  });
 
   let aiStudioPrompt = (parsed.aiStudioPrompt || '').trim();
   const fallbackLastSec = Math.max(0, targetDuration - 5);
@@ -1745,6 +1751,175 @@ Return strict JSON in this format:
     caption,
     lexicon_to_replace: detectedLexicon,
   };
+}
+
+/**
+ * Format and enrich social media caption to guarantee high-converting 5-part structure:
+ * 1. Hook & Opening with emojis
+ * 2. Product solution / description
+ * 3. Key benefits bullet points (✅)
+ * 4. Urgency & Call to action
+ * 5. 10-15 Viral & category hashtags
+ */
+export function formatEnrichedCaption({
+  caption = '',
+  productTitle = '',
+  productDescription = '',
+  sampleContext = null,
+  scenes = [],
+  platform = 'clipper', // 'clipper' | 'ytcliper'
+} = {}) {
+  let text = (caption || '').trim();
+
+  // 1. Sanitize text: remove URLs, shopee links, Chinese characters, comment spam
+  text = text
+    .replace(/(?:🛒\s*)?(?:link\s+(?:produk|shopee|pembelian)?\s*:\s*)?https?:\/\/[^\s]+/gi, '')
+    .replace(/(?:🛒\s*)?(?:link\s+(?:produk|shopee|pembelian)?\s*:\s*)?shope\.ee\/[^\s]+/gi, '')
+    .replace(/(?:🛒\s*)?(?:cek\s+selengkapnya\s+)?(?:cek\s+)?(?:link\s+)?(?:di\s+)?(?:kolom\s+)?komentar\s+(?:pertama|ke-1|1|pin|bawah)?(?:\s+ya)?(?:\s*[,!?. -]*[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+)*(?:\s*[,!?. -])*/gi, '')
+    .replace(/cek\s+selengkapnya\s+di\s+komentar(?:\s*[,!?.])?/gi, '')
+    .replace(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+/gu, '')
+    .replace(/^[ \t]*[,!?. -]+[ \t]*$/gm, '')
+    .replace(/^[ \t]*[,!?. -]+(?=\s*#)/gm, '')
+    .replace(/,\s*([!?.])/g, '$1')
+    .replace(/,\s*,+/g, ',')
+    .replace(/[ \t]+([,!?.])/g, '$1')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  // Helper to generate relevant hashtags based on product keywords and platform
+  const generateHashtags = () => {
+    const combined = `${productTitle} ${productDescription} ${text}`.toLowerCase();
+    const tags = new Set();
+
+    if (platform === 'ytcliper') {
+      tags.add('#youtubeshorts');
+      tags.add('#shorts');
+      tags.add('#rekomendasiproduk');
+      tags.add('#racunbelanja');
+      tags.add('#spillracun');
+      tags.add('#affiliateindonesia');
+      tags.add('#haul');
+      tags.add('#unboxing');
+    } else {
+      tags.add('#racunshopee');
+      tags.add('#shopeehaul');
+      tags.add('#spillracun');
+      tags.add('#racuntiktok');
+      tags.add('#racunbelanja');
+      tags.add('#reelsviral');
+      tags.add('#affiliateindonesia');
+      tags.add('#fyp');
+    }
+
+    // Category detection
+    if (/sabun|piring|dapur|kitchen|parut|chopper|pisau|wajan|panci|masak|spatula|blender|dispenser|botol|spons/i.test(combined)) {
+      tags.add('#alatdapur');
+      tags.add('#perabotandapur');
+      tags.add('#dapurminimalis');
+      tags.add('#dapurrapi');
+    }
+    if (/sapu|pel|sikat|bersih|clean|lap|debu|kain|kemoceng|vacuum/i.test(combined)) {
+      tags.add('#alatkebersihan');
+      tags.add('#rumahrapi');
+      tags.add('#peralatanrumahtangga');
+    }
+    if (/rak|wadah|organizer|kotak|storage|gantungan/i.test(combined)) {
+      tags.add('#organizer');
+      tags.add('#rumahminimalis');
+      tags.add('#dekorasirumah');
+    }
+    if (/baju|celana|gamis|dress|rok|tas|sepatu|kaos|hijab|dompet/i.test(combined)) {
+      tags.add('#ootd');
+      tags.add('#fashionhaul');
+      tags.add('#spilloutfit');
+    }
+    if (/hp|charger|kabel|holder|tws|headset|speaker|elektronik|lampu|kipas/i.test(combined)) {
+      tags.add('#gadgetunik');
+      tags.add('#elektronikmurah');
+    }
+    tags.add('#barangunik');
+    tags.add('#viral');
+
+    return Array.from(tags).join(' ');
+  };
+
+  const defaultCta = platform === 'ytcliper'
+    ? '🛒 Link pembelian produk resmi ada di deskripsi video ya!'
+    : '🛒 Cek produk di bio / keranjang kuning sekarang sebelum kehabisan ya!';
+
+  const defaultUrgency = 'Buruan checkout sekarang mumpung lagi diskon spesial & promo gratis ongkir! 🔥';
+
+  // Check if caption already has multiple paragraphs and substantial content
+  const paragraphs = text ? text.split(/\n\s*\n/).filter(p => p.trim()) : [];
+  const hasHashtags = /#\w+/.test(text);
+  const isTooShort = !text || text.length < 100 || paragraphs.length < 3 || !hasHashtags;
+
+  if (!isTooShort) {
+    let enriched = text;
+    if (!/keranjang|bio|deskripsi|checkout|beli|pesan|cek\s+produk/i.test(enriched)) {
+      enriched += `\n\n${defaultUrgency}\n\n${defaultCta}`;
+    }
+    if (!/#\w+/.test(enriched)) {
+      enriched += `\n\n${generateHashtags()}`;
+    }
+    return enriched.trim();
+  }
+
+  // --- Caption is INCOMPLETE or SHORT (e.g. only 1 sentence hook like in screenshot) ---
+  const cleanTitle = (productTitle || sampleContext?.productName || '').replace(/[\[\(\{\]\)\}].*$/g, '').trim();
+
+  // 1. Hook
+  let hook = text;
+  // If text already has a strong hook (like user's: "Masih pakai botol sabun biasa yang bikin boros dan bikin dapur berantakan? 🧼✨"), preserve it!
+  if (!hook || hook.length < 15) {
+    hook = cleanTitle
+      ? `🔥 Mau urusan rumah jadi 2x lebih cepat & praktis? Kenalin ${cleanTitle}! ✨`
+      : `🔥 Masih repot pakai cara lama yang bikin boros & berantakan? Kenalin solusinya! 🧼✨`;
+  }
+
+  // 2. Product Solution & Description
+  let solutionDesc = '';
+  if (productDescription && productDescription.trim().length > 15) {
+    const cleanDesc = productDescription.replace(/\s+/g, ' ').slice(0, 160).trim();
+    solutionDesc = `Hadir dengan inovasi terbaru yang bikin kegiatan harian jauh lebih praktis, hemat waktu, dan hasil maksimal. ${cleanDesc.endsWith('.') ? cleanDesc : cleanDesc + '.'} 😍`;
+  } else if (sampleContext?.coreProblem) {
+    solutionDesc = `Solusi praktis buat kamu yang gak mau ribet mengatasi ${sampleContext.coreProblem.toLowerCase()}! Sangat praktis, efisien, dan bikin ruangan makin rapi estetik 😍`;
+  } else {
+    solutionDesc = `Bikin urusan harian jadi 2x lebih cepat, hemat tenaga, dan ruangan tetap rapi estetik tanpa ribet! Wajib banget punya buat kamu yang suka serba sat-set 😍`;
+  }
+
+  // 3. Key Benefits / Keunggulan
+  let bulletPoints = [];
+  if (Array.isArray(sampleContext?.keyFeatures) && sampleContext.keyFeatures.length > 0) {
+    bulletPoints = sampleContext.keyFeatures.slice(0, 4).map(f => `✅ ${f.trim()}`);
+  } else if (Array.isArray(scenes) && scenes.length >= 3) {
+    bulletPoints = [
+      `✅ Desain ergonomis, praktis, dan sangat mudah digunakan`,
+      `✅ Kualitas bahan premium, awet, dan tahan lama`,
+      `✅ Hemat waktu dan tenaga sehari-hari`,
+      `✅ Bikin tampilan ruangan makin bersih, rapi, dan modern`
+    ];
+  } else {
+    bulletPoints = [
+      `✅ Sangat praktis dan mudah digunakan siapa saja`,
+      `✅ Kualitas bahan pilihan yang awet dan tahan lama`,
+      `✅ Desain modern, fungsional, dan estetik`,
+      `✅ Hemat waktu & bikin aktivitas harian makin simpel`
+    ];
+  }
+  const benefitsSection = `Keunggulan Utama:\n${bulletPoints.join('\n')}`;
+
+  // Assemble full enriched caption
+  const assembled = [
+    hook,
+    solutionDesc,
+    benefitsSection,
+    `${defaultUrgency}\n\n${defaultCta}`,
+    generateHashtags()
+  ].join('\n\n');
+
+  return assembled.trim();
 }
 
 /**

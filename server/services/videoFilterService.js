@@ -449,7 +449,10 @@ export function inspectFramesLocally(frames, { aspectRatio = '9:16', onProgress 
   }
 
   // ── 1. PEMERIKSAAN FOTO BUMPER & FRAME BEKU STATIS (TEMPORAL GLOBAL DIFFERENCE) ──
-  // Menghitung perbedaan rata-rata absolut (MAD) antar frame berurutan
+  // Membedakan kartu intro pembuka (detik 0-5) dengan bumper / slideshow di badan video
+  let openingBumperCount = 0;
+  let bodyBumperCount = 0;
+
   for (let i = 0; i < frameBuffers.length - 1; i++) {
     const b1 = frameBuffers[i];
     const b2 = frameBuffers[i + 1];
@@ -460,13 +463,23 @@ export function inspectFramesLocally(frames, { aspectRatio = '9:16', onProgress 
     const mad = diff / b1.length;
     // Jika MAD < 5.0 (selisih < 2.0% piksel), frame identik diam / bumper hold
     if (mad < 5.0) {
-      bumperSlideCount++;
+      const ts = frames[i]?.timestamp ?? (i * 3);
+      if (ts <= 5.0 || i <= 1) {
+        openingBumperCount++;
+      } else {
+        bodyBumperCount++;
+      }
     }
   }
 
   // ── 2. PEMERIKSAAN LOGO / IDENTITAS CHANNEL STATIS DI AREA TENGAH 9:16 ──
-  // Pada video asli, objek bergerak menggeser piksel tepi. Logo channel digital memiliki piksel tepi yang diam membeku (temporal diff < 5).
+  // Abaikan frame pembuka jika video memiliki opening intro bumper (karena wajar jika kartu intro pembuka memiliki logo yang akan dibuang)
   for (let t = 0; t < frameBuffers.length - 1; t++) {
+    const ts = frames[t]?.timestamp ?? (t * 3);
+    if (openingBumperCount > 0 && (ts <= 5.0 || t <= 1)) {
+      continue;
+    }
+
     const bt1 = frameBuffers[t];
     const bt2 = frameBuffers[t + 1];
     let staticEdgePixels = 0;
@@ -502,6 +515,8 @@ export function inspectFramesLocally(frames, { aspectRatio = '9:16', onProgress 
   const faceEndY = Math.floor(H * 0.45); // y <= 65
 
   for (let i = 0; i < frameBuffers.length; i++) {
+    const ts = frames[i]?.timestamp ?? (i * 3);
+    const isOpeningFrame = openingBumperCount > 0 && (ts <= 5.0 || i <= 1);
     const buf = frameBuffers[i];
     let subWhitePixels = 0;
     let floatTextWhitePixels = 0;
@@ -570,19 +585,22 @@ export function inspectFramesLocally(frames, { aspectRatio = '9:16', onProgress 
     const avgBrightness = totalBrightness / (W * H);
 
     if (avgBrightness < 8) blackFrameCount++;
-    if ((subWhitePixels / subTotal) > 0.05 && avgBrightness > 25) subtitleBandCount++;
-    if ((floatTextWhitePixels / floatTotal) > 0.06 && (floatTextEdges / floatTotal) > 0.05) floatingTextCount++;
-    if ((animatedGraphicPixels / (W * H)) > 0.03) animatedGraphicCount++;
-    if ((upperGenuineSkinPixels / upperTotal) > 0.20) humanFaceSkinCount++;
+    if (!isOpeningFrame) {
+      if ((subWhitePixels / subTotal) > 0.05 && avgBrightness > 25) subtitleBandCount++;
+      if ((floatTextWhitePixels / floatTotal) > 0.06 && (floatTextEdges / floatTotal) > 0.05) floatingTextCount++;
+      if ((animatedGraphicPixels / (W * H)) > 0.03) animatedGraphicCount++;
+      if ((upperGenuineSkinPixels / upperTotal) > 0.20) humanFaceSkinCount++;
+    }
   }
 
   // ── AMBANG BATAS NOL TOLERANSI KETAT DENGAN ALASAN SPESIFIK & AKURAT ──
 
-  // 1. Tolak jika ada foto bumper / kartu slide intro statis
-  if (bumperSlideCount >= 1) {
+  // 1. Tolak jika ada foto bumper / kartu slide statis di badan video (bukan sekadar intro pembuka)
+  const totalBumperFrames = openingBumperCount + bodyBumperCount;
+  if (bodyBumperCount >= 1 || totalBumperFrames >= 3) {
     return {
       eligible: false,
-      reason: `Analisa visual lokal mendeteksi foto bumper / kartu intro statis pada video (${bumperSlideCount} frame beku). Wajib video peragaan fisik nyata!`
+      reason: `Analisa visual lokal mendeteksi video berupa slideshow foto diam / bumper statis (${totalBumperFrames} frame beku). Wajib video bergerak nyata!`
     };
   }
 
@@ -635,6 +653,10 @@ export function inspectFramesLocally(frames, { aspectRatio = '9:16', onProgress 
     };
   }
 
-  return { eligible: true };
+  return {
+    eligible: true,
+    hasOpeningIntro: openingBumperCount > 0,
+    introCutoffSec: openingBumperCount > 0 ? 5.0 : 0
+  };
 }
 

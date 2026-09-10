@@ -1036,6 +1036,7 @@ export async function runStage1Pipeline({
       // ── TAHAP 2: SAMPLING CEPAT & INSPEKSI VISUAL LOKAL (0 TOKEN AI, HEMAT KUOTA GEMINI) ──
       // Verifikasi bumper statis, logo channel statis, grafis animasi overlay, teks mengambang, subtitle & wajah lokal
       let preSampledFrames = null;
+      let candidateIntroCutoff = 0;
       if (streamUrl) {
         try {
           const sampleMsg = candidateLabel
@@ -1063,6 +1064,10 @@ export async function runStage1Pipeline({
               localErr.isAiRejection = true;
               localErr.rejectionReason = localCheck.reason;
               throw localErr;
+            }
+            if (localCheck.hasOpeningIntro) {
+              candidateIntroCutoff = localCheck.introCutoffSec || 5.0;
+              console.log(`[Job ${jobId}] ℹ️ Intro bumper pembuka terdeteksi (${candidateIntroCutoff}s). AI & backend akan membuang detik awal ini.`);
             }
             console.log(`[Job ${jobId}] ✅ [Filter 2/3 Lolos] Area 9:16 bersih dari bumper, logo statis, grafis, teks & wajah.`);
           }
@@ -1092,6 +1097,7 @@ export async function runStage1Pipeline({
           sceneDuration,
           allowFallbackClips: !requireCleanGeminiPlan,
           totalDuration: meta.duration,
+          introCutoffSec: candidateIntroCutoff,
           onProgress: updateProgress,
         });
 
@@ -1100,6 +1106,17 @@ export async function runStage1Pipeline({
           noClipErr.isAiRejection = true;
           noClipErr.rejectionReason = 'Tidak ditemukan cuplikan bersih yang memenuhi syarat.';
           throw noClipErr;
+        }
+
+        // Pastikan backend membuang intro pembuka jika terdeteksi
+        if (candidateIntroCutoff > 0 && Array.isArray(hl.clips)) {
+          hl.clips = hl.clips.map(c => {
+            if (c.startSeconds < candidateIntroCutoff) {
+              const newStart = Math.min(meta.duration - c.duration, candidateIntroCutoff);
+              return { ...c, startSeconds: newStart, startTime: formatSeconds(newStart), endTime: formatSeconds(newStart + c.duration) };
+            }
+            return c;
+          });
         }
 
         console.log(`[Job ${jobId}] 🎉 [Gemini Stream Lolos] AI menyetujui video langsung dari YouTube! Ditemukan ${hl.clips.length} cuplikan produk bersih.`);
@@ -1147,6 +1164,7 @@ export async function runStage1Pipeline({
         shopeeLink,
         sceneDuration,
         allowFallbackClips: !requireCleanGeminiPlan,
+        introCutoffSec: candidateIntroCutoff,
         onProgress: updateProgress,
       });
 
@@ -1155,6 +1173,17 @@ export async function runStage1Pipeline({
         noClipErr.isAiRejection = true;
         noClipErr.rejectionReason = 'Tidak ditemukan cuplikan bersih yang memenuhi syarat.';
         throw noClipErr;
+      }
+
+      // Pastikan backend membuang intro pembuka jika terdeteksi
+      if (candidateIntroCutoff > 0 && Array.isArray(hl.clips)) {
+        hl.clips = hl.clips.map(c => {
+          if (c.startSeconds < candidateIntroCutoff) {
+            const newStart = Math.min(meta.duration - c.duration, candidateIntroCutoff);
+            return { ...c, startSeconds: newStart, startTime: formatSeconds(newStart), endTime: formatSeconds(newStart + c.duration) };
+          }
+          return c;
+        });
       }
 
       console.log(`[Job ${jobId}] 🎉 [Filter 3/3 Lolos] AI menyetujui video! Ditemukan ${hl.clips.length} cuplikan produk bersih.`);

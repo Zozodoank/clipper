@@ -255,6 +255,7 @@ export async function analyzeYouTubeVideoWithGemini({
   sceneDuration = 3.3,
   allowFallbackClips = false,
   totalDuration = 600,
+  introCutoffSec = 0,
   onProgress = () => { },
 }) {
   const geminiKey = getDirectGeminiApiKey(apiKey);
@@ -308,8 +309,14 @@ CRITERION 2: WATERMARKS, SOCIAL MEDIA LOGOS, & CHANNEL IDENTITIES (9:16 CROP TOL
 CRITERION 3: ZERO SUBTITLES, ZERO FLOATING TEXT, & ZERO ANIMATED GRAPHIC OVERLAYS INSIDE 9:16 OUTPUT
 - The backend generates and burns its own clean, animated subtitles.
 - REJECT IMMEDIATELY if speech dialogue captions, translated subtitles, lyric bars, running dialogue text, FLOATING PROMOTIONAL TEXT (e.g. price tags, discount callouts, feature arrows, Chinese floating text, text stickers), or ANIMATED GRAPHIC OVERLAYS (e.g. cartoon stickers, emojis, animated transition graphics, subscribe banners) are visible anywhere inside the central 9:16 frame!
-- REJECT IMMEDIATELY if any BUMPER PHOTO, static intro/outro card, creator profile photo, or static channel logo/watermark is present in the central 9:16 frame!
-- Any digital post-production text/graphic overlay inside the central 9:16 area is strictly FORBIDDEN and causes IMMEDIATE REJECTION (status: 'reject').
+- OPENING INTRO BUMPER / TITLE CARD TOLERANCE (CRITICAL MANDATE):
+  * JIKA VIDEO MEMILIKI KARTU INTRO / BUMPER PEMBUKA / LOGO CHANNEL ANIMASI DI DETIK 0 SAMPAI DETIK 5: JANGAN DITOLAK!
+  * Video TETAP DITERIMA (status: 'accept') asalkan bagian peragaan produk setelahnya bersih dan faceless.
+  * GEMINI WAJIB MEMBUANG INTRO TERSEBUT dengan cara: HANYA memilih timestamps klip yang dimulai SETELAH INTRO SELESAI (misal: mulai detik >= 5s, saat video sudah murni masuk ke peragaan produk fisik oleh tangan)!
+  * Timestamps di array "timestamps" TIDAK BOLEH memasukkan detik-detik kartu intro pembuka!
+- REJECT ONLY IF:
+  * Kartu bumper foto / slide diam mendominasi isi tengah video (video berupa kumpulan foto/slideshow statis).
+  * Grafis animasi overlay, stiker kartun, atau subtitle ucapan menutupi peragaan produk fisik.
 - ONLY physical text printed directly on the physical product body ('Power', 'ON/OFF', volume numbers) is acceptable.
 
 CRITERION 4: STRICT 100% WHOLE-VIDEO FACELESS MANDATE (ZERO TOLERANCE FOR FACES OR HUMANS ANYWHERE)
@@ -492,7 +499,11 @@ CRITICAL RULES FOR REJECTION OUTPUT:
     for (const rawTs of rawTimestamps) {
       const sec = typeof rawTs === 'number' ? rawTs : parseTimeToSeconds(rawTs);
       if (isNaN(sec) || sec < 0 || sec > totalDuration) continue;
-      const startSec = Math.max(0, Math.min(totalDuration - clipSec, Math.round(sec * 10) / 10));
+      const minSafeStart = Math.max(introCutoffSec || 0, (parsed.hasOpeningIntro ? (Number(parsed.introDurationSeconds) || 5) : 0));
+      let startSec = Math.max(0, Math.min(totalDuration - clipSec, Math.round(sec * 10) / 10));
+      if (startSec < minSafeStart) {
+        startSec = Math.min(totalDuration - clipSec, minSafeStart);
+      }
       const endSec = Math.round((startSec + clipSec) * 10) / 10;
       candidateClips.push({
         startSeconds: startSec,
@@ -557,6 +568,7 @@ export async function analyzeVideoWithGeminiFileApi({
   shopeeLink,
   sceneDuration = 3.3,
   allowFallbackClips = false,
+  introCutoffSec = 0,
   onProgress = () => { },
 }) {
   const geminiKey = getDirectGeminiApiKey(apiKey);
@@ -650,8 +662,14 @@ CRITERION 2: WATERMARKS, SOCIAL MEDIA LOGOS, & CHANNEL IDENTITIES (9:16 CROP TOL
 CRITERION 3: ZERO SUBTITLES, ZERO FLOATING TEXT, & ZERO ANIMATED GRAPHIC OVERLAYS INSIDE 9:16 OUTPUT
 - The backend generates and burns its own clean, animated subtitles.
 - REJECT IMMEDIATELY if speech dialogue captions, translated subtitles, lyric bars, running dialogue text, FLOATING PROMOTIONAL TEXT (e.g. price tags, discount callouts, feature arrows, Chinese floating text, text stickers), or ANIMATED GRAPHIC OVERLAYS (e.g. cartoon stickers, emojis, animated transition graphics, subscribe banners) are visible anywhere inside the central 9:16 frame!
-- REJECT IMMEDIATELY if any BUMPER PHOTO, static intro/outro card, creator profile photo, or static channel logo/watermark is present in the central 9:16 frame!
-- Any digital post-production text/graphic overlay inside the central 9:16 area is strictly FORBIDDEN and causes IMMEDIATE REJECTION (status: 'reject').
+- OPENING INTRO BUMPER / TITLE CARD TOLERANCE (CRITICAL MANDATE):
+  * JIKA VIDEO MEMILIKI KARTU INTRO / BUMPER PEMBUKA / LOGO CHANNEL ANIMASI DI DETIK 0 SAMPAI DETIK 5: JANGAN DITOLAK!
+  * Video TETAP DITERIMA (status: 'accept') asalkan bagian peragaan produk setelahnya bersih dan faceless.
+  * GEMINI WAJIB MEMBUANG INTRO TERSEBUT dengan cara: HANYA memilih timestamps klip yang dimulai SETELAH INTRO SELESAI (misal: mulai detik >= 5s, saat video sudah murni masuk ke peragaan produk fisik oleh tangan)!
+  * Timestamps di array "timestamps" TIDAK BOLEH memasukkan detik-detik kartu intro pembuka!
+- REJECT ONLY IF:
+  * Kartu bumper foto / slide diam mendominasi isi tengah video (video berupa kumpulan foto/slideshow statis).
+  * Grafis animasi overlay, stiker kartun, atau subtitle ucapan menutupi peragaan produk fisik.
 - Physical text/button markings printed/embossed directly on the physical product body ("Power", "ON/OFF", "500ml") are 100% ACCEPTABLE.
 
 CRITERION 4: STRICT 100% WHOLE-VIDEO FACELESS MANDATE (ZERO TOLERANCE FOR FACES OR HUMANS ANYWHERE)
@@ -836,7 +854,11 @@ CRITICAL RULES FOR REJECTION OUTPUT:
       for (const rawTs of rawTimestamps) {
         const sec = typeof rawTs === 'number' ? rawTs : parseTimeToSeconds(rawTs);
         if (isNaN(sec) || sec < 0 || sec > totalDuration) continue;
-        const startSec = Math.max(0, Math.min(totalDuration - clipSec, Math.round(sec * 10) / 10));
+        const minSafeStart = Math.max(introCutoffSec || 0, (parsed.hasOpeningIntro ? (Number(parsed.introDurationSeconds) || 5) : 0));
+        let startSec = Math.max(0, Math.min(totalDuration - clipSec, Math.round(sec * 10) / 10));
+        if (startSec < minSafeStart) {
+          startSec = Math.min(totalDuration - clipSec, minSafeStart);
+        }
         const endSec = Math.round((startSec + clipSec) * 10) / 10;
         candidateClips.push({
           startSeconds: startSec,
@@ -914,6 +936,7 @@ export async function selectHighlightWithAI({
   shopeeLink,
   sceneDuration = 3.3,
   allowFallbackClips = false,
+  introCutoffSec = 0,
   onProgress = () => { }
 }) {
   const reqProvider = (aiProvider || '').trim().toLowerCase();
@@ -935,6 +958,7 @@ export async function selectHighlightWithAI({
         sceneDuration,
         allowFallbackClips,
         totalDuration: videoMetadata?.duration || 600,
+        introCutoffSec,
         onProgress,
       });
     }
@@ -949,6 +973,7 @@ export async function selectHighlightWithAI({
         shopeeLink,
         sceneDuration,
         allowFallbackClips,
+        introCutoffSec,
         onProgress,
       });
     }
@@ -983,6 +1008,11 @@ RULE 1: ABSOLUTE ZERO HARDCODED SPEECH SUBTITLES & ZERO BURNED-IN CAPTION BARS:
 - Inspect every frame (bottom, middle, top, edges) for burned-in speech subtitles, translated lyric bars, or running dialogue captions.
 - Reason: The affiliate clipper generates and burns its own clean, animated Indonesian subtitles. Any source video with existing burned-in speech subtitles causes terrible overlapping double-subtitles and is unwatchable!
 - ZERO TOLERANCE FOR POST-PRODUCTION TEXT OVERLAYS: Dilarang ada stiker teks, teks keterangan digital editan, atau teks promo tempelan.
+- OPENING INTRO BUMPER / TITLE CARD TOLERANCE (CRITICAL MANDATE):
+  * JIKA VIDEO MEMILIKI KARTU INTRO / BUMPER PEMBUKA / LOGO CHANNEL ANIMASI DI DETIK 0 SAMPAI DETIK 5 (Frame 1 atau 2): JANGAN DITOLAK!
+  * Video TETAP DITERIMA (status: 'accept') asalkan frame demonstrasi produk setelahnya bersih dan faceless.
+  * AI WAJIB MEMBUANG INTRO TERSEBUT: HANYA pilih frame yang dimulai SETELAH INTRO SELESAI (misal: frame dengan timestamp >= 5s, saat video sudah murni masuk ke peragaan produk fisik oleh tangan)!
+  * Frame kartu bumper intro pembuka TIDAK BOLEH dimasukkan ke dalam daftar "frames"!
 - CRITICAL EXCEPTION (PHYSICAL PRODUCT TEXT IS 100% PERMITTED):
   * Real physical text, brand marks, buttons, or labels printed/embossed directly ON THE PHYSICAL PRODUCT BODY OR ITS PACKAGING (e.g. brand logo "Philips", "Joybos", "Midea", "Xiaomi", button markings "ON/OFF", "Power", "Speed 1 2", volume "500ml", "100°C", "Stainless Steel 304", or physical ingredient/specification labels) is 100% NATURAL AND FULLY ACCEPTABLE!
   * NEVER reject a video because of text or brand logos printed physically on the product itself!
@@ -1106,9 +1136,10 @@ Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
 2. Faceless QC: Inspect ALL ${evalFrames.length} frames. Does ANY frame show a human face, head, hair, or person talking?
    - If ANY face or person is visible in ANY frame: output {"status": "reject", "hasHumanOrFaceAnywhereInFrames": true, "isFacelessIn916Frame": false, "hasFaceIn916Frame": true, "reason": "Video ditolak: Menampilkan wajah/orang (wajib 100% faceless tabletop)"}
    - Dilarang memilih frame tangan dari video yang ada vlogger/orangnya!
-3. Subtitle, Floating Text, & Graphic Overlay QC: Do the selected frames contain hardcoded speech captions, dialogue subtitles, floating promotional text, bumper photos, static channel logo badges, or animated graphic overlays (cartoon stickers, emojis) anywhere in the central 9:16 frame?
+3. Subtitle, Floating Text, & Graphic Overlay QC (with Opening Intro Bumper Tolerance):
+   - OPENING INTRO TOLERANCE: If frame #1 (or opening 0-5s) contains an intro bumper or title card, DO NOT REJECT the video! Simply DISCARD the intro frame by picking frames only from index #2 onwards!
    - NOTE: Physical text, brand names, or button markings printed/molded ON THE PHYSICAL PRODUCT are 100% ACCEPTABLE and NOT subtitles!
-   - If speech captions, dialogue subtitles, floating text, bumper photos, static logos, or graphic overlays are visible: output {"status": "reject", "hasSubtitlesIn916Frame": true, "hasFloatingTextIn916Frame": true, "hasAnimatedGraphicOverlayIn916Frame": true, "hasBumperPhotoInFrame": true, "hasStaticChannelLogoIn916Frame": true, "reason": "Video ditolak: Mengandung grafis animasi overlay, stiker, bumper, atau subtitle."}
+   - Only reject if speech captions, dialogue subtitles, floating promotional text, or cartoon graphic overlays cover the product demonstration, or if the entire video is a static photo bumper slideshow.
 4. Watermark & Logo QC (9:16 Crop Tolerance):
    - Watermark/logo di pojok KIRI atau KANAN video (di luar area tengah 9:16) TETAP DITERIMA karena akan terpotong/tertutup pilar.
    - Hanya tolak jika watermark digital, logo TikTok/YouTube, atau identitas channel MASUK KE AREA 9:16 TENGAH: output {"status": "reject", "hasWatermarkIn916Frame": true, "reason": "Video ditolak: Watermark masuk ke dalam frame 9:16."}
@@ -1254,7 +1285,11 @@ Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
           if (isNaN(idx) || idx < 1 || idx > frames.length) continue;
           const frameObj = frames[idx - 1];
           const ts = frameObj ? frameObj.timestamp : (idx * (totalDuration / frames.length));
-          const startSec = Math.max(0, Math.min(totalDuration - clipSec, Math.round(ts * 10) / 10));
+          const minSafeStart = Math.max(introCutoffSec || 0, 0);
+          let startSec = Math.max(0, Math.min(totalDuration - clipSec, Math.round(ts * 10) / 10));
+          if (startSec < minSafeStart) {
+            startSec = Math.min(totalDuration - clipSec, minSafeStart);
+          }
           const endSec = Math.round((startSec + clipSec) * 10) / 10;
           candidateClips.push({
             startSeconds: startSec,

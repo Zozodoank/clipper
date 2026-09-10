@@ -8,8 +8,8 @@ import { applyEnglishLexicon, restoreStandardText } from './dictionaryService.js
 import { trackBandwidth } from './bandwidthTracker.js';
 
 // Default Google Gemini Flash TTS Models (Free Tier: 10 RPD)
-export const DEFAULT_GEMINI_TTS_MODEL = 'gemini-2.5-flash-preview-tts';
-export const DEFAULT_GEMINI_TTS_FALLBACK_MODEL = 'gemini-3.1-flash-tts-preview';
+export const DEFAULT_GEMINI_TTS_MODEL = 'gemini-3.1-flash-tts-preview';
+export const DEFAULT_GEMINI_TTS_FALLBACK_MODEL = 'gemini-2.5-flash-preview-tts';
 export const DEFAULT_GEMINI_TTS_VOICE = 'Despina';
 
 export const GEMINI_TTS_VOICES = [
@@ -673,8 +673,8 @@ export function prepareScriptForGeminiTTS(rawScript, lexicon = {}) {
 
 /**
  * Generate Voiceover Audio via Google Gemini Flash TTS (Free Tier - 10 RPD).
- * Primary Model: gemini-2.5-flash-preview-tts
- * Fallback Model: gemini-3.1-flash-tts-preview
+ * Primary Model: gemini-3.1-flash-tts-preview
+ * Fallback Model: gemini-2.5-flash-preview-tts
  * Prebuilt Voices: Aoede, Kore, Leda, Zephyr, Puck, Charon, Fenrir
  */
 export async function generateVoiceoverGeminiTTS({
@@ -883,7 +883,7 @@ export async function generateVoiceoverTTS({
   if (activeProvider === 'edge_tts') {
     result = await generateVoiceoverEdgeTTS({ script, outputPath, targetDurationSec, voice, onProgress, jobId, lexicon });
   } else {
-    // Default to Google Gemini Flash TTS (Primary: gemini-2.5-flash-preview-tts, Fallback: gemini-3.1-flash-tts-preview)
+    // Default to Google Gemini Flash TTS (Primary: gemini-3.1-flash-tts-preview, Fallback: gemini-2.5-flash-preview-tts)
     result = await generateVoiceoverGeminiTTS({
       script,
       outputPath,

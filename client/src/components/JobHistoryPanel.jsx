@@ -298,7 +298,7 @@ export default function JobHistoryPanel({ onSelectJob, onRetryJob, currentJobId,
 
     const isGemini = (settings?.ttsProvider || 'gemini_tts') === 'gemini_tts';
     const ttsEngineLabel = isGemini
-      ? `Gemini Flash (${settings?.ttsModel || 'gemini-2.5-flash-preview-tts'})`
+      ? `Gemini Flash (${settings?.ttsModel || 'gemini-3.1-flash-tts-preview'})`
       : 'Edge-TTS (Gadis)';
 
     if (!confirm(`Generate TTS otomatis untuk ${awaitingVoiceoverJobs.length} job yang menunggu dengan ${ttsEngineLabel}?\n\nSistem di server akan memproses seluruh video satu per satu secara berurutan tanpa terputus.`)) {

@@ -10,8 +10,8 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings, 
     setSettings({
       aiProvider: engineStatus?.activeAiEngine || 'gemini',
       ttsProvider: 'gemini_tts',
-      ttsModel: 'gemini-2.5-flash-preview-tts',
-      ttsFallbackModel: 'gemini-3.1-flash-tts-preview',
+      ttsModel: 'gemini-3.1-flash-tts-preview',
+      ttsFallbackModel: 'gemini-2.5-flash-preview-tts',
       ttsVoice: 'Despina',
       sceneDuration: 3.3,
       renderMode: 'stage_80',
@@ -185,7 +185,7 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings, 
                   </span>
                 </div>
                 <div className="text-[11px] font-mono font-semibold mb-1 text-blue-300">
-                  {settings.ttsModel || 'gemini-2.5-flash-preview-tts'}
+                  {settings.ttsModel || 'gemini-3.1-flash-tts-preview'}
                 </div>
                 <p className="text-[10px] leading-tight text-slate-400">
                   Free Tier (10 RPD) dengan suara natural studio Google. Fallback otomatis ke model Gemini cadangan (bukan Edge TTS).
@@ -235,12 +235,12 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings, 
                       Model Utama (Primary):
                     </label>
                     <select
-                      value={settings.ttsModel || 'gemini-2.5-flash-preview-tts'}
+                      value={settings.ttsModel || 'gemini-3.1-flash-tts-preview'}
                       onChange={(e) => setSettings({ ...settings, ttsModel: e.target.value })}
                       className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:border-blue-500 focus:outline-none"
                     >
-                      <option value="gemini-2.5-flash-preview-tts">gemini-2.5-flash-preview-tts (Default)</option>
-                      <option value="gemini-3.1-flash-tts-preview">gemini-3.1-flash-tts-preview</option>
+                      <option value="gemini-3.1-flash-tts-preview">gemini-3.1-flash-tts-preview (Default)</option>
+                      <option value="gemini-2.5-flash-preview-tts">gemini-2.5-flash-preview-tts</option>
                     </select>
                   </div>
 
@@ -250,12 +250,12 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings, 
                       Model Cadangan (Fallback):
                     </label>
                     <select
-                      value={settings.ttsFallbackModel || 'gemini-3.1-flash-tts-preview'}
+                      value={settings.ttsFallbackModel || 'gemini-2.5-flash-preview-tts'}
                       onChange={(e) => setSettings({ ...settings, ttsFallbackModel: e.target.value })}
                       className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:border-blue-500 focus:outline-none"
                     >
-                      <option value="gemini-3.1-flash-tts-preview">gemini-3.1-flash-tts-preview (Default Fallback)</option>
-                      <option value="gemini-2.5-flash-preview-tts">gemini-2.5-flash-preview-tts</option>
+                      <option value="gemini-2.5-flash-preview-tts">gemini-2.5-flash-preview-tts (Default Fallback)</option>
+                      <option value="gemini-3.1-flash-tts-preview">gemini-3.1-flash-tts-preview</option>
                     </select>
                   </div>
                 </div>

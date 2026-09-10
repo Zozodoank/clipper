@@ -24,8 +24,8 @@ export default function App() {
   const [settings, setSettings] = useState({
     aiProvider: 'gemini',
     ttsProvider: 'gemini_tts',
-    ttsModel: 'gemini-2.5-flash-preview-tts',
-    ttsFallbackModel: 'gemini-3.1-flash-tts-preview',
+    ttsModel: 'gemini-3.1-flash-tts-preview',
+    ttsFallbackModel: 'gemini-2.5-flash-preview-tts',
     ttsVoice: 'Despina',
     sceneDuration: 3.3,
     renderMode: 'stage_80',
@@ -65,8 +65,8 @@ export default function App() {
           ...(data.activeAiEngine && data.activeAiEngine !== 'none' ? { aiProvider: prev.aiProvider || data.activeAiEngine } : {}),
           ...(data.tts ? {
             ttsProvider: prev.ttsProvider || data.tts.provider || 'gemini_tts',
-            ttsModel: prev.ttsModel || data.tts.model || 'gemini-2.5-flash-preview-tts',
-            ttsFallbackModel: prev.ttsFallbackModel || data.tts.fallbackModel || 'gemini-3.1-flash-tts-preview',
+            ttsModel: prev.ttsModel || data.tts.model || 'gemini-3.1-flash-tts-preview',
+            ttsFallbackModel: prev.ttsFallbackModel || data.tts.fallbackModel || 'gemini-2.5-flash-preview-tts',
             ttsVoice: prev.ttsVoice || data.tts.voice || 'Despina',
           } : {})
         }));

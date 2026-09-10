@@ -115,9 +115,9 @@ function getOpenRouterKeys(apiKeyOverride) {
       keys.push(cleaned);
     }
   }
-  
+
   const envKeys = Object.keys(process.env).filter(k => k.startsWith('OPENROUTER_API_KEY')).sort();
-  
+
   for (const k of envKeys) {
     const cleaned = cleanEnvKey(process.env[k]);
     if (cleaned && !cleaned.startsWith('your_') && !cleaned.endsWith('_here')) {
@@ -187,7 +187,7 @@ function getAiClientConfig({ apiKeyOverride, aiProvider } = {}) {
   // Priority 1: OpenRouter (high quality free vision models: MiniMax M3, openrouter/free, Nemotron 30B)
   if (openRouterKeys.length > 0) {
     const safeIndex = currentOpenRouterKeyIndex % openRouterKeys.length;
-    currentOpenRouterKeyIndex++; 
+    currentOpenRouterKeyIndex++;
 
     console.log(`[AIService] Initialize OpenRouter Client: Key=${openRouterKeys[safeIndex].substring(0, 10)}... (Models: ${getEffectiveOpenRouterModels().join(', ')})`);
 
@@ -267,7 +267,7 @@ export async function analyzeYouTubeVideoWithGemini({
   sceneDuration = 3.3,
   allowFallbackClips = false,
   totalDuration = 600,
-  onProgress = () => {},
+  onProgress = () => { },
 }) {
   const geminiKey = getDirectGeminiApiKey(apiKey);
   if (!geminiKey) {
@@ -531,7 +531,7 @@ export async function analyzeVideoWithGeminiFileApi({
   shopeeLink,
   sceneDuration = 3.3,
   allowFallbackClips = false,
-  onProgress = () => {},
+  onProgress = () => { },
 }) {
   const geminiKey = getDirectGeminiApiKey(apiKey);
   if (!geminiKey) {
@@ -550,7 +550,7 @@ export async function analyzeVideoWithGeminiFileApi({
   try {
     const d = await getMediaDurationSec(videoPath);
     if (d && d > 5) totalDuration = d;
-  } catch {}
+  } catch { }
 
   onProgress({
     step: 'gemini_vision',
@@ -844,7 +844,7 @@ export async function selectHighlightWithAI({
   shopeeLink,
   sceneDuration = 3.3,
   allowFallbackClips = false,
-  onProgress = () => {}
+  onProgress = () => { }
 }) {
   const reqProvider = (aiProvider || '').trim().toLowerCase();
   const envEngine = (process.env.ACTIVE_AI_ENGINE || '').trim().toLowerCase();
@@ -1177,7 +1177,7 @@ Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
         sceneDuration: clipSec,
       });
       const duration = clips.reduce((total, clip) => total + (clip.endSeconds - clip.startSeconds), 0);
-      
+
       onProgress({
         step: 'gemini_vision',
         message: `${provider} (${activeModel}) selected ${clips.length} clean ${clipSec}s product shots (${duration.toFixed(1)}s total).`,
@@ -1290,7 +1290,7 @@ export async function generateAdAdvisorScriptWithAI({
   productHook,
   segmentDuration = 24,
   sceneDuration = 3.3,
-  onProgress = () => {}
+  onProgress = () => { }
 }) {
   let activeConfig = getAiClientConfig({ apiKeyOverride: apiKey, aiProvider });
   let { client, models: modelFallbackList, provider } = activeConfig;
@@ -1922,7 +1922,7 @@ function normalizeClipPlan(rawClips, totalDuration, { allowFallback = true, fram
     const rawStart = Math.round(fallbackStart + (i * stepSize));
     const startSeconds = Math.min(maxStart, Math.max(lastStart + clipLength, rawStart));
     if (startSeconds + clipLength > totalDuration) break;
-    
+
     fallbackClips.push({
       startSeconds,
       endSeconds: startSeconds + clipLength,
@@ -2046,7 +2046,7 @@ export async function detectPhoneticLexiconWithAI({
   productTitle = '',
   apiKey = '',
   aiProvider = '',
-  onProgress = () => {}
+  onProgress = () => { }
 }) {
   if (!script && !productTitle) {
     return {};

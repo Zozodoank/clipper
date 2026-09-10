@@ -67,12 +67,11 @@ function loadEnvFromDisk() {
   }
 }
 
-// Daftar model OpenRouter gratis 100% (tidak pernah memotong saldo / dilarang menggunakan openrouter/auto)
+// Daftar model OpenRouter gratis 100% (tidak pernah memotong saldo / dilarang menggunakan openrouter/auto & minimax)
 const defaultOpenRouterModels = [
   "openrouter/free",
   "google/gemini-2.0-flash-exp:free",
   "meta-llama/llama-3.2-11b-vision-instruct:free",
-  "minimax/minimax-m3:free",
   "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
 ];
 
@@ -83,7 +82,8 @@ function isBannedOpenRouterModel(modelName) {
     m === 'openrouter:auto' ||
     m === 'auto' ||
     m.endsWith('/auto') ||
-    m.endsWith(':auto')
+    m.endsWith(':auto') ||
+    m.includes('minimax')
   );
 }
 
@@ -184,7 +184,7 @@ function getAiClientConfig({ apiKeyOverride, aiProvider } = {}) {
     }
   }
 
-  // Priority 1: OpenRouter (high quality free vision models: MiniMax M3, openrouter/free, Nemotron 30B)
+  // Priority 1: OpenRouter (high quality free vision models: openrouter/free, Nemotron 30B, Llama 3.2 Vision)
   if (openRouterKeys.length > 0) {
     const safeIndex = currentOpenRouterKeyIndex % openRouterKeys.length;
     currentOpenRouterKeyIndex++;
@@ -1662,7 +1662,7 @@ Return strict JSON in this format:
 export function sanitizeScriptVocabulary(text) {
   if (!text || typeof text !== 'string') return '';
   return text
-    // 0. Hapus karakter China/Mandarin/Hanzi (misal dari minimax):
+    // 0. Hapus karakter China/Mandarin/Hanzi:
     .replace(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+/gu, '')
 
     // 1. Tulis persis keju=keju dan beres=beres tanpa tanda aksen kecil di atas huruf e:

@@ -131,7 +131,7 @@ export default function SettingsModal({ isOpen, onClose, settings, setSettings, 
                   </div>
                 </div>
                 <div className="text-[11px] font-mono font-semibold mb-1 text-emerald-300">
-                  MiniMax M3 &bull; OpenRouter Free &bull; Auto &bull; Nemotron 30B
+                  OpenRouter Free &bull; Llama 3.2 Vision &bull; Nemotron 30B
                 </div>
                 <p className="text-[10px] leading-tight opacity-80">
                   Prioritas utama model vision gratis berkualitas tinggi tanpa watermark &amp; bebas subtitle bawaan. Otomatis fallback ke Gemini Direct.

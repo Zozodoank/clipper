@@ -1145,6 +1145,20 @@ export async function runStage1Pipeline({
           maxSampleFrames: 20,
           duration: rawDur,
         });
+
+        // Verifikasi filter lokal pada frame video cache (bebas teks mengambang & bebas wajah)
+        const localCacheCheck = inspectFramesLocally(rawFrames, {
+          aspectRatio: options.aspectRatio || '9:16',
+          onProgress: updateProgress,
+        });
+        if (!localCacheCheck.eligible) {
+          console.warn(`[Job ${jobId}] ⛔ [Cache Ditolak Lokal] ${rawVideoPath}: ${localCacheCheck.reason}`);
+          const localCacheErr = new Error(`Analisa lokal ditolak pada cache: ${localCacheCheck.reason}`);
+          localCacheErr.isAiRejection = true;
+          localCacheErr.rejectionReason = localCacheCheck.reason;
+          throw localCacheErr;
+        }
+
         highlight = await selectHighlightWithAI({
           apiKey,
           aiProvider,

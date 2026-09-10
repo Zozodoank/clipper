@@ -305,21 +305,23 @@ CRITERION 2: WATERMARKS, SOCIAL MEDIA LOGOS, & CHANNEL IDENTITIES (9:16 CROP TOL
 - PHYSICAL PRODUCT BRANDING IS 100% ACCEPTABLE:
   * Merek, logo, atau tulisan yang tercetak/terukir secara fisik pada bodi produk (misal: "Philips", "Joybos", "Xiaomi") BUKAN watermark dan 100% DITERIMA!
 
-CRITERION 3: ZERO SUBTITLES & ZERO BURNED-IN TEXT INSIDE 9:16 OUTPUT
+CRITERION 3: ZERO SUBTITLES, ZERO FLOATING TEXT, & ZERO DIGITAL TEXT OVERLAYS INSIDE 9:16 OUTPUT
 - The backend generates and burns its own clean, animated subtitles.
-- REJECT if speech dialogue captions, translated subtitles, lyric bars, or running dialogue text are visible INSIDE the 9:16 output frame (bottom or center), as this causes ugly overlapping double-subtitles.
-- Physical text/button labels directly on the physical product ("Power", "ON/OFF", "500ml") are 100% ACCEPTABLE.
+- REJECT IMMEDIATELY if speech dialogue captions, translated subtitles, lyric bars, running dialogue text, FLOATING PROMOTIONAL TEXT (e.g. price tags, discount callouts, feature arrows, Chinese floating text, text stickers, or overlay captions) are visible anywhere inside the central 9:16 frame!
+- Any digital post-production text overlay inside the central 9:16 area is strictly FORBIDDEN and causes IMMEDIATE REJECTION (status: 'reject').
+- ONLY physical text printed directly on the physical product body ('Power', 'ON/OFF', volume numbers) is acceptable.
 
-CRITERION 4: STRICT 100% WHOLE-VIDEO FACELESS MANDATE (ZERO TOLERANCE FOR FACES ANYWHERE)
-- The entire source video MUST be 100% faceless and human-free!
+CRITERION 4: STRICT 100% WHOLE-VIDEO FACELESS MANDATE (ZERO TOLERANCE FOR FACES OR HUMANS ANYWHERE)
+- The entire source video MUST be 100% faceless and human-free from second 0 to the very end!
 - ZERO TOLERANCE FOR FACES: Does ANY part of the video show a human face, head, hair, neck, torso, or person talking (vlogger, host, presenter, bystander)?
-  * If YES -> REJECT THE ENTIRE VIDEO IMMEDIATELY!
-  * Dilarang keras memilih potongan tangan dari video yang ada vlogger atau orangnya!
-- The ONLY permitted footage is pure tabletop/countertop product demonstration where HANDS/FINGERS ONLY actively operate the product.
+  * If YES -> REJECT THE ENTIRE VIDEO IMMEDIATELY (status: 'reject')!
+  * DILARANG KERAS MEMILIH POTONGAN TANGAN DARI VIDEO YANG ADA VLOGGER ATAU ORANGNYA!
+  * NEVER cherry-pick hands-only clips from a video where a human presenter or vlogger appears anywhere in the footage! If a person appears anywhere, the video is completely DISQUALIFIED.
+- The ONLY permitted footage is 100% pure tabletop/countertop product demonstration where HANDS/FINGERS ONLY actively operate the product.
 
 CRITERION 5: CLEAN TIMESTAMP SELECTION
 - Select 5 to 8 non-overlapping timestamps (each about ${clipSec}s long) showing the best, satisfying hands-on product actions.
-- Each timestamp in "timestamps" MUST be in seconds from the start of the video where the 9:16 center area is 100% faceless, free of subtitles, and free of watermarks/logos.
+- Each timestamp in "timestamps" MUST be in seconds from the start of the video where the 9:16 center area is 100% faceless, free of subtitles, free of floating text, and free of watermarks/logos.
 - If the video does NOT contain at least 5 clean faceless product clips inside the 9:16 frame: MUST BE REJECTED.
 
 Output valid JSON ONLY with this exact format:
@@ -334,6 +336,7 @@ If ACCEPTED:
   "hasWatermarkIn916Frame": false,
   "hasSocialOrChannelLogoIn916Frame": false,
   "hasSubtitlesIn916Frame": false,
+  "hasFloatingTextIn916Frame": false,
   "hasOnlyPhysicalProductText": true,
   "isAiGeneratedOrSynthetic": false,
   "timestamps": [15, 25, 40, 60, 85, 110],
@@ -352,9 +355,10 @@ If REJECTED:
   "hasWatermarkIn916Frame": false,
   "hasSocialOrChannelLogoIn916Frame": false,
   "hasSubtitlesIn916Frame": false,
+  "hasFloatingTextIn916Frame": false,
   "hasOnlyPhysicalProductText": false,
   "isAiGeneratedOrSynthetic": false,
-  "reason": "<alasan penolakan spesifik dalam bahasa Indonesia, misal: 'Watermark masuk ke dalam frame 9:16', 'Menampilkan wajah orang/vlogger', 'Mengandung subtitle ucapan', atau 'Produk tidak cocok'>"
+  "reason": "<alasan penolakan spesifik dalam bahasa Indonesia, misal: 'Watermark masuk ke dalam frame 9:16', 'Menampilkan wajah orang/vlogger', 'Mengandung subtitle ucapan', 'Teks mengambang terdeteksi', atau 'Produk tidak cocok'>"
 }`;
 
   const candidateModels = ['gemini-3.6-flash', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-3.5-flash'];
@@ -412,6 +416,7 @@ If REJECTED:
   const hasWatermarkInFrame = parsed.hasWatermarkIn916Frame === true || parsed.hasCenterObstructingWatermark === true;
   const hasSocialOrChannelInFrame = parsed.hasSocialOrChannelLogoIn916Frame === true || parsed.hasSocialMediaOrChannelIdentityIn916Frame === true;
   const hasSubtitles = parsed.hasSubtitlesIn916Frame === true || parsed.hasSubtitlesOrBurnedText === true || parsed.hasBurnedText === true;
+  const hasFloatingText = parsed.hasFloatingTextIn916Frame === true || parsed.hasTextOverlaysIn916Frame === true;
   const isSynthetic = parsed.isAiGeneratedOrSynthetic === true;
   const reasonText = String(parsed.reason || parsed.rejectionReason || '').trim();
   const reasonLower = reasonText.toLowerCase();
@@ -419,9 +424,9 @@ If REJECTED:
   const mentionsFaceInReason = reasonLower.includes('wajah') || reasonLower.includes('face') || reasonLower.includes('manusia') || reasonLower.includes('orang');
   const mentionsWatermarkInFrame = isRejectStatus && (reasonLower.includes('watermark') || reasonLower.includes('capcut')) && !reasonLower.includes('terpotong') && !reasonLower.includes('luar frame') && !reasonLower.includes('di luar 9:16');
   const mentionsLogoInFrame = isRejectStatus && (reasonLower.includes('logo') || reasonLower.includes('tiktok') || reasonLower.includes('channel') || reasonLower.includes('identitas') || reasonLower.includes('sosmed')) && !reasonLower.includes('terpotong') && !reasonLower.includes('luar frame') && !reasonLower.includes('di luar 9:16');
-  const mentionsSubtitlesInReason = reasonLower.includes('subtitle') || reasonLower.includes('caption') || reasonLower.includes('teks berjalan') || reasonLower.includes('terjemahan');
+  const mentionsSubtitlesInReason = reasonLower.includes('subtitle') || reasonLower.includes('caption') || reasonLower.includes('teks berjalan') || reasonLower.includes('terjemahan') || reasonLower.includes('teks mengambang') || reasonLower.includes('floating text') || reasonLower.includes('stiker teks') || reasonLower.includes('teks promo') || reasonLower.includes('tulisan');
 
-  const shouldReject = isRejectStatus || isMatchFalse || hasFace || hasWatermarkInFrame || hasSocialOrChannelInFrame || hasSubtitles || isSynthetic ||
+  const shouldReject = isRejectStatus || isMatchFalse || hasFace || hasWatermarkInFrame || hasSocialOrChannelInFrame || hasSubtitles || hasFloatingText || isSynthetic ||
     mentionsFaceInReason || mentionsWatermarkInFrame || mentionsLogoInFrame || mentionsSubtitlesInReason;
 
   if (shouldReject) {
@@ -433,8 +438,8 @@ If REJECTED:
         rejectionMsg = 'Video ditolak oleh AI: Mengandung watermark digital yang masuk ke dalam frame 9:16 output.';
       } else if (hasSocialOrChannelInFrame || mentionsLogoInFrame) {
         rejectionMsg = 'Video ditolak oleh AI: Mengandung logo media sosial atau identitas channel yang masuk ke frame 9:16.';
-      } else if (hasSubtitles || mentionsSubtitlesInReason) {
-        rejectionMsg = 'Video ditolak oleh AI: Mengandung subtitle atau teks caption ucapan bawaan di frame 9:16.';
+      } else if (hasSubtitles || hasFloatingText || mentionsSubtitlesInReason) {
+        rejectionMsg = 'Video ditolak oleh AI: Mengandung subtitle, teks mengambang, atau stiker teks editan pada frame 9:16.';
       } else if (isSynthetic) {
         rejectionMsg = 'Video ditolak oleh AI: Terdeteksi video AI / animasi / CGI, bukan demonstrasi fisik nyata.';
       } else if (isMatchFalse) {
@@ -617,20 +622,23 @@ CRITERION 2: WATERMARKS, SOCIAL MEDIA LOGOS, & CHANNEL IDENTITIES (9:16 CROP TOL
 - PHYSICAL PRODUCT BRANDING IS 100% ACCEPTABLE:
   * Merek, logo, atau tulisan yang tercetak/terukir secara fisik pada bodi produk (misal: "Philips", "Joybos", "Xiaomi") BUKAN watermark dan 100% DITERIMA!
 
-CRITERION 3: ZERO SUBTITLES & ZERO BURNED-IN TEXT INSIDE 9:16 OUTPUT
+CRITERION 3: ZERO SUBTITLES, ZERO FLOATING TEXT, & ZERO DIGITAL TEXT OVERLAYS INSIDE 9:16 OUTPUT
 - The backend generates and burns its own clean, animated subtitles.
-- REJECT if speech dialogue captions, translated subtitles, lyric bars, or running dialogue text are visible INSIDE the 9:16 output frame (bottom or center), as this causes ugly overlapping double-subtitles.
-- Physical text/button labels directly on the physical product ("Power", "ON/OFF", "500ml") are 100% ACCEPTABLE.
+- REJECT if speech dialogue captions, translated subtitles, lyric bars, running dialogue text, FLOATING PROMOTIONAL TEXT (e.g. price tags, discount callouts, feature arrows, Chinese floating text, text stickers, or overlay captions) are visible anywhere inside the central 9:16 frame!
+- Any digital post-production text overlay inside the central 9:16 area is strictly FORBIDDEN and causes IMMEDIATE REJECTION (status: 'reject').
+- Physical text/button markings printed/embossed directly on the physical product body ("Power", "ON/OFF", "500ml") are 100% ACCEPTABLE.
 
-CRITERION 4: STRICT 100% FACELESS & HUMAN-FREE IN 9:16 OUTPUT (HANDS ONLY)
-- The final 9:16 video cut MUST BE 100% FACELESS and HUMAN-FREE!
-- ZERO TOLERANCE FOR FACES: Dilarang keras menampilkan wajah manusia di dalam frame 9:16 (tampak depan, samping, menunduk, buram, pantulan kaca, atau orang di background).
-- ZERO TOLERANCE FOR BODIES: Dilarang menampilkan kepala, rambut, leher, dada, torso, atau badan manusia di frame 9:16. Dilarang vlogger berbicara atau orang berdiri.
+CRITERION 4: STRICT 100% WHOLE-VIDEO FACELESS MANDATE (ZERO TOLERANCE FOR FACES OR HUMANS ANYWHERE)
+- The entire source video MUST be 100% faceless and human-free from second 0 to the very end!
+- ZERO TOLERANCE FOR FACES: Does ANY part of the video show a human face, head, hair, neck, torso, or person talking (vlogger, host, presenter, bystander)?
+  * If YES -> REJECT THE ENTIRE VIDEO IMMEDIATELY (status: 'reject')!
+  * DILARANG KERAS MEMILIH POTONGAN TANGAN DARI VIDEO YANG ADA VLOGGER ATAU ORANGNYA!
+  * NEVER cherry-pick hands-only clips from a video where a human presenter or vlogger appears anywhere in the footage! If a person appears anywhere, the video is completely DISQUALIFIED.
 - The ONLY permitted human element is HANDS/FINGERS ONLY actively demonstrating, operating, holding, or pressing the product against a tabletop/neutral surface.
 
 CRITERION 5: CLEAN TIMESTAMP SELECTION
 - Select 4 to 8 non-overlapping timestamps (each about ${clipSec}s long) showing the best, satisfying hands-on product actions.
-- Each timestamp in "timestamps" MUST be in seconds from the start of the video where the 9:16 center area is 100% faceless, free of subtitles, and free of watermarks/logos.
+- Each timestamp in "timestamps" MUST be in seconds from the start of the video where the 9:16 center area is 100% faceless, free of subtitles, free of floating text, and free of watermarks/logos.
 - If the video does NOT contain at least 4 clean faceless product clips inside the 9:16 frame: MUST BE REJECTED.
 
 Output valid JSON ONLY with this exact format:
@@ -641,9 +649,11 @@ If ACCEPTED:
   "isExactProductMatch": true,
   "isFacelessIn916Frame": true,
   "hasFaceIn916Frame": false,
+  "hasHumanOrFaceAnywhereInVideo": false,
   "hasWatermarkIn916Frame": false,
   "hasSocialOrChannelLogoIn916Frame": false,
   "hasSubtitlesIn916Frame": false,
+  "hasFloatingTextIn916Frame": false,
   "hasOnlyPhysicalProductText": true,
   "isAiGeneratedOrSynthetic": false,
   "timestamps": [3, 7, 12, 16, 21, 26],
@@ -662,9 +672,10 @@ If REJECTED:
   "hasWatermarkIn916Frame": false,
   "hasSocialOrChannelLogoIn916Frame": false,
   "hasSubtitlesIn916Frame": false,
+  "hasFloatingTextIn916Frame": false,
   "hasOnlyPhysicalProductText": false,
   "isAiGeneratedOrSynthetic": false,
-  "reason": "<alasan penolakan spesifik dalam bahasa Indonesia, misal: 'Watermark masuk ke dalam frame 9:16', 'Menampilkan wajah di frame 9:16', 'Mengandung subtitle ucapan', atau 'Produk tidak cocok'>"
+  "reason": "<alasan penolakan spesifik dalam bahasa Indonesia, misal: 'Watermark masuk ke dalam frame 9:16', 'Menampilkan wajah di frame 9:16', 'Mengandung subtitle ucapan', 'Teks mengambang terdeteksi', atau 'Produk tidak cocok'>"
 }`;
 
     const candidateModels = ['gemini-1.5-flash', 'gemini-flash-latest'];
@@ -717,6 +728,7 @@ If REJECTED:
     const hasWatermarkInFrame = parsed.hasWatermarkIn916Frame === true || parsed.hasCenterObstructingWatermark === true;
     const hasSocialOrChannelInFrame = parsed.hasSocialOrChannelLogoIn916Frame === true || parsed.hasSocialMediaOrChannelIdentityIn916Frame === true;
     const hasSubtitles = parsed.hasSubtitlesIn916Frame === true || parsed.hasSubtitlesOrBurnedText === true || parsed.hasBurnedText === true;
+    const hasFloatingText = parsed.hasFloatingTextIn916Frame === true || parsed.hasTextOverlaysIn916Frame === true;
     const isSynthetic = parsed.isAiGeneratedOrSynthetic === true;
     const reasonText = String(parsed.reason || parsed.rejectionReason || '').trim();
     const reasonLower = reasonText.toLowerCase();
@@ -725,9 +737,9 @@ If REJECTED:
     const mentionsFaceInReason = reasonLower.includes('wajah') || reasonLower.includes('face') || reasonLower.includes('manusia') || reasonLower.includes('orang');
     const mentionsWatermarkInFrame = isRejectStatus && (reasonLower.includes('watermark') || reasonLower.includes('capcut')) && !reasonLower.includes('terpotong') && !reasonLower.includes('luar frame') && !reasonLower.includes('di luar 9:16');
     const mentionsLogoInFrame = isRejectStatus && (reasonLower.includes('logo') || reasonLower.includes('tiktok') || reasonLower.includes('channel') || reasonLower.includes('identitas') || reasonLower.includes('sosmed')) && !reasonLower.includes('terpotong') && !reasonLower.includes('luar frame') && !reasonLower.includes('di luar 9:16');
-    const mentionsSubtitlesInReason = reasonLower.includes('subtitle') || reasonLower.includes('caption') || reasonLower.includes('teks berjalan') || reasonLower.includes('terjemahan');
+    const mentionsSubtitlesInReason = reasonLower.includes('subtitle') || reasonLower.includes('caption') || reasonLower.includes('teks berjalan') || reasonLower.includes('terjemahan') || reasonLower.includes('teks mengambang') || reasonLower.includes('floating text') || reasonLower.includes('stiker teks') || reasonLower.includes('teks promo') || reasonLower.includes('tulisan');
 
-    const shouldReject = isRejectStatus || isMatchFalse || hasFace || hasWatermarkInFrame || hasSocialOrChannelInFrame || hasSubtitles || isSynthetic ||
+    const shouldReject = isRejectStatus || isMatchFalse || hasFace || hasWatermarkInFrame || hasSocialOrChannelInFrame || hasSubtitles || hasFloatingText || isSynthetic ||
       mentionsFaceInReason || mentionsWatermarkInFrame || mentionsLogoInFrame || mentionsSubtitlesInReason;
 
     if (shouldReject) {
@@ -739,8 +751,8 @@ If REJECTED:
           rejectionMsg = 'Video ditolak oleh AI: Mengandung watermark digital yang masuk ke dalam frame 9:16 output.';
         } else if (hasSocialOrChannelInFrame || mentionsLogoInFrame) {
           rejectionMsg = 'Video ditolak oleh AI: Mengandung logo media sosial atau identitas channel yang masuk ke frame 9:16.';
-        } else if (hasSubtitles || mentionsSubtitlesInReason) {
-          rejectionMsg = 'Video ditolak oleh AI: Mengandung subtitle atau teks caption ucapan bawaan di frame 9:16.';
+        } else if (hasSubtitles || hasFloatingText || mentionsSubtitlesInReason) {
+          rejectionMsg = 'Video ditolak oleh AI: Mengandung subtitle, teks mengambang, atau stiker teks editan pada frame 9:16.';
         } else if (isSynthetic) {
           rejectionMsg = 'Video ditolak oleh AI: Terdeteksi video AI / animasi / CGI, bukan demonstrasi fisik nyata.';
         } else if (isMatchFalse) {
@@ -1027,15 +1039,15 @@ Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
 2. Faceless QC: Inspect ALL ${evalFrames.length} frames. Does ANY frame show a human face, head, hair, or person talking?
    - If ANY face or person is visible in ANY frame: output {"status": "reject", "hasHumanOrFaceAnywhereInFrames": true, "isFacelessIn916Frame": false, "hasFaceIn916Frame": true, "reason": "Video ditolak: Menampilkan wajah/orang (wajib 100% faceless tabletop)"}
    - Dilarang memilih frame tangan dari video yang ada vlogger/orangnya!
-3. Subtitle & Text QC: Do the selected frames contain hardcoded speech captions, dialogue subtitles, or digital text overlays in the 9:16 frame?
+3. Subtitle & Floating Text QC: Do the selected frames contain hardcoded speech captions, dialogue subtitles, floating promotional text, or digital text overlays anywhere in the central 9:16 frame?
    - NOTE: Physical text, brand names, or button markings printed/molded ON THE PHYSICAL PRODUCT are 100% ACCEPTABLE and NOT subtitles!
-   - If speech captions, dialogue subtitles, or text overlays are visible: output {"status": "reject", "hasSubtitlesIn916Frame": true, "reason": "Video ditolak: Mengandung subtitle / teks caption ucapan bawaan."}
+   - If speech captions, dialogue subtitles, floating text, or text overlays are visible: output {"status": "reject", "hasSubtitlesIn916Frame": true, "hasFloatingTextIn916Frame": true, "reason": "Video ditolak: Mengandung subtitle, teks mengambang, atau stiker teks editan."}
 4. Watermark & Logo QC (9:16 Crop Tolerance):
    - Watermark/logo di pojok KIRI atau KANAN video (di luar area tengah 9:16) TETAP DITERIMA karena akan terpotong/tertutup pilar.
    - Hanya tolak jika watermark digital, logo TikTok/YouTube, atau identitas channel MASUK KE AREA 9:16 TENGAH: output {"status": "reject", "hasWatermarkIn916Frame": true, "reason": "Video ditolak: Watermark masuk ke dalam frame 9:16."}
-5. If there are at least 5 clean frames demonstrating the product (100% entirely faceless across all frames, zero watermark inside 9:16, zero subtitles, matching product):
+5. If there are at least 5 clean frames demonstrating the product (100% entirely faceless across all frames, zero watermark inside 9:16, zero subtitles, zero floating text, matching product):
    - Select 5 to 8 frame indices in "frames" array.
-   - Output {"status": "accept", "detectedProduct": "<nama produk>", "isExactProductMatch": true, "isFacelessIn916Frame": true, "hasHumanOrFaceAnywhereInFrames": false, "hasSubtitlesIn916Frame": false, "hasFaceIn916Frame": false, "hasWatermarkIn916Frame": false, "hasSocialOrChannelLogoIn916Frame": false, "frames": [indices], "productHook": "Kalau ..., fix ...!", "hasProductBrand": false}`;
+   - Output {"status": "accept", "detectedProduct": "<nama produk>", "isExactProductMatch": true, "isFacelessIn916Frame": true, "hasHumanOrFaceAnywhereInFrames": false, "hasSubtitlesIn916Frame": false, "hasFloatingTextIn916Frame": false, "hasFaceIn916Frame": false, "hasWatermarkIn916Frame": false, "hasSocialOrChannelLogoIn916Frame": false, "frames": [indices], "productHook": "Kalau ..., fix ...!", "hasProductBrand": false}`;
 
   const messageContent = [
     { type: 'text', text: userPrompt },
@@ -1108,6 +1120,7 @@ Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
         parsed.isFacelessAndHumanFree === false ||
         parsed.isEntirelyFaceless === false;
       const hasSubtitles = parsed.hasSubtitlesIn916Frame === true || parsed.hasSubtitlesOrBurnedText === true || parsed.hasBurnedText === true;
+      const hasFloatingText = parsed.hasFloatingTextIn916Frame === true || parsed.hasTextOverlaysIn916Frame === true;
       const hasWatermarkInFrame = parsed.hasWatermarkIn916Frame === true || parsed.hasCenterObstructingWatermark === true;
       const hasSocialOrChannelInFrame = parsed.hasSocialOrChannelLogoIn916Frame === true || parsed.hasSocialMediaOrChannelIdentityIn916Frame === true;
       const isSynthetic = parsed.isAiGeneratedOrSynthetic === true;
@@ -1116,14 +1129,14 @@ Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
       const reasonLower = reasonText.toLowerCase();
 
       const mentionsFaceInReason = reasonLower.includes('wajah') || reasonLower.includes('face') || reasonLower.includes('manusia') || reasonLower.includes('orang');
-      const mentionsSubtitlesInReason = reasonLower.includes('subtitle') || reasonLower.includes('caption') || reasonLower.includes('teks berjalan') || reasonLower.includes('terjemahan');
+      const mentionsSubtitlesInReason = reasonLower.includes('subtitle') || reasonLower.includes('caption') || reasonLower.includes('teks berjalan') || reasonLower.includes('terjemahan') || reasonLower.includes('teks mengambang') || reasonLower.includes('floating text') || reasonLower.includes('stiker teks') || reasonLower.includes('teks promo') || reasonLower.includes('tulisan');
       const mentionsWatermarkInFrame = isRejectStatus && (reasonLower.includes('watermark') || reasonLower.includes('capcut')) && !reasonLower.includes('terpotong') && !reasonLower.includes('luar frame') && !reasonLower.includes('di luar 9:16');
       const mentionsLogoInFrame = isRejectStatus && (reasonLower.includes('logo') || reasonLower.includes('tiktok') || reasonLower.includes('channel') || reasonLower.includes('identitas') || reasonLower.includes('sosmed')) && !reasonLower.includes('terpotong') && !reasonLower.includes('luar frame') && !reasonLower.includes('di luar 9:16');
 
       const selectedIndices = Array.isArray(parsed.frames) ? parsed.frames : [];
       const hasValidFrames = selectedIndices.length >= 4;
 
-      const shouldReject = isRejectStatus || isMatchFalse || hasFace || hasWatermarkInFrame || hasSocialOrChannelInFrame || hasSubtitles || isSynthetic ||
+      const shouldReject = isRejectStatus || isMatchFalse || hasFace || hasWatermarkInFrame || hasSocialOrChannelInFrame || hasSubtitles || hasFloatingText || isSynthetic ||
         mentionsFaceInReason || mentionsWatermarkInFrame || mentionsLogoInFrame || mentionsSubtitlesInReason || !hasValidFrames;
 
       if (shouldReject) {
@@ -1135,8 +1148,8 @@ Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
             rejectionMsg = 'Video ditolak: Mengandung watermark digital atau watermark aplikasi editor.';
           } else if (hasSocialOrChannel || mentionsLogoInReason) {
             rejectionMsg = 'Video ditolak: Mengandung logo media sosial atau identitas channel/kreator.';
-          } else if (hasSubtitles || mentionsSubtitlesInReason) {
-            rejectionMsg = 'Video ditolak: Mengandung subtitle / teks caption ucapan bawaan pada video asli.';
+          } else if (hasSubtitles || hasFloatingText || mentionsSubtitlesInReason) {
+            rejectionMsg = 'Video ditolak: Mengandung subtitle, teks mengambang, atau stiker teks editan pada frame 9:16.';
           } else if (isSynthetic) {
             rejectionMsg = 'Video ditolak: Terdeteksi video AI / animasi / CGI, bukan demonstrasi fisik nyata.';
           } else if (isMatchFalse) {

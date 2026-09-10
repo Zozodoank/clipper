@@ -415,18 +415,20 @@ export function inspectFramesLocally(frames, { aspectRatio = '9:16', onProgress 
 
   const ffmpeg = getFFmpegPath();
   let subtitleBandCount = 0;
+  let floatingTextCount = 0;
   let blackFrameCount = 0;
-  let upperFaceSkinCount = 0;
+  let humanFaceSkinCount = 0;
 
   // Inspect frames using fast FFmpeg rawvideo pixel stream (grayscale & RGB)
-  // Center 9:16 area is [iw*0.25 to iw*0.75].
-  // Bottom subtitle band is [ih*0.75 to ih*1.0].
-  // Upper face area is [ih*0.08 to ih*0.48] (where vlogger/talking-head faces appear).
+  // Area 9:16 tengah adalah x=iw*0.25 s/d x=iw*0.75 (lebar 50% tengah).
+  // 1. Bottom subtitle zone: y=ih*0.75 s/d y=ih*1.0 (tinggi 25% bawah).
+  // 2. Middle & upper floating text zone: y=ih*0.12 s/d y=ih*0.72 (tinggi 60% tengah/atas tempat teks promo/stiker melayang).
+  // 3. Upper & middle face/person zone: y=ih*0.05 s/d y=ih*0.50 (tinggi 45% atas tempat vlogger/wajah muncul).
   for (const f of frames) {
     if (!f.filePath || !fs.existsSync(f.filePath)) continue;
 
-    // 1. Crop bottom 25% of center 9:16 for subtitle detection
-    const res = spawnSync(ffmpeg, [
+    // ── 1. PEMERIKSAAN SUBTITLE BAWAH (BOTTOM 25% AREA 9:16) ──
+    const subRes = spawnSync(ffmpeg, [
       '-y',
       '-i', f.filePath,
       '-vf', 'crop=w=iw*0.5:h=ih*0.25:x=iw*0.25:y=ih*0.75,scale=100:50',
@@ -435,36 +437,66 @@ export function inspectFramesLocally(frames, { aspectRatio = '9:16', onProgress 
       '-'
     ]);
 
-    if (res.status === 0 && res.stdout && res.stdout.length > 0) {
-      const buf = res.stdout;
+    if (subRes.status === 0 && subRes.stdout && subRes.stdout.length > 0) {
+      const buf = subRes.stdout;
       let sum = 0;
       let whitePixels = 0;
 
       for (let i = 0; i < buf.length; i++) {
         sum += buf[i];
-        if (buf[i] > 225) whitePixels++; // High-contrast white text pixel
+        if (buf[i] > 220) whitePixels++; // Piksel teks putih/terang berkontras tinggi
       }
 
       const avg = sum / buf.length;
       const whiteRatio = whitePixels / buf.length;
 
-      // Pitch black frame check
       if (avg < 8) {
         blackFrameCount++;
       }
 
-      // If bottom zone has dense text-like high-contrast white pixels (e.g. subtitle lines)
-      if (whiteRatio > 0.08 && avg > 30) {
+      // Jika area bawah memuat teks subtitle berkontras tinggi
+      if (whiteRatio > 0.05 && avg > 25) {
         subtitleBandCount++;
       }
     }
 
-    // 2. Crop upper 40% of center 9:16 for talking-head / face presence detection
-    // Hands on tabletop demonstrate at the bottom/center, leaving the upper 40% free of skin tones!
+    // ── 2. PEMERIKSAAN TEKS MENGAMBANG & STIKER EDITAN (MIDDLE & UPPER 60% AREA 9:16) ──
+    const floatTextRes = spawnSync(ffmpeg, [
+      '-y',
+      '-i', f.filePath,
+      '-vf', 'crop=w=iw*0.5:h=ih*0.60:x=iw*0.25:y=ih*0.12,scale=100:60',
+      '-f', 'rawvideo',
+      '-pix_fmt', 'gray',
+      '-'
+    ]);
+
+    if (floatTextRes.status === 0 && floatTextRes.stdout && floatTextRes.stdout.length > 0) {
+      const fBuf = floatTextRes.stdout;
+      let fWhitePixels = 0;
+      let fHighContrastEdges = 0;
+
+      for (let i = 1; i < fBuf.length; i++) {
+        if (fBuf[i] > 225) fWhitePixels++;
+        // Deteksi tepi tajam teks digital (perbedaan kontras ekstrem antar piksel tetangga)
+        if (Math.abs(fBuf[i] - fBuf[i - 1]) > 130) {
+          fHighContrastEdges++;
+        }
+      }
+
+      const fWhiteRatio = fWhitePixels / fBuf.length;
+      const fEdgeRatio = fHighContrastEdges / fBuf.length;
+
+      // Jika area tengah/atas mengandung teks promo mengambang atau stiker teks digital bertuliskan fitur/harga
+      if (fWhiteRatio > 0.06 && fEdgeRatio > 0.05) {
+        floatingTextCount++;
+      }
+    }
+
+    // ── 3. PEMERIKSAAN WAJAH & VLOGGER MANUSIA (UPPER 45% AREA 9:16) ──
     const faceRes = spawnSync(ffmpeg, [
       '-y',
       '-i', f.filePath,
-      '-vf', 'crop=w=iw*0.5:h=ih*0.4:x=iw*0.25:y=ih*0.08,scale=64:48',
+      '-vf', 'crop=w=iw*0.5:h=ih*0.45:x=iw*0.25:y=ih*0.05,scale=64:48',
       '-f', 'rawvideo',
       '-pix_fmt', 'rgb24',
       '-'
@@ -480,48 +512,57 @@ export function inspectFramesLocally(frames, { aspectRatio = '9:16', onProgress 
         const g = rgbBuf[i + 1];
         const b = rgbBuf[i + 2];
 
-        // Normalized skin-tone detection in daylight / studio lighting
-        const isSkin = (r > 95 && g > 40 && b > 20 &&
-          (Math.max(r, g, b) - Math.min(r, g, b) > 15) &&
-          Math.abs(r - g) > 15 &&
-          r > g && r > b);
+        // Skin-tone detection presisi (wajah manusia di pencahayaan studio/kamera)
+        const isSkin = (r > 75 && g > 40 && b > 20 &&
+          (r - g >= 10) && (r - b >= 10) &&
+          (Math.max(r, g, b) - Math.min(r, g, b) >= 15));
 
         if (isSkin) skinPixels++;
       }
 
       const skinRatio = skinPixels / numPixels;
-      if (skinRatio > 0.28) {
-        upperFaceSkinCount++;
+      // Di area atas 45%, peragaan produk faceless di atas meja seharusnya hampir 0% skin ratio
+      if (skinRatio > 0.20) {
+        humanFaceSkinCount++;
       }
     }
   }
 
-  // Rejection threshold: If > 35% of frames have dominant human face/body in upper 9:16 zone
-  const faceRatio = upperFaceSkinCount / frames.length;
-  if (faceRatio > 0.35) {
+  // ── STRICT ZERO-TOLERANCE THRESHOLDS (MAKSIMAL 1 FRAME TOLERANSI UNTUK GLITCH) ──
+
+  // 1. Tolak jika ada teks subtitle bawaan (>= 2 frame terdeteksi)
+  if (subtitleBandCount >= 2) {
     return {
       eligible: false,
-      reason: `Analisa visual lokal mendeteksi keberadaan wajah/tubuh manusia di area atas frame (${Math.round(faceRatio * 100)}% frame terindikasi vlogger/orang). Wajib faceless!`
+      reason: `Analisa visual lokal mendeteksi teks subtitle ucapan bawaan pada area bawah 9:16 (${subtitleBandCount} frame). Wajib video bersih tanpa subtitle!`
     };
   }
 
-  // Rejection threshold: If > 40% of frames have persistent subtitle strips in the bottom 9:16 zone
-  const subtitleRatio = subtitleBandCount / frames.length;
-  if (subtitleRatio > 0.40) {
+  // 2. Tolak jika ada teks mengambang / stiker teks editan (>= 2 frame terdeteksi)
+  if (floatingTextCount >= 2) {
     return {
       eligible: false,
-      reason: `Analisa lokal mendeteksi teks subtitle bawaan yang persisten pada area 9:16 (${Math.round(subtitleRatio * 100)}% frame).`
+      reason: `Analisa visual lokal mendeteksi teks mengambang / stiker teks promo editan pada area tengah 9:16 (${floatingTextCount} frame). Wajib video bersih tanpa teks mengambang!`
     };
   }
 
-  // Rejection threshold: If > 50% of frames are black / blank
+  // 3. Tolak jika ada wajah / vlogger manusia (>= 2 frame terdeteksi)
+  if (humanFaceSkinCount >= 2) {
+    return {
+      eligible: false,
+      reason: `Analisa visual lokal mendeteksi keberadaan wajah atau manusia di area atas frame (${humanFaceSkinCount} frame). Wajib 100% faceless tabletop peragaan tangan!`
+    };
+  }
+
+  // 4. Tolak jika mayoritas frame blank / hitam
   const blackRatio = blackFrameCount / frames.length;
-  if (blackRatio > 0.50) {
+  if (blackRatio > 0.35) {
     return {
       eligible: false,
-      reason: `Analisa lokal mendeteksi mayoritas frame kosong / blank (${Math.round(blackRatio * 100)}% frame).`
+      reason: `Analisa visual lokal mendeteksi terlalu banyak frame hitam / kosong (${Math.round(blackRatio * 100)}% frame).`
     };
   }
 
   return { eligible: true };
 }
+

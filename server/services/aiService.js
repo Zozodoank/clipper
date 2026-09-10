@@ -8,6 +8,7 @@ import { GoogleAIFileManager } from '@google/generative-ai/server';
 import { getMediaDurationSec } from './videoRenderer.js';
 import { saveToEnglishDictionary } from './dictionaryService.js';
 import { trackBandwidth } from './bandwidthTracker.js';
+import { extractCoreProductInfo } from './discoveryService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -279,7 +280,9 @@ export async function analyzeYouTubeVideoWithGemini({
   }
 
   const clipSec = Math.max(2.5, Math.min(5.0, Number(sceneDuration) || 3.3));
-  const effectiveTitle = (productTitle || '').trim() || 'Produk Affiliate';
+  const prodInfo = extractCoreProductInfo(productTitle, productDescription);
+  const coreNoun = prodInfo.coreProductNoun || 'Produk Praktis';
+  const effectiveTitle = prodInfo.cleanTitle || (productTitle || '').trim() || coreNoun;
   const effectiveDesc = (productDescription || '').trim();
 
   onProgress({
@@ -292,10 +295,16 @@ export async function analyzeYouTubeVideoWithGemini({
   const videoPrompt = `You are an elite Quality Control (QC) Director for Affiliate Product Video Ads.
 Evaluate this YouTube video carefully against the following 5 MANDATORY ACCEPTANCE CRITERIA:
 
-CRITERION 1: EXACT PHYSICAL PRODUCT MATCH
-- Does the physical item demonstrated in the video match "${effectiveTitle}"?
+CRITERION 1: FUNCTIONAL & PHYSICAL PRODUCT MATCH
+- Target Product Category / Model: "${coreNoun}" (Listing: "${effectiveTitle}")
 ${effectiveDesc ? `  (Product Description: "${effectiveDesc}")` : ''}
-- REJECT IMMEDIATELY if it is a DIFFERENT product or a compilation/haul video showing multiple random items.
+- Does the item demonstrated in the video physically and functionally match this product category/tool?
+- ACCEPTANCE STANDARD:
+  * ACCEPT white-label, OEM, or brand-equivalent affiliate products that share the same physical form, mechanism, and function (e.g. electric mini pot/cooker, garlic chopper, spray mop, mandoline slicer, storage box, etc.).
+  * Minor variations in brand logo on chassis, color accent, or button/knob styling are 100% ACCEPTABLE for affiliate product promotions.
+- REJECTION STANDARD:
+  * REJECT IMMEDIATELY if it is a completely DIFFERENT product category or tool (e.g. video shows a manual knife/scissors while target is an electric pot, or video shows makeup/skincare while target is a kitchen tool).
+  * REJECT IMMEDIATELY if it is a multi-product haul/compilation video showing multiple random gadgets instead of demonstrating this specific product.
 
 CRITERION 2: WATERMARKS, SOCIAL MEDIA LOGOS, & CHANNEL IDENTITIES (9:16 CROP TOLERANCE RULE)
 - 9:16 CROP GEOMETRY:
@@ -543,7 +552,9 @@ export async function analyzeVideoWithGeminiFileApi({
   }
 
   const clipSec = Math.max(2.5, Math.min(5.0, Number(sceneDuration) || 3.3));
-  const effectiveTitle = (productTitle || '').trim() || 'Produk Affiliate';
+  const prodInfo = extractCoreProductInfo(productTitle, productDescription);
+  const coreNoun = prodInfo.coreProductNoun || 'Produk Praktis';
+  const effectiveTitle = prodInfo.cleanTitle || (productTitle || '').trim() || coreNoun;
   const effectiveDesc = (productDescription || '').trim();
 
   let totalDuration = 60;
@@ -596,10 +607,16 @@ export async function analyzeVideoWithGeminiFileApi({
     const videoPrompt = `You are an elite Quality Control (QC) Director for Affiliate Product Video Ads.
 Evaluate this full video carefully against the following 5 MANDATORY ACCEPTANCE CRITERIA:
 
-CRITERION 1: EXACT PHYSICAL PRODUCT MATCH
-- Does the physical item demonstrated in the video match "${effectiveTitle}"?
+CRITERION 1: FUNCTIONAL & PHYSICAL PRODUCT MATCH
+- Target Product Category / Model: "${coreNoun}" (Listing: "${effectiveTitle}")
 ${effectiveDesc ? `  (Product Description: "${effectiveDesc}")` : ''}
-- REJECT IMMEDIATELY if it is a DIFFERENT product or a compilation/haul video showing multiple random items.
+- Does the item demonstrated in the video physically and functionally match this product category/tool?
+- ACCEPTANCE STANDARD:
+  * ACCEPT white-label, OEM, or brand-equivalent affiliate products that share the same physical form, mechanism, and function (e.g. electric mini pot/cooker, garlic chopper, spray mop, mandoline slicer, storage box, etc.).
+  * Minor variations in brand logo on chassis, color accent, or button/knob styling are 100% ACCEPTABLE for affiliate product promotions.
+- REJECTION STANDARD:
+  * REJECT IMMEDIATELY if it is a completely DIFFERENT product category or tool (e.g. video shows a manual knife/scissors while target is an electric pot, or video shows makeup/skincare while target is a kitchen tool).
+  * REJECT IMMEDIATELY if it is a multi-product haul/compilation video showing multiple random gadgets instead of demonstrating this specific product.
 
 CRITERION 2: WATERMARKS, SOCIAL MEDIA LOGOS, & CHANNEL IDENTITIES (9:16 CROP TOLERANCE RULE)
 - 9:16 CROP GEOMETRY:
@@ -893,11 +910,13 @@ export async function selectHighlightWithAI({
   });
 
   const totalDuration = videoMetadata?.duration || 60;
-  const effectiveTitle = productTitle || videoMetadata?.title || 'Product Showcase Video';
+  const prodInfo = extractCoreProductInfo(productTitle || videoMetadata?.title, productDescription || videoMetadata?.description);
+  const coreNoun = prodInfo.coreProductNoun || 'Produk Praktis';
+  const effectiveTitle = prodInfo.cleanTitle || (productTitle || videoMetadata?.title || '').trim() || coreNoun;
   const effectiveDesc = productDescription || videoMetadata?.description || '';
 
   const systemPrompt = `You are an expert Short-Form Affiliate Video QC Director specializing in Shopee Video FYP Algorithms.
-Evaluate the ${frames.length} sampled frames of the source video for the target Shopee product: "${effectiveTitle}".
+Evaluate the ${frames.length} sampled frames of the source video for the target Shopee product: "${coreNoun}" (Listing: "${effectiveTitle}").
 
 CRITICAL MANDATORY ZERO-TOLERANCE RULES:
 
@@ -910,13 +929,17 @@ RULE 1: ABSOLUTE ZERO HARDCODED SPEECH SUBTITLES & ZERO BURNED-IN CAPTION BARS:
   * Real physical text, brand marks, buttons, or labels printed/embossed directly ON THE PHYSICAL PRODUCT BODY OR ITS PACKAGING (e.g. brand logo "Philips", "Joybos", "Midea", "Xiaomi", button markings "ON/OFF", "Power", "Speed 1 2", volume "500ml", "100°C", "Stainless Steel 304", or physical ingredient/specification labels) is 100% NATURAL AND FULLY ACCEPTABLE!
   * NEVER reject a video because of text or brand logos printed physically on the product itself!
 
-RULE 2: EXACT PHYSICAL PRODUCT MATCH VERIFICATION:
-- Compare the physical product demonstrated in the frames directly with the target Shopee product: "${effectiveTitle}".
-- It MUST be the EXACT same physical product type, model, and function as "${effectiveTitle}".
-- REJECT IMMEDIATELY if the video shows a DIFFERENT product (e.g. target is electric mini chopper, but video shows manual grater, knives, oil dispenser, or random gadgets).
-- REJECT IMMEDIATELY if it is a compilation / haul video showing multiple random gadgets instead of demonstrating this single product.
+RULE 2: FUNCTIONAL & PHYSICAL PRODUCT MATCH VERIFICATION:
+- Target Product Category / Model: "${coreNoun}" (Listing: "${effectiveTitle}")
+- Compare the physical product demonstrated in the frames directly with the target product: "${coreNoun}".
+- ACCEPTANCE STANDARD:
+  * ACCEPT white-label, OEM, or brand-equivalent affiliate products that share the same physical form, mechanism, and function (e.g. electric mini pot/cooker, garlic chopper, spray mop, mandoline slicer, storage box, etc.).
+  * Minor variations in brand logo on chassis, color accent, or button placement are 100% ACCEPTABLE.
+- REJECTION STANDARD:
+  * REJECT IMMEDIATELY if the video shows a completely DIFFERENT product category or tool (e.g. target is electric mini chopper, but video shows manual grater, knives, oil dispenser, or random gadgets).
+  * REJECT IMMEDIATELY if it is a compilation / haul video showing multiple random gadgets instead of demonstrating this single product.
 - If rejected for wrong product:
-  {"status": "reject", "detectedProduct": "<nama produk yang tampak>", "isExactProductMatch": false, "reason": "Produk di video (<nama produk>) tidak cocok dengan produk Shopee (${effectiveTitle})"}
+  {"status": "reject", "detectedProduct": "<nama produk yang tampak>", "isExactProductMatch": false, "reason": "Produk di video (<nama produk>) tidak cocok dengan produk target (${coreNoun})"}
 
 RULE 3: STRICT WHOLE-VIDEO FACELESS MANDATE (ZERO TOLERANCE FOR FACES ANYWHERE IN THE VIDEO):
 - MANDATORY WHOLE-VIDEO INSPECTION: Inspect ALL ${frames.length} sampled frames from first to last.
@@ -946,7 +969,7 @@ RULE 5: WATERMARKS, SOCIAL MEDIA LOGOS & CHANNEL IDENTITIES (9:16 CROP TOLERANCE
   * Merek, logo, atau tulisan yang tercetak/terukir secara fisik pada bodi produk (misal: "Philips", "Joybos", "Xiaomi") BUKAN watermark dan 100% DITERIMA!
 
 CRITERIA FOR ACCEPTANCE (ALL MUST BE TRUE):
-1. Exactly matches target Shopee product: "${effectiveTitle}".
+1. Functionally & physically matches target product: "${coreNoun}" (${effectiveTitle}).
 2. 100% Entirely Faceless: Absolutely ZERO human faces, heads, necks, or bodies anywhere across all ${frames.length} frames (hands/fingers operating on tabletop only).
 3. 100% Clean from hardburned speech subtitles/captions inside 9:16 frame (physical text/labels on the product are 100% allowed).
 4. 100% Clean from watermarks, social media logos, and channel identities inside the 9:16 central frame (outer left/right watermarks that get cropped/covered are acceptable).

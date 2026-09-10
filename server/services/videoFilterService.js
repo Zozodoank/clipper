@@ -4,6 +4,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { getYtDlpPath, getFFmpegPath } from './binaryChecker.js';
 import { trackBandwidth, trackSavedBandwidth } from './bandwidthTracker.js';
+import { extractCoreProductInfo, isTitleMatchingProduct } from './discoveryService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -249,18 +250,17 @@ export function checkVideoMetadataCompliance(metadata, productTitle = '', option
     return { eligible: false, reason: 'Video terindikasi animasi, kartun, atau buatan AI.' };
   }
 
-  // 7. Kesesuaian Kata Kunci Produk Target
+  // 7. Kesesuaian Kata Kunci Produk Target (Policy 1 & Policy 2: Core Noun & Multi-word Intersection)
   if (productTitle && productTitle.trim()) {
-    const cleanProd = productTitle.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').trim();
-    const words = cleanProd.split(/\s+/).filter(w => w.length >= 3);
-    const stopWords = ['dan', 'yang', 'untuk', 'dengan', 'dari', 'bisa', 'anti', 'mini', 'super', 'termurah', 'viral', 'original', 'promo'];
-    const significantWords = words.filter(w => !stopWords.includes(w));
+    const prodInfo = extractCoreProductInfo(productTitle, metadata.description || '');
+    const coreWords = prodInfo.coreWords || [];
 
-    if (significantWords.length > 0) {
-      const hasMatch = significantWords.some(w => combinedText.includes(w));
-      if (!hasMatch) {
-        return { eligible: false, reason: `Metadata video tidak memuat kata kunci produk "${significantWords.slice(0, 3).join(', ')}".` };
-      }
+    // Local check on video title against core product words and cross-category exclusions
+    if (!isTitleMatchingProduct(metadata.title, coreWords)) {
+      return {
+        eligible: false,
+        reason: `Judul video YouTube ("${metadata.title}") tidak cocok dengan produk target ("${prodInfo.coreProductNoun}"). Dibutuhkan kecocokan multi-kata kunci produk.`
+      };
     }
   }
 

@@ -86,6 +86,22 @@ export default function ProgressCard({ progressState, onRetry, onStopAutoRetry, 
         </div>
       </div>
 
+      {/* Target Product Badge */}
+      {progressState.coreProductNoun && (
+        <div className="mb-4 px-3 py-1.5 rounded-xl bg-slate-900/90 border border-slate-700/70 flex items-center justify-between text-xs animate-in fade-in">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-amber-400 font-bold flex items-center gap-1 flex-shrink-0">
+              <Sparkles className="w-3.5 h-3.5" />
+              Target Produk:
+            </span>
+            <span className="font-semibold text-white truncate">"{progressState.coreProductNoun}"</span>
+          </div>
+          <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-mono flex-shrink-0 ml-2">
+            Policy Filter Aktif
+          </span>
+        </div>
+      )}
+
       {/* Auto Retry Active Banner */}
       {progressState.isAutoRetrying && (
         <div className="mb-4 p-3 rounded-xl bg-gradient-to-r from-amber-950/60 via-slate-900/80 to-amber-950/60 border border-amber-500/40 flex items-center justify-between gap-3 text-xs text-amber-200 shadow-lg shadow-amber-950/30 animate-in fade-in">

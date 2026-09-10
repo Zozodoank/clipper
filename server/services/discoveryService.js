@@ -539,22 +539,12 @@ export async function discoverYouTubeCandidatesForProduct({
   onProgress = () => {},
 } = {}) {
   const excludeSet = excludeVideoIds instanceof Set ? excludeVideoIds : new Set(excludeVideoIds || []);
-  const coreTitle = cleanTitle(productTitle);
-  const productWords = normalizeText(coreTitle).split(' ').filter((word) => word.length >= 3);
-  const compactTitle = productWords.slice(0, 5).join(' ');
+  const productInfo = extractCoreProductInfo(productTitle, productDescription);
+  const coreNoun = productInfo.coreProductNoun || cleanTitle(productTitle) || 'Produk';
+  const coreWords = productInfo.coreWords || [];
 
-  // Dynamic search query candidate sets depending on searchIteration for deeper retry diversity
-  const baseQueryCandidates = [
-    `${compactTitle} review cara pakai`,
-    `${compactTitle} demo cara pakai`,
-    `${compactTitle} review pemakaian`,
-    `${compactTitle} tes fungsi peragaan`,
-    `${compactTitle} cara penggunaan`,
-    `${compactTitle} review produk`,
-    `${compactTitle} unboxing review`,
-    `${coreTitle} review`,
-    compactTitle,
-  ].filter(Boolean);
+  // Dynamic search query candidate sets from productInfo (high-intent, zero promo-spam)
+  const baseQueryCandidates = productInfo.searchQueries;
 
   // Rotate query order based on searchIteration so consecutive auto retry attempts hit fresh queries first
   const offset = searchIteration % baseQueryCandidates.length;
@@ -572,8 +562,8 @@ export async function discoverYouTubeCandidatesForProduct({
         return vid && !excludeSet.has(vid);
       });
 
-      // 2. Only accept if the query produced compliant candidate(s) (5-15 min, faceless, proper title)
-      const cleanResults = freshResults.filter((c) => isLikelyCleanYouTubeCandidate(c, productWords));
+      // 2. Only accept if the query produced compliant candidate(s) (5-15 min, faceless, multi-word matching)
+      const cleanResults = freshResults.filter((c) => isLikelyCleanYouTubeCandidate(c, coreWords));
 
       if (cleanResults.length > 0) {
         candidates = cleanResults;
@@ -584,22 +574,23 @@ export async function discoverYouTubeCandidatesForProduct({
     await delayWithJitter(300, 600);
   }
 
-  // Fallback: If all results were previously used or cleanResults was empty, search exact core title
+  // Fallback: If all results were previously used or cleanResults was empty, search exact core noun
   if (!candidates.length) {
-    const fallbackResults = await searchYouTubeVideos(`${compactTitle} review`, { limit, onProgress });
+    const fallbackResults = await searchYouTubeVideos(`${coreNoun} review`, { limit, onProgress });
     const nonExcluded = (fallbackResults || []).filter((c) => {
       const vid = c.id || extractVideoId(c.url);
-      return vid && !excludeSet.has(vid) && isLikelyCleanYouTubeCandidate(c, productWords);
+      return vid && !excludeSet.has(vid) && isLikelyCleanYouTubeCandidate(c, coreWords);
     });
     candidates = nonExcluded;
   }
 
   const cleanCandidates = candidates
-    .filter((candidate) => isLikelyCleanYouTubeCandidate(candidate, productWords))
+    .filter((candidate) => isLikelyCleanYouTubeCandidate(candidate, coreWords))
     .map((candidate) => ({
       ...candidate,
       searchQuery: usedQuery,
-      matchScore: scoreCandidateMatch(candidate, productWords, productDescription),
+      coreProductNoun: coreNoun,
+      matchScore: scoreCandidateMatch(candidate, coreWords, productDescription),
     }))
     .filter((candidate) => candidate.matchScore > 0)
     .sort((a, b) => b.matchScore - a.matchScore);
@@ -884,12 +875,10 @@ export function isLikelyCleanYouTubeCandidate(candidate, productWords = []) {
   ];
   if (excludedTitleWords.some((keyword) => titleText.includes(keyword))) return false;
 
-  // Strict check: Candidate title MUST contain at least one substantive product word
+  // Strict check: Candidate title MUST match core product keywords with multi-word intersection & cross-category exclusion
   if (Array.isArray(productWords) && productWords.length > 0) {
-    const significantWords = productWords.filter(w => w.length >= 3);
-    if (significantWords.length > 0) {
-      const hasProductWord = significantWords.some(w => titleText.includes(w));
-      if (!hasProductWord) return false;
+    if (!isTitleMatchingProduct(candidate.title, productWords)) {
+      return false;
     }
   }
 
@@ -940,11 +929,16 @@ export function isGenericShopeeTitle(title = '') {
   return genericPatterns.some((pattern) => norm.includes(pattern));
 }
 
-function cleanTitle(value = '', productUrl = '') {
-  let cleaned = value
+export function cleanTitle(value = '', productUrl = '') {
+  let cleaned = String(value || '')
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/\([^)]*(?:cod|promo|murah|diskon|ori|import|garansi)[^)]*\)/gi, ' ')
+    .replace(/[【】〔〕〖〗（）]/g, ' ')
+    .replace(/(?:🛒|🔥|⭐|💥|⚡|✨|🏆|🎉|👍|✅|📢|🔴|▶️)/gu, ' ')
     .replace(/\s*\|\s*Shopee.*$/i, '')
     .replace(/\s*-\s*Shopee.*$/i, '')
     .replace(/^Shopee\s*(Indonesia)?\s*[:|–-]?\s*/i, '')
+    .replace(/\b(?:cod|bisa cod|bayar di tempat|ready stock|ready|promo|diskon|murah|termurah|terlaris|terbaru|terlengkap|original|ori|asli|import|impor|100% original|official store|hot sale|flash sale|best seller|viral|viral tiktok|gratis ongkir|free ongkir|hemat|garansi resmi|garansi \d+ tahun)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 160);
@@ -955,6 +949,159 @@ function cleanTitle(value = '', productUrl = '') {
   if (fromUrl && !isGenericShopeeTitle(fromUrl)) return fromUrl;
 
   return '';
+}
+
+export const PRODUCT_ANCHORS = [
+  // 1. Kitchen Prep & Choppers
+  { pattern: /\b(?:chopper\s+(?:mini|elektrik|portable|tarik|wireless)|food\s+chopper|blender\s+mini|blender\s+kapsul|mini\s+cutter)\b/i, noun: 'Chopper Mini Elektrik', category: 'kitchen_prep', core: ['chopper', 'mini'] },
+  { pattern: /\b(?:gunting\s+dapur|gunting\s+sk5|gunting\s+tulang|kitchen\s+shears)\b/i, noun: 'Gunting Dapur SK5', category: 'kitchen_prep', core: ['gunting', 'dapur'] },
+  { pattern: /\b(?:mandoline\s+slicer|pemotong\s+sayur|parutan\s+multifungsi|parutan\s+serbaguna|parutan\s+6\s*in\s*1)\b/i, noun: 'Pemotong Sayur Multifungsi', category: 'kitchen_prep', core: ['pemotong', 'sayur'] },
+  { pattern: /\b(?:pengupas\s+buah|peeler\s+buah|pengupas\s+kulit|pisau\s+peeler)\b/i, noun: 'Alat Pengupas Buah Praktis', category: 'kitchen_prep', core: ['pengupas', 'buah'] },
+  { pattern: /\b(?:pemeras\s+jeruk|pemeras\s+lemon|citrus\s+squeezer|perasan\s+jeruk)\b/i, noun: 'Alat Pemeras Jeruk Manual', category: 'kitchen_prep', core: ['pemeras', 'jeruk'] },
+  { pattern: /\b(?:pemotong\s+semangka|pemotong\s+melon|watermelon\s+slicer)\b/i, noun: 'Pemotong Semangka Praktis', category: 'kitchen_prep', core: ['pemotong', 'semangka'] },
+  { pattern: /\b(?:pelumat\s+bawang|press\s+garlic|penghancur\s+bawang|garlic\s+press)\b/i, noun: 'Alat Pelumat Bawang Putih', category: 'kitchen_prep', core: ['bawang', 'garlic'] },
+  { pattern: /\b(?:cetakan\s+bakso|pembuat\s+bakso|meatball\s+maker)\b/i, noun: 'Cetakan Bakso Manual Praktis', category: 'kitchen_prep', core: ['cetakan', 'bakso'] },
+  { pattern: /\b(?:pemotong\s+daging\s+beku|meat\s+slicer\s+manual|pengiris\s+daging)\b/i, noun: 'Alat Pengiris Daging Manual', category: 'kitchen_prep', core: ['pengiris', 'daging'] },
+  { pattern: /\b(?:pembuat\s+dumpling|cetakan\s+pastel|dumpling\s+maker)\b/i, noun: 'Alat Pembuat Dumpling Pastel', category: 'kitchen_prep', core: ['dumpling', 'pastel'] },
+  { pattern: /\b(?:sealer\s+plastik|perekat\s+plastik|heat\s+sealer|mini\s+sealer)\b/i, noun: 'Sealer Plastik Mini Portable', category: 'kitchen_prep', core: ['sealer', 'plastik'] },
+  { pattern: /\b(?:pengasah\s+pisau|knife\s+sharpener|asah\s+pisau)\b/i, noun: 'Alat Pengasah Pisau Praktis', category: 'kitchen_prep', core: ['pengasah', 'pisau'] },
+  { pattern: /\b(?:timbangan\s+digital|kitchen\s+scale|timbangan\s+dapur)\b/i, noun: 'Timbangan Dapur Digital', category: 'kitchen_prep', core: ['timbangan', 'digital'] },
+  { pattern: /\b(?:timer\s+dapur|kitchen\s+timer)\b/i, noun: 'Timer Dapur Digital Magnetik', category: 'kitchen_prep', core: ['timer', 'dapur'] },
+  { pattern: /\b(?:frother|pengocok\s+susu|pengocok\s+telur\s+mini|milk\s+frother)\b/i, noun: 'Frother Pengocok Susu Mini', category: 'kitchen_prep', core: ['frother', 'pengocok'] },
+  { pattern: /\b(?:hand\s+mixer|mixer\s+tangan\s+mini|mixer\s+portable)\b/i, noun: 'Mixer Tangan Mini Portable', category: 'kitchen_prep', core: ['mixer', 'mini'] },
+
+  // 2. Cookware & Pots
+  { pattern: /\b(?:panci\s+listrik|panci\s+elektrik|electric\s+(?:pot|cooker|pan|skillet)|multi\s+cooker\s+mini)\b/i, noun: 'Panci Listrik Mini Serbaguna', category: 'cooking_pot', core: ['panci', 'listrik'] },
+  { pattern: /\b(?:wajan\s+telur\s+4|wajan\s+mini|frypan\s+mini|pan\s+4\s+lubang)\b/i, noun: 'Wajan Mini Telur 4 Lubang', category: 'cooking_pot', core: ['wajan', 'telur'] },
+  { pattern: /\b(?:pembuat\s+waffle|waffle\s+maker|cetakan\s+waffle)\b/i, noun: 'Alat Pembuat Waffle Mini', category: 'cooking_pot', core: ['waffle', 'maker'] },
+  { pattern: /\b(?:sutil\s+silikon|spatula\s+silikon|spatula\s+set|silicone\s+spatula)\b/i, noun: 'Sutil Silikon Set Tahan Panas', category: 'cooking_pot', core: ['sutil', 'silikon'] },
+  { pattern: /\b(?:cetakan\s+es\s+batu|ice\s+cube\s+tray|cetakan\s+es\s+silikon)\b/i, noun: 'Cetakan Es Batu Silikon', category: 'cooking_pot', core: ['cetakan', 'batu'] },
+  { pattern: /\b(?:pemanggang\s+sandwich|sandwich\s+maker|toaster\s+mini)\b/i, noun: 'Pemanggang Sandwich Mini Elektrik', category: 'cooking_pot', core: ['sandwich', 'pemanggang'] },
+  { pattern: /\b(?:cetakan\s+takoyaki|takoyaki\s+pan)\b/i, noun: 'Cetakan Takoyaki Mini', category: 'cooking_pot', core: ['cetakan', 'takoyaki'] },
+  { pattern: /\b(?:pot\s+air\s+fryer|silikon\s+air\s+fryer|wadah\s+air\s+fryer)\b/i, noun: 'Wadah Silikon Air Fryer', category: 'cooking_pot', core: ['silikon', 'fryer'] },
+  { pattern: /\b(?:termometer\s+makanan|cooking\s+thermometer)\b/i, noun: 'Termometer Makanan Digital', category: 'cooking_pot', core: ['termometer', 'makanan'] },
+
+  // 3. Storage, Bottles & Organizers
+  { pattern: /\b(?:botol\s+minum\s+motivasi|botol\s+motivasi|botol\s+minum\s+2\s*l(?:iter)?)\b/i, noun: 'Botol Minum Motivasi 2 Liter', category: 'storage_organizer', core: ['botol', 'minum'] },
+  { pattern: /\b(?:botol\s+minyak\s+kuas|botol\s+minyak|oil\s+dispenser|spray\s+minyak)\b/i, noun: 'Botol Minyak Kuas Silikon', category: 'storage_organizer', core: ['botol', 'minyak'] },
+  { pattern: /\b(?:tempat\s+bumbu\s+putar|rak\s+bumbu\s+putar|kotak\s+bumbu\s+putar)\b/i, noun: 'Tempat Bumbu Putar Dapur', category: 'storage_organizer', core: ['bumbu', 'putar'] },
+  { pattern: /\b(?:dispenser\s+beras|tempat\s+beras|rice\s+dispenser|kotak\s+beras)\b/i, noun: 'Dispenser Beras Otomatis', category: 'storage_organizer', core: ['dispenser', 'beras'] },
+  { pattern: /\b(?:wadah\s+telur|kotak\s+telur|rolling\s+egg|rak\s+telur\s+kulkas)\b/i, noun: 'Wadah Telur Kulkas Otomatis', category: 'storage_organizer', core: ['wadah', 'telur'] },
+  { pattern: /\b(?:tutup\s+makanan\s+silikon|silicone\s+stretch\s+lid)\b/i, noun: 'Tutup Makanan Silikon Stretch', category: 'storage_organizer', core: ['tutup', 'silikon'] },
+  { pattern: /\b(?:rak\s+bumbu|rak\s+dapur\s+stainless|rak\s+gantung\s+dapur)\b/i, noun: 'Rak Bumbu Dapur Serbaguna', category: 'storage_organizer', core: ['rak', 'bumbu'] },
+  { pattern: /\b(?:rak\s+tirisan|rak\s+piring\s+wastafel|dish\s+drainer)\b/i, noun: 'Rak Tirisan Piring Wastafel', category: 'storage_organizer', core: ['rak', 'tirisan'] },
+  { pattern: /\b(?:dispenser\s+sabun\s+cuci\s+piring|soap\s+pump\s+sponge)\b/i, noun: 'Dispenser Sabun Cuci Piring Sponge', category: 'storage_organizer', core: ['dispenser', 'sabun'] },
+
+  // 4. Cleaning Gadgets
+  { pattern: /\b(?:alat\s+pel\s+spray|spray\s+mop|pel\s+semprot)\b/i, noun: 'Alat Pel Semprot Spray Mop', category: 'cleaning', core: ['pel', 'spray'] },
+  { pattern: /\b(?:pel\s+putar|spin\s+mop|pel\s+peras\s+otomatis)\b/i, noun: 'Alat Pel Peras Putar Otomatis', category: 'cleaning', core: ['pel', 'putar'] },
+  { pattern: /\b(?:pel\s+mini|sponge\s+mop\s+mini|alat\s+pel\s+meja)\b/i, noun: 'Alat Pel Mini Meja Portable', category: 'cleaning', core: ['pel', 'mini'] },
+  { pattern: /\b(?:sikat\s+pembersih\s+elektrik|electric\s+cleaning\s+brush|spin\s+scrubber)\b/i, noun: 'Sikat Pembersih Elektrik Mini', category: 'cleaning', core: ['sikat', 'elektrik'] },
+  { pattern: /\b(?:kemoceng\s+microfiber|duster\s+microfiber)\b/i, noun: 'Kemoceng Microfiber Tarik Fleksibel', category: 'cleaning', core: ['kemoceng', 'microfiber'] },
+  { pattern: /\b(?:wiper\s+kaca|pengeruk\s+pembersih\s+kaca|glass\s+wiper)\b/i, noun: 'Pengeruk Pembersih Kaca Wiper', category: 'cleaning', core: ['pembersih', 'kaca'] },
+  { pattern: /\b(?:sikat\s+kloset\s+silikon|toilet\s+brush\s+silicone)\b/i, noun: 'Sikat Kloset Silikon Praktis', category: 'cleaning', core: ['sikat', 'kloset'] },
+  { pattern: /\b(?:lint\s+roller|pembersih\s+bulu|lint\s+remover)\b/i, noun: 'Pembersih Bulu Lint Roller', category: 'cleaning', core: ['pembersih', 'bulu'] },
+  { pattern: /\b(?:nano\s+magic\s+sponge|spons\s+nano|spons\s+cuci\s+piring)\b/i, noun: 'Spons Nano Cuci Piring Magic', category: 'cleaning', core: ['spons', 'nano'] },
+  { pattern: /\b(?:vacuum\s+cleaner|penyedot\s+debu\s+mini|vacuum\s+portable)\b/i, noun: 'Penyedot Debu Mini Portable', category: 'cleaning', core: ['vacuum', 'debu'] },
+
+  // 5. Home Gadgets & Living
+  { pattern: /\b(?:pompa\s+galon|water\s+pump\s+dispenser)\b/i, noun: 'Pompa Galon Elektrik Otomatis', category: 'home_gadget', core: ['pompa', 'galon'] },
+  { pattern: /\b(?:humidifier|diffuser\s+aroma|air\s+humidifier)\b/i, noun: 'Humidifier Mini Diffuser Ruangan', category: 'home_gadget', core: ['humidifier', 'diffuser'] },
+  { pattern: /\b(?:lampu\s+sensor\s+gerak|motion\s+sensor\s+light)\b/i, noun: 'Lampu Sensor Gerak Otomatis', category: 'home_gadget', core: ['lampu', 'sensor'] },
+  { pattern: /\b(?:dispenser\s+odol|tempat\s+pasta\s+gigi)\b/i, noun: 'Dispenser Odol Otomatis Tempel', category: 'home_gadget', core: ['dispenser', 'odol'] },
+  { pattern: /\b(?:perangkap\s+nyamuk|mosquito\s+trap|lampu\s+nyamuk)\b/i, noun: 'Perangkap Nyamuk Elektrik UV', category: 'home_gadget', core: ['perangkap', 'nyamuk'] },
+  { pattern: /\b(?:tempat\s+sampah\s+sensor|smart\s+trash\s+can)\b/i, noun: 'Tempat Sampah Sensor Otomatis', category: 'home_gadget', core: ['tempat', 'sampah'] },
+  { pattern: /\b(?:timbangan\s+badan\s+digital|body\s+scale)\b/i, noun: 'Timbangan Badan Digital LED', category: 'home_gadget', core: ['timbangan', 'badan'] },
+  { pattern: /\b(?:lampu\s+tidur\s+proyektor|star\s+projector)\b/i, noun: 'Lampu Tidur Proyektor Bintang', category: 'home_gadget', core: ['lampu', 'proyektor'] },
+];
+
+export function extractCoreProductInfo(rawTitle = '', rawDesc = '', rawUrl = '') {
+  const cleaned = cleanTitle(rawTitle, rawUrl) || String(rawTitle || '').trim();
+  const normalized = normalizeText(cleaned);
+
+  for (const anchor of PRODUCT_ANCHORS) {
+    if (anchor.pattern.test(normalized)) {
+      return {
+        cleanTitle: cleaned,
+        coreProductNoun: anchor.noun,
+        category: anchor.category,
+        coreWords: anchor.core,
+        searchQueries: [
+          `${anchor.noun} review cara pakai`,
+          `${anchor.noun} demo peragaan`,
+          `${anchor.noun} review pemakaian`,
+          `${anchor.noun} unboxing review`,
+          `${anchor.noun} tes fungsi`,
+          anchor.noun,
+        ]
+      };
+    }
+  }
+
+  // Fallback: Smart token extraction from title
+  const stopWords = [
+    'dan', 'yang', 'untuk', 'dengan', 'dari', 'bisa', 'anti', 'super', 'termurah',
+    'viral', 'original', 'promo', 'murah', 'ready', 'stock', 'import', 'impor',
+    'terlaris', 'terbaru', 'terpercaya', 'kualitas', 'garansi', 'resmi', 'official',
+    'bisa', 'cod', 'gratis', 'ongkir', 'diskon', 'terlengkap', 'store', 'shop', 'indonesia'
+  ];
+  const words = normalized.split(/\s+/).filter(w => w.length >= 3 && !stopWords.includes(w));
+  const fallbackNoun = words.slice(0, 3).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || cleaned.slice(0, 30) || 'Produk Praktis';
+  const fallbackWords = words.slice(0, 2);
+
+  return {
+    cleanTitle: cleaned,
+    coreProductNoun: fallbackNoun,
+    category: 'general_gadget',
+    coreWords: fallbackWords.length > 0 ? fallbackWords : ['produk'],
+    searchQueries: [
+      `${fallbackNoun} review cara pakai`,
+      `${fallbackNoun} demo peragaan`,
+      `${fallbackNoun} review pemakaian`,
+      `${fallbackNoun} unboxing`,
+      fallbackNoun,
+    ]
+  };
+}
+
+export function isTitleMatchingProduct(candidateTitle, productWords = []) {
+  let normTitle = normalizeText(candidateTitle || '');
+  
+  // Cross-category exclusion for household / gadget products
+  const crossCategoryExclusions = [
+    'las', 'pagar', 'bengkel', 'servis hp', 'servis motor', 'knalpot', 'mobil', 'motor', 'sepeda',
+    'gameplay', 'game', 'manga', 'anime', 'vlog', 'skincare', 'makeup', 'gamis', 'hijab', 'outfit'
+  ];
+
+  if (crossCategoryExclusions.some(badWord => normTitle.includes(badWord))) {
+    return false;
+  }
+
+  if (!Array.isArray(productWords) || productWords.length === 0) return true;
+
+  const significant = productWords.filter(w => w.length >= 3);
+  if (significant.length === 0) return true;
+
+  // Normalize common Indonesian/English affiliate product synonyms
+  const synonymMap = {
+    'elektrik': 'listrik',
+    'electric': 'listrik',
+    'peeler': 'pengupas',
+    'slicer': 'pemotong',
+    'mop': 'pel',
+    'blender': 'chopper',
+    'penggiling': 'chopper',
+  };
+
+  for (const [syn, base] of Object.entries(synonymMap)) {
+    if (normTitle.includes(syn)) {
+      normTitle += ` ${base}`;
+    }
+  }
+
+  const matched = significant.filter(w => normTitle.includes(w.toLowerCase()));
+  const minRequired = Math.min(2, significant.length);
+  return matched.length >= minRequired;
 }
 
 function titleFromShopeeUrl(productUrl = '') {

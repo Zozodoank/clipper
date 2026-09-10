@@ -1,6 +1,60 @@
 import React from 'react';
 import { Youtube, ShoppingBag, Key, Sparkles, Shield, Sliders, Zap, Tag, AlignLeft } from 'lucide-react';
 
+const CLIENT_PRODUCT_ANCHORS = [
+  { pattern: /\b(?:chopper|blender\s+mini|food\s+chopper)\b/i, noun: 'Chopper Mini Elektrik' },
+  { pattern: /\b(?:gunting\s+dapur|gunting\s+sk5|gunting\s+tulang)\b/i, noun: 'Gunting Dapur SK5' },
+  { pattern: /\b(?:mandoline|parutan\s+multifungsi|pemotong\s+sayur)\b/i, noun: 'Pemotong Sayur Multifungsi' },
+  { pattern: /\b(?:pengupas\s+buah|peeler)\b/i, noun: 'Alat Pengupas Buah Praktis' },
+  { pattern: /\b(?:pemeras\s+jeruk|citrus\s+squeezer)\b/i, noun: 'Alat Pemeras Jeruk Manual' },
+  { pattern: /\b(?:pemotong\s+semangka|watermelon\s+slicer)\b/i, noun: 'Pemotong Semangka Praktis' },
+  { pattern: /\b(?:pelumat\s+bawang|garlic\s+press)\b/i, noun: 'Alat Pelumat Bawang Putih' },
+  { pattern: /\b(?:cetakan\s+bakso|meatball\s+maker)\b/i, noun: 'Cetakan Bakso Manual' },
+  { pattern: /\b(?:sealer\s+plastik|mini\s+sealer)\b/i, noun: 'Sealer Plastik Mini Portable' },
+  { pattern: /\b(?:pengasah\s+pisau|knife\s+sharpener)\b/i, noun: 'Alat Pengasah Pisau Praktis' },
+  { pattern: /\b(?:timbangan\s+digital|kitchen\s+scale)\b/i, noun: 'Timbangan Dapur Digital' },
+  { pattern: /\b(?:frother|pengocok\s+susu|milk\s+frother)\b/i, noun: 'Frother Pengocok Susu Mini' },
+  { pattern: /\b(?:panci\s+listrik|electric\s+pot|electric\s+cooker)\b/i, noun: 'Panci Listrik Mini Serbaguna' },
+  { pattern: /\b(?:wajan\s+telur|frypan\s+mini|pan\s+4\s+lubang)\b/i, noun: 'Wajan Mini Telur 4 Lubang' },
+  { pattern: /\b(?:pembuat\s+waffle|waffle\s+maker)\b/i, noun: 'Alat Pembuat Waffle Mini' },
+  { pattern: /\b(?:sutil\s+silikon|spatula\s+silikon)\b/i, noun: 'Sutil Silikon Set Tahan Panas' },
+  { pattern: /\b(?:cetakan\s+es\s+batu|ice\s+cube)\b/i, noun: 'Cetakan Es Batu Silikon' },
+  { pattern: /\b(?:pemanggang\s+sandwich|sandwich\s+maker)\b/i, noun: 'Pemanggang Sandwich Mini' },
+  { pattern: /\b(?:botol\s+minum\s+motivasi|botol\s+motivasi)\b/i, noun: 'Botol Minum Motivasi 2L' },
+  { pattern: /\b(?:botol\s+minyak|oil\s+dispenser)\b/i, noun: 'Botol Minyak Kuas Silikon' },
+  { pattern: /\b(?:tempat\s+bumbu|rak\s+bumbu)\b/i, noun: 'Tempat Bumbu Dapur Serbaguna' },
+  { pattern: /\b(?:dispenser\s+beras|rice\s+dispenser)\b/i, noun: 'Dispenser Beras Otomatis' },
+  { pattern: /\b(?:wadah\s+telur|rak\s+telur)\b/i, noun: 'Wadah Telur Kulkas Praktis' },
+  { pattern: /\b(?:pel\s+spray|spray\s+mop)\b/i, noun: 'Alat Pel Semprot Spray Mop' },
+  { pattern: /\b(?:pel\s+putar|spin\s+mop)\b/i, noun: 'Alat Pel Peras Putar Otomatis' },
+  { pattern: /\b(?:pel\s+mini|sponge\s+mop\s+mini)\b/i, noun: 'Alat Pel Mini Meja Portable' },
+  { pattern: /\b(?:sikat\s+pembersih\s+elektrik|electric\s+brush)\b/i, noun: 'Sikat Pembersih Elektrik Mini' },
+  { pattern: /\b(?:kemoceng\s+microfiber|duster)\b/i, noun: 'Kemoceng Microfiber Tarik' },
+  { pattern: /\b(?:wiper\s+kaca|glass\s+wiper)\b/i, noun: 'Pengeruk Pembersih Kaca Wiper' },
+  { pattern: /\b(?:pompa\s+galon|water\s+pump)\b/i, noun: 'Pompa Galon Elektrik Otomatis' },
+  { pattern: /\b(?:humidifier|diffuser)\b/i, noun: 'Humidifier Mini Diffuser Ruangan' },
+  { pattern: /\b(?:lampu\s+sensor|motion\s+sensor)\b/i, noun: 'Lampu Sensor Gerak Otomatis' },
+];
+
+function getDetectedProductNoun(rawTitle = '') {
+  if (!rawTitle || rawTitle.trim().length < 3) return null;
+  const cleaned = rawTitle
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/\([^)]*(?:cod|promo|murah|diskon|ori)[^)]*\)/gi, ' ')
+    .replace(/\b(?:cod|bisa cod|promo|diskon|murah|termurah|terlaris|terbaru|terlengkap|original|ori|asli|import|impor|viral|gratis ongkir)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  for (const anchor of CLIENT_PRODUCT_ANCHORS) {
+    if (anchor.pattern.test(cleaned)) return anchor.noun;
+  }
+  const words = cleaned.split(/\s+/).filter(w => w.length >= 3 && !['dan','yang','untuk','dengan','dari','bisa'].includes(w.toLowerCase()));
+  if (words.length > 0) {
+    return words.slice(0, 3).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+  }
+  return null;
+}
+
 export default function InputCard({
   formData,
   setFormData,
@@ -18,6 +72,8 @@ export default function InputCard({
   const selectedProviderLabel = isGemini
     ? `Gemini Direct (Flash): ${selectedProviderReady ? '.env Active' : 'Missing in .env'}`
     : `OpenRouter: ${selectedProviderReady ? '.env Active' : 'Missing in .env'}`;
+
+  const detectedNoun = getDetectedProductNoun(formData.productTitle);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -71,6 +127,16 @@ export default function InputCard({
             onChange={(e) => setFormData({ ...formData, productTitle: e.target.value })}
             className="w-full bg-slate-900/90 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 transition-all font-sans"
           />
+          {detectedNoun && (
+            <div className="mt-2 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center gap-2 text-xs text-amber-300 animate-in fade-in">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+              <span className="text-slate-400">Target Produk AI:</span>
+              <span className="font-semibold text-white">"{detectedNoun}"</span>
+              <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 ml-auto">
+                Clean Noun
+              </span>
+            </div>
+          )}
         </div>
 
         {/* 2. Deskripsi & Keunggulan Produk */}

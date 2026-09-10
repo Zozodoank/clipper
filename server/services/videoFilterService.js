@@ -414,123 +414,195 @@ export function inspectFramesLocally(frames, { aspectRatio = '9:16', onProgress 
   }
 
   const ffmpeg = getFFmpegPath();
+  const W = 80;
+  const H = 144;
+  const frameBuffers = [];
+
   let subtitleBandCount = 0;
   let floatingTextCount = 0;
-  let blackFrameCount = 0;
+  let animatedGraphicCount = 0;
   let humanFaceSkinCount = 0;
+  let blackFrameCount = 0;
+  let bumperSlideCount = 0;
+  let staticLogoCount = 0;
 
-  // Inspect frames using fast FFmpeg rawvideo pixel stream (grayscale & RGB)
-  // Area 9:16 tengah adalah x=iw*0.25 s/d x=iw*0.75 (lebar 50% tengah).
-  // 1. Bottom subtitle zone: y=ih*0.75 s/d y=ih*1.0 (tinggi 25% bawah).
-  // 2. Middle & upper floating text zone: y=ih*0.12 s/d y=ih*0.72 (tinggi 60% tengah/atas tempat teks promo/stiker melayang).
-  // 3. Upper & middle face/person zone: y=ih*0.05 s/d y=ih*0.50 (tinggi 45% atas tempat vlogger/wajah muncul).
+  // Ekstrak area 9:16 tengah sekali saja per frame dalam RGB24 (80x144, 34 KB per frame)
   for (const f of frames) {
     if (!f.filePath || !fs.existsSync(f.filePath)) continue;
 
-    // ── 1. PEMERIKSAAN SUBTITLE BAWAH (BOTTOM 25% AREA 9:16) ──
-    const subRes = spawnSync(ffmpeg, [
+    const res = spawnSync(ffmpeg, [
       '-y',
       '-i', f.filePath,
-      '-vf', 'crop=w=iw*0.5:h=ih*0.25:x=iw*0.25:y=ih*0.75,scale=100:50',
-      '-f', 'rawvideo',
-      '-pix_fmt', 'gray',
-      '-'
-    ]);
-
-    if (subRes.status === 0 && subRes.stdout && subRes.stdout.length > 0) {
-      const buf = subRes.stdout;
-      let sum = 0;
-      let whitePixels = 0;
-
-      for (let i = 0; i < buf.length; i++) {
-        sum += buf[i];
-        if (buf[i] > 220) whitePixels++; // Piksel teks putih/terang berkontras tinggi
-      }
-
-      const avg = sum / buf.length;
-      const whiteRatio = whitePixels / buf.length;
-
-      if (avg < 8) {
-        blackFrameCount++;
-      }
-
-      // Jika area bawah memuat teks subtitle berkontras tinggi
-      if (whiteRatio > 0.05 && avg > 25) {
-        subtitleBandCount++;
-      }
-    }
-
-    // ── 2. PEMERIKSAAN TEKS MENGAMBANG & STIKER EDITAN (MIDDLE & UPPER 60% AREA 9:16) ──
-    const floatTextRes = spawnSync(ffmpeg, [
-      '-y',
-      '-i', f.filePath,
-      '-vf', 'crop=w=iw*0.5:h=ih*0.60:x=iw*0.25:y=ih*0.12,scale=100:60',
-      '-f', 'rawvideo',
-      '-pix_fmt', 'gray',
-      '-'
-    ]);
-
-    if (floatTextRes.status === 0 && floatTextRes.stdout && floatTextRes.stdout.length > 0) {
-      const fBuf = floatTextRes.stdout;
-      let fWhitePixels = 0;
-      let fHighContrastEdges = 0;
-
-      for (let i = 1; i < fBuf.length; i++) {
-        if (fBuf[i] > 225) fWhitePixels++;
-        // Deteksi tepi tajam teks digital (perbedaan kontras ekstrem antar piksel tetangga)
-        if (Math.abs(fBuf[i] - fBuf[i - 1]) > 130) {
-          fHighContrastEdges++;
-        }
-      }
-
-      const fWhiteRatio = fWhitePixels / fBuf.length;
-      const fEdgeRatio = fHighContrastEdges / fBuf.length;
-
-      // Jika area tengah/atas mengandung teks promo mengambang atau stiker teks digital bertuliskan fitur/harga
-      if (fWhiteRatio > 0.06 && fEdgeRatio > 0.05) {
-        floatingTextCount++;
-      }
-    }
-
-    // ── 3. PEMERIKSAAN WAJAH & VLOGGER MANUSIA (UPPER 45% AREA 9:16) ──
-    const faceRes = spawnSync(ffmpeg, [
-      '-y',
-      '-i', f.filePath,
-      '-vf', 'crop=w=iw*0.5:h=ih*0.45:x=iw*0.25:y=ih*0.05,scale=64:48',
+      '-vf', `crop=w=iw*0.5:h=ih:x=iw*0.25:y=0,scale=${W}:${H}`,
       '-f', 'rawvideo',
       '-pix_fmt', 'rgb24',
       '-'
     ]);
 
-    if (faceRes.status === 0 && faceRes.stdout && faceRes.stdout.length >= 3) {
-      const rgbBuf = faceRes.stdout;
-      const numPixels = Math.floor(rgbBuf.length / 3);
-      let skinPixels = 0;
-
-      for (let i = 0; i < rgbBuf.length; i += 3) {
-        const r = rgbBuf[i];
-        const g = rgbBuf[i + 1];
-        const b = rgbBuf[i + 2];
-
-        // Skin-tone detection presisi (wajah manusia di pencahayaan studio/kamera)
-        const isSkin = (r > 75 && g > 40 && b > 20 &&
-          (r - g >= 10) && (r - b >= 10) &&
-          (Math.max(r, g, b) - Math.min(r, g, b) >= 15));
-
-        if (isSkin) skinPixels++;
-      }
-
-      const skinRatio = skinPixels / numPixels;
-      // Di area atas 45%, peragaan produk faceless di atas meja seharusnya hampir 0% skin ratio
-      if (skinRatio > 0.20) {
-        humanFaceSkinCount++;
-      }
+    if (res.status === 0 && res.stdout && res.stdout.length === W * H * 3) {
+      frameBuffers.push(Buffer.from(res.stdout));
     }
   }
 
-  // ── STRICT ZERO-TOLERANCE THRESHOLDS (MAKSIMAL 1 FRAME TOLERANSI UNTUK GLITCH) ──
+  if (frameBuffers.length < 4) {
+    return { eligible: false, reason: 'Gagal mengekstrak frame visual untuk analisa lokal.' };
+  }
 
-  // 1. Tolak jika ada teks subtitle bawaan (>= 2 frame terdeteksi)
+  // ── 1. PEMERIKSAAN FOTO BUMPER & FRAME BEKU STATIS (TEMPORAL GLOBAL DIFFERENCE) ──
+  // Menghitung perbedaan rata-rata absolut (MAD) antar frame berurutan
+  for (let i = 0; i < frameBuffers.length - 1; i++) {
+    const b1 = frameBuffers[i];
+    const b2 = frameBuffers[i + 1];
+    let diff = 0;
+    for (let j = 0; j < b1.length; j++) {
+      diff += Math.abs(b1[j] - b2[j]);
+    }
+    const mad = diff / b1.length;
+    // Jika MAD < 5.0 (selisih < 2.0% piksel), frame identik diam / bumper hold
+    if (mad < 5.0) {
+      bumperSlideCount++;
+    }
+  }
+
+  // ── 2. PEMERIKSAAN LOGO / IDENTITAS CHANNEL STATIS DI AREA TENGAH 9:16 ──
+  // Pada video asli, objek bergerak menggeser piksel tepi. Logo channel digital memiliki piksel tepi yang diam membeku (temporal diff < 5).
+  for (let t = 0; t < frameBuffers.length - 1; t++) {
+    const bt1 = frameBuffers[t];
+    const bt2 = frameBuffers[t + 1];
+    let staticEdgePixels = 0;
+
+    for (let y = 15; y < 120; y++) {
+      for (let x = 15; x < 65; x++) {
+        const idx = (y * W + x) * 3;
+        const prevIdx = (y * W + (x - 1)) * 3;
+
+        const r1 = bt1[idx], g1 = bt1[idx + 1], b1 = bt1[idx + 2];
+        const pr1 = bt1[prevIdx], pg1 = bt1[prevIdx + 1], pb1 = bt1[prevIdx + 2];
+        const spatialEdge = (Math.abs(r1 - pr1) + Math.abs(g1 - pg1) + Math.abs(b1 - pb1)) / 3;
+
+        if (spatialEdge > 60) {
+          const r2 = bt2[idx], g2 = bt2[idx + 1], b2 = bt2[idx + 2];
+          const temporalDiff = (Math.abs(r1 - r2) + Math.abs(g1 - g2) + Math.abs(b1 - b2)) / 3;
+          if (temporalDiff < 5) {
+            staticEdgePixels++;
+          }
+        }
+      }
+    }
+
+    if (staticEdgePixels >= 20) {
+      staticLogoCount++;
+    }
+  }
+
+  // ── 3. PEMERIKSAAN PER-FRAME KONTEN (SUBTITLE, FLOATING TEXT, GRAFIS ANIMASI & WAJAH) ──
+  const subStartY = Math.floor(H * 0.75); // y >= 108
+  const floatStartY = Math.floor(H * 0.12); // y >= 17
+  const floatEndY = Math.floor(H * 0.72); // y <= 104
+  const faceEndY = Math.floor(H * 0.45); // y <= 65
+
+  for (let i = 0; i < frameBuffers.length; i++) {
+    const buf = frameBuffers[i];
+    let subWhitePixels = 0;
+    let floatTextWhitePixels = 0;
+    let floatTextEdges = 0;
+    let animatedGraphicPixels = 0;
+    let upperGenuineSkinPixels = 0;
+    let totalBrightness = 0;
+
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const idx = (y * W + x) * 3;
+        const r = buf[idx];
+        const g = buf[idx + 1];
+        const b = buf[idx + 2];
+        const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+        totalBrightness += gray;
+
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const delta = max - min;
+        const sat = max > 0 ? delta / max : 0;
+        const val = max;
+
+        // A. Subtitle bawah (y >= 75%)
+        if (y >= subStartY) {
+          if (gray > 220) subWhitePixels++;
+        }
+
+        // B. Teks mengambang tengah (12% <= y <= 72%)
+        if (y >= floatStartY && y <= floatEndY) {
+          if (gray > 225) floatTextWhitePixels++;
+          if (x > 0) {
+            const prevGray = Math.round(0.299 * buf[idx - 3] + 0.587 * buf[idx - 2] + 0.114 * buf[idx - 1]);
+            if (Math.abs(gray - prevGray) > 130) floatTextEdges++;
+          }
+        }
+
+        // C. Grafis Animasi Overlay / Stiker Digital (Hyper-saturated synthetic colors)
+        const isHyperSaturatedGraphic = (sat > 0.72 && val > 130 && (
+          (r > 210 && g > 170 && b < 60) || // Emoji/cartoon yellow
+          (r > 200 && g < 70 && b < 70) ||   // Pure graphic red
+          (r < 60 && g > 200 && b < 90) ||   // Neon green sticker
+          (r < 60 && g > 180 && b > 210) ||  // Cyan/sky graphic
+          (r > 210 && g < 60 && b > 180)     // Magenta/purple graphic
+        ));
+        if (isHyperSaturatedGraphic) animatedGraphicPixels++;
+
+        // D. Wajah Manusia Alami di Area Atas 45% (Bukan kartun, bukan kayu meja)
+        if (y < faceEndY) {
+          const isSkin = (
+            r > 75 && g > 45 && b > 25 &&
+            (r > g) && (g > b) &&
+            (r - g >= 12) && (r - g <= 75) &&
+            (r - b >= 18) && (r - b <= 120) &&
+            (sat >= 0.18 && sat <= 0.65) &&
+            (val >= 60 && val <= 245)
+          );
+          if (isSkin) upperGenuineSkinPixels++;
+        }
+      }
+    }
+
+    const subTotal = (H - subStartY) * W;
+    const floatTotal = (floatEndY - floatStartY + 1) * W;
+    const upperTotal = faceEndY * W;
+    const avgBrightness = totalBrightness / (W * H);
+
+    if (avgBrightness < 8) blackFrameCount++;
+    if ((subWhitePixels / subTotal) > 0.05 && avgBrightness > 25) subtitleBandCount++;
+    if ((floatTextWhitePixels / floatTotal) > 0.06 && (floatTextEdges / floatTotal) > 0.05) floatingTextCount++;
+    if ((animatedGraphicPixels / (W * H)) > 0.03) animatedGraphicCount++;
+    if ((upperGenuineSkinPixels / upperTotal) > 0.20) humanFaceSkinCount++;
+  }
+
+  // ── AMBANG BATAS NOL TOLERANSI KETAT DENGAN ALASAN SPESIFIK & AKURAT ──
+
+  // 1. Tolak jika ada foto bumper / kartu slide intro statis
+  if (bumperSlideCount >= 1) {
+    return {
+      eligible: false,
+      reason: `Analisa visual lokal mendeteksi foto bumper / kartu intro statis pada video (${bumperSlideCount} frame beku). Wajib video peragaan fisik nyata!`
+    };
+  }
+
+  // 2. Tolak jika ada logo / identitas channel statis di frame tengah
+  if (staticLogoCount >= 2) {
+    return {
+      eligible: false,
+      reason: `Analisa visual lokal mendeteksi logo atau identitas channel statis di area tengah 9:16 (${staticLogoCount} perbandingan frame). Wajib video bersih tanpa logo channel!`
+    };
+  }
+
+  // 3. Tolak jika ada grafis animasi overlay / stiker kartun
+  if (animatedGraphicCount >= 2) {
+    return {
+      eligible: false,
+      reason: `Analisa visual lokal mendeteksi grafis animasi overlay / stiker digital di frame 9:16 (${animatedGraphicCount} frame). Wajib video produk fisik asli tanpa grafis animasi tempelan!`
+    };
+  }
+
+  // 4. Tolak jika ada teks subtitle bawaan (>= 2 frame terdeteksi)
   if (subtitleBandCount >= 2) {
     return {
       eligible: false,
@@ -538,7 +610,7 @@ export function inspectFramesLocally(frames, { aspectRatio = '9:16', onProgress 
     };
   }
 
-  // 2. Tolak jika ada teks mengambang / stiker teks editan (>= 2 frame terdeteksi)
+  // 5. Tolak jika ada teks mengambang / stiker teks editan (>= 2 frame terdeteksi)
   if (floatingTextCount >= 2) {
     return {
       eligible: false,
@@ -546,7 +618,7 @@ export function inspectFramesLocally(frames, { aspectRatio = '9:16', onProgress 
     };
   }
 
-  // 3. Tolak jika ada wajah / vlogger manusia (>= 2 frame terdeteksi)
+  // 6. Tolak jika ada wajah / vlogger manusia (>= 2 frame terdeteksi)
   if (humanFaceSkinCount >= 2) {
     return {
       eligible: false,
@@ -554,8 +626,8 @@ export function inspectFramesLocally(frames, { aspectRatio = '9:16', onProgress 
     };
   }
 
-  // 4. Tolak jika mayoritas frame blank / hitam
-  const blackRatio = blackFrameCount / frames.length;
+  // 7. Tolak jika mayoritas frame blank / hitam
+  const blackRatio = blackFrameCount / frameBuffers.length;
   if (blackRatio > 0.35) {
     return {
       eligible: false,

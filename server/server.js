@@ -1046,7 +1046,7 @@ export async function runStage1Pipeline({
 
           const { frames: sampled } = await sampleFramesFromStream(streamUrl, rawFramesDir, {
             duration: meta.duration,
-            maxSampleFrames: 15,
+            maxSampleFrames: 30,
             onProgress: updateProgress,
           });
 
@@ -1127,13 +1127,13 @@ export async function runStage1Pipeline({
       let rawFrames = preSampledFrames;
       if (!rawFrames || rawFrames.length < 5) {
         const sampleMsg = candidateLabel
-          ? `[${candidateLabel}] [Filter 2/3] Sampling 20 keyframe dari stream URL (~0.8MB kuota)...`
-          : '[Filter 2/3] Sampling 20 keyframe langsung dari stream URL YouTube...';
+          ? `[${candidateLabel}] [Filter 2/3] Sampling 30 keyframe dari stream URL (~1MB kuota)...`
+          : '[Filter 2/3] Sampling 30 keyframe langsung dari stream URL YouTube...';
         updateProgress({ step: 'stream_sampling', message: sampleMsg, progress: 28, status: 'running' });
 
         const sampleRes = await sampleFramesFromStream(streamUrl, rawFramesDir, {
           duration: meta.duration,
-          maxSampleFrames: 20,
+          maxSampleFrames: 30,
           onProgress: updateProgress,
         });
         rawFrames = sampleRes.frames;
@@ -1194,11 +1194,11 @@ export async function runStage1Pipeline({
     if (rawVideoPath) {
       try {
         const rawDur = Number(videoMeta?.duration) || 300;
-        const rawInterval = Math.max(1, Math.floor(rawDur / 20));
-        updateProgress({ step: 'frames_raw', message: `Mengekstrak 20 frame video 1080p untuk analisa AI (interval ${rawInterval}s)...`, progress: 38, status: 'running' });
+        const rawInterval = Math.max(1, Math.floor(rawDur / 30));
+        updateProgress({ step: 'frames_raw', message: `Mengekstrak 30 frame video 1080p untuk analisa AI (interval ${rawInterval}s)...`, progress: 38, status: 'running' });
         const { frames: rawFrames } = await extractFrames(rawVideoPath, rawFramesDir, updateProgress, {
           sampleIntervalSec: rawInterval,
-          maxSampleFrames: 20,
+          maxSampleFrames: 30,
           duration: rawDur,
         });
 

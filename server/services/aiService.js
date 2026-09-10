@@ -319,13 +319,17 @@ CRITERION 3: ZERO SUBTITLES, ZERO FLOATING TEXT, & ZERO ANIMATED GRAPHIC OVERLAY
   * Grafis animasi overlay, stiker kartun, atau subtitle ucapan menutupi peragaan produk fisik.
 - ONLY physical text printed directly on the physical product body ('Power', 'ON/OFF', volume numbers) is acceptable.
 
-CRITERION 4: STRICT 100% WHOLE-VIDEO FACELESS MANDATE (ZERO TOLERANCE FOR FACES OR HUMANS ANYWHERE)
-- The entire source video MUST be 100% faceless and human-free from second 0 to the very end!
-- ZERO TOLERANCE FOR FACES: Does ANY part of the video show a human face, head, hair, neck, torso, or person talking (vlogger, host, presenter, bystander)?
-  * If YES -> REJECT THE ENTIRE VIDEO IMMEDIATELY (status: 'reject')!
-  * DILARANG KERAS MEMILIH POTONGAN TANGAN DARI VIDEO YANG ADA VLOGGER ATAU ORANGNYA!
-  * NEVER cherry-pick hands-only clips from a video where a human presenter or vlogger appears anywhere in the footage! If a person appears anywhere, the video is completely DISQUALIFIED.
-- The ONLY permitted footage is 100% pure tabletop/countertop product demonstration where HANDS/FINGERS ONLY actively operate the product.
+CRITERION 4: FACE DISCARD RULE (CHERRY-PICK CLEAN HANDS-ON PRODUCT ACTIONS, DISCARD ALL FACES)
+- KEMUNCULAN WAJAH SESEKALI (HOST / VLOGGER):
+  * Jika video menampilkan wajah vlogger, host, atau orang berbicara sesekali (misal di awal/akhir atau transisi): JANGAN TOLAK VIDEONYA!
+  * Video TETAP DITERIMA (status: 'accept') asalkan terdapat cukup adegan peragaan produk fisik oleh tangan (hands-only tabletop).
+- MANDAT PEMBUANGAN WAJAH:
+  * AI WAJIB MEMBUANG SEMUA SCENE YANG MENAMPILKAN WAJAH, KEPALA, ATAU VLOGGER!
+  * HANYA pilih timestamps yang 100% murni memperagakan produk oleh TANGAN/JARI saja (hands-only on tabletop/countertop)!
+  * Setiap detik dalam array "timestamps" WAJIB 100% bebas dari wajah dan orang.
+- TOLAK (status: 'reject') HANYA JIKA:
+  * Video berupa talking-head / vlog murni tanpa demonstrasi fisik produk.
+  * Wajah manusia muncul mendominasi hampir seluruh video sehingga TIDAK BISA ditemukan minimal 5 cuplikan tangan bersih (${clipSec}s per cuplikan).
 
 CRITERION 5: CLEAN TIMESTAMP SELECTION
 - Select 5 to 8 non-overlapping timestamps (each about ${clipSec}s long) showing the best, satisfying hands-on product actions.
@@ -429,7 +433,7 @@ CRITICAL RULES FOR REJECTION OUTPUT:
   const isMatchFalse = parsed.isProductMatch === false || parsed.isExactProductMatch === false;
   const hasFace = parsed.hasFaceIn916Frame === true ||
     parsed.hasFaceOrHumanInSelectedFrames === true ||
-    parsed.hasHumanOrFaceAnywhereInVideo === true;
+    parsed.hasFaceInSelectedClips === true;
   const hasWatermarkInFrame = parsed.hasWatermarkIn916Frame === true || parsed.hasCenterObstructingWatermark === true;
   const hasSocialOrChannelInFrame = parsed.hasSocialOrChannelLogoIn916Frame === true || parsed.hasSocialMediaOrChannelIdentityIn916Frame === true;
   const hasSubtitles = parsed.hasSubtitlesIn916Frame === true || parsed.hasSubtitlesOrBurnedText === true || parsed.hasBurnedText === true;
@@ -471,7 +475,7 @@ CRITICAL RULES FOR REJECTION OUTPUT:
       } else if (hasSubtitles || hasFloatingText || mentionsSubtitlesInReason) {
         rejectionMsg = 'Video ditolak oleh AI: Mengandung subtitle, teks mengambang, atau stiker teks editan pada frame 9:16.';
       } else if (hasFace || mentionsFaceInReason) {
-        rejectionMsg = 'Video ditolak oleh AI: Menampilkan wajah atau vlogger manusia di dalam video (wajib 100% faceless tabletop dari awal sampai akhir).';
+        rejectionMsg = 'Video ditolak oleh AI: Video didominasi wajah/vlogger manusia tanpa cukup cuplikan peragaan tangan (wajib cuplikan tangan/hands-only bersih).';
       } else if (isSynthetic) {
         rejectionMsg = 'Video ditolak oleh AI: Terdeteksi video AI / animasi / CGI, bukan demonstrasi fisik nyata.';
       } else if (isMatchFalse) {
@@ -672,13 +676,17 @@ CRITERION 3: ZERO SUBTITLES, ZERO FLOATING TEXT, & ZERO ANIMATED GRAPHIC OVERLAY
   * Grafis animasi overlay, stiker kartun, atau subtitle ucapan menutupi peragaan produk fisik.
 - Physical text/button markings printed/embossed directly on the physical product body ("Power", "ON/OFF", "500ml") are 100% ACCEPTABLE.
 
-CRITERION 4: STRICT 100% WHOLE-VIDEO FACELESS MANDATE (ZERO TOLERANCE FOR FACES OR HUMANS ANYWHERE)
-- The entire source video MUST be 100% faceless and human-free from second 0 to the very end!
-- ZERO TOLERANCE FOR FACES: Does ANY part of the video show a human face, head, hair, neck, torso, or person talking (vlogger, host, presenter, bystander)?
-  * If YES -> REJECT THE ENTIRE VIDEO IMMEDIATELY (status: 'reject')!
-  * DILARANG KERAS MEMILIH POTONGAN TANGAN DARI VIDEO YANG ADA VLOGGER ATAU ORANGNYA!
-  * NEVER cherry-pick hands-only clips from a video where a human presenter or vlogger appears anywhere in the footage! If a person appears anywhere, the video is completely DISQUALIFIED.
-- The ONLY permitted human element is HANDS/FINGERS ONLY actively demonstrating, operating, holding, or pressing the product against a tabletop/neutral surface.
+CRITERION 4: FACE DISCARD RULE (CHERRY-PICK CLEAN HANDS-ON PRODUCT ACTIONS, DISCARD ALL FACES)
+- KEMUNCULAN WAJAH SESEKALI (HOST / VLOGGER):
+  * Jika video menampilkan wajah vlogger, host, atau orang berbicara sesekali (misal di awal/akhir atau transisi): JANGAN TOLAK VIDEONYA!
+  * Video TETAP DITERIMA (status: 'accept') asalkan terdapat cukup adegan peragaan produk fisik oleh tangan (hands-only tabletop).
+- MANDAT PEMBUANGAN WAJAH:
+  * AI WAJIB MEMBUANG SEMUA SCENE YANG MENAMPILKAN WAJAH, KEPALA, ATAU VLOGGER!
+  * HANYA pilih timestamps yang 100% murni memperagakan produk oleh TANGAN/JARI saja (hands-only on tabletop/countertop)!
+  * Setiap detik dalam array "timestamps" WAJIB 100% bebas dari wajah dan orang.
+- TOLAK (status: 'reject') HANYA JIKA:
+  * Video berupa talking-head / vlog murni tanpa demonstrasi fisik produk.
+  * Wajah manusia muncul mendominasi hampir seluruh video sehingga TIDAK BISA ditemukan minimal 4 cuplikan tangan bersih (${clipSec}s per cuplikan).
 
 CRITERION 5: CLEAN TIMESTAMP SELECTION
 - Select 4 to 8 non-overlapping timestamps (each about ${clipSec}s long) showing the best, satisfying hands-on product actions.
@@ -781,7 +789,7 @@ CRITICAL RULES FOR REJECTION OUTPUT:
     const isMatchFalse = parsed.isProductMatch === false || parsed.isExactProductMatch === false;
     const hasFace = parsed.hasFaceIn916Frame === true ||
       parsed.hasFaceOrHumanInSelectedFrames === true ||
-      parsed.hasHumanOrFaceAnywhereInVideo === true;
+      parsed.hasFaceInSelectedClips === true;
     const hasWatermarkInFrame = parsed.hasWatermarkIn916Frame === true || parsed.hasCenterObstructingWatermark === true;
     const hasSocialOrChannelInFrame = parsed.hasSocialOrChannelLogoIn916Frame === true || parsed.hasSocialMediaOrChannelIdentityIn916Frame === true;
     const hasSubtitles = parsed.hasSubtitlesIn916Frame === true || parsed.hasSubtitlesOrBurnedText === true || parsed.hasBurnedText === true;
@@ -824,7 +832,7 @@ CRITICAL RULES FOR REJECTION OUTPUT:
         } else if (hasSubtitles || hasFloatingText || mentionsSubtitlesInReason) {
           rejectionMsg = 'Video ditolak oleh AI: Mengandung subtitle, teks mengambang, atau stiker teks editan pada frame 9:16.';
         } else if (hasFace || mentionsFaceInReason) {
-          rejectionMsg = 'Video ditolak oleh AI: Menampilkan wajah atau vlogger manusia di dalam video (wajib 100% faceless tabletop dari awal sampai akhir).';
+          rejectionMsg = 'Video ditolak oleh AI: Video didominasi wajah/vlogger manusia tanpa cukup cuplikan peragaan tangan (wajib cuplikan tangan/hands-only bersih).';
         } else if (isSynthetic) {
           rejectionMsg = 'Video ditolak oleh AI: Terdeteksi video AI / animasi / CGI, bukan demonstrasi fisik nyata.';
         } else if (isMatchFalse) {
@@ -1029,15 +1037,16 @@ RULE 2: FUNCTIONAL & PHYSICAL PRODUCT MATCH VERIFICATION:
 - If rejected for wrong product:
   {"status": "reject", "detectedProduct": "<nama produk yang tampak>", "isExactProductMatch": false, "reason": "Produk di video (<nama produk>) tidak cocok dengan produk target (${coreNoun})"}
 
-RULE 3: STRICT WHOLE-VIDEO FACELESS MANDATE (ZERO TOLERANCE FOR FACES ANYWHERE IN THE VIDEO):
-- MANDATORY WHOLE-VIDEO INSPECTION: Inspect ALL ${frames.length} sampled frames from first to last.
-- CRITICAL: Does ANY frame (even just ONE frame) show a human face, head, hair, neck, torso, or person talking (e.g. host, vlogger, presenter, influencer, or bystander)?
-  * IF YES -> REJECT THE ENTIRE VIDEO IMMEDIATELY (status: "reject")!
-  * DILARANG KERAS MEMILIH FRAME TANGAN DARI VIDEO YANG ADA VLOGGER/ORANGNYA!
-  * Do NOT cherry-pick hands-only frames from a video that has a human presenter/vlogger in other scenes! If a person/face appears anywhere in the footage, the entire video is DISQUALIFIED!
-- PERMITTED FOOTAGE TYPE: ONLY 100% pure faceless tabletop footage is permitted where the camera is focused strictly on the product and countertop from start to finish, with HANDS/FINGERS ONLY actively operating the product.
-- If ANY frame contains a human face or person:
-  {"status": "reject", "hasHumanOrFaceAnywhereInFrames": true, "isFacelessIn916Frame": false, "reason": "Video ditolak: Menampilkan wajah atau orang/vlogger (wajib 100% video faceless tabletop dari awal sampai akhir)."}
+RULE 3: FACE DISCARD MANDATE (CHERRY-PICK CLEAN HANDS-ON PRODUCT ACTIONS, DISCARD ALL FACES):
+- OCCASIONAL PRESENTER / VLOGGER TOLERANCE:
+  * Jika terdapat vlogger, host, atau orang yang muncul sesekali pada beberapa frame (misal intro/outro atau sekilas berbicara): JANGAN DITOLAK!
+  * Video TETAP DITERIMA (status: 'accept') asalkan terdapat cukup frame yang memperagakan produk oleh tangan saja (hands-only tabletop demonstration).
+- MANDAT PEMBUANGAN WAJAH:
+  * AI WAJIB MEMBUANG SEMUA FRAME YANG MENAMPILKAN WAJAH, KEPALA, ATAU VLOGGER!
+  * HANYA pilih indeks frame ("frames") yang 100% murni memperagakan produk oleh TANGAN/JARI saja!
+  * Setiap indeks frame yang dimasukkan ke dalam daftar "frames" WAJIB 100% bebas dari wajah dan orang.
+- TOLAK (status: 'reject') HANYA JIKA:
+  * Video didominasi wajah / pure talking-head vlog sehingga TIDAK BISA ditemukan minimal 4-6 frame peragaan tangan bersih yang memenuhi syarat affiliate.
 
 RULE 4: REAL AUTHENTIC PHYSICAL FOOTAGE (NO AI/CGI SLOP, NO TALKING HEADS):
 - REJECT if AI-generated / synthetic / CGI / 3D animated / cartoon video.
@@ -1058,7 +1067,7 @@ RULE 5: WATERMARKS, SOCIAL MEDIA LOGOS & CHANNEL IDENTITIES (9:16 CROP TOLERANCE
 
 CRITERIA FOR ACCEPTANCE (ALL MUST BE TRUE):
 1. Functionally & physically matches target product: "${coreNoun}" (${effectiveTitle}).
-2. 100% Entirely Faceless: Absolutely ZERO human faces, heads, necks, or bodies anywhere across all ${frames.length} frames (hands/fingers operating on tabletop only).
+2. Clean Hands-On Demonstration in Selected Frames: Every single selected frame is 100% faceless (hands/fingers operating on tabletop only). Any face frames from the source video are discarded.
 3. 100% Clean from hardburned speech subtitles/captions inside 9:16 frame (physical text/labels on the product are 100% allowed).
 4. 100% Clean from watermarks, social media logos, and channel identities inside the 9:16 central frame (outer left/right watermarks that get cropped/covered are acceptable).
 5. Real authentic physical demonstration.
@@ -1212,8 +1221,7 @@ Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
       const isMatchFalse = parsed.isProductMatch === false || parsed.isExactProductMatch === false || parsed.isUsableSourceVideo === false;
       const hasFace = parsed.hasFaceIn916Frame === true ||
         parsed.hasFaceOrHumanInSelectedFrames === true ||
-        parsed.hasHumanOrFaceAnywhereInFrames === true ||
-        parsed.hasHumanOrFaceInVideo === true;
+        parsed.hasFaceInSelectedClips === true;
       const hasSubtitles = parsed.hasSubtitlesIn916Frame === true || parsed.hasSubtitlesOrBurnedText === true || parsed.hasBurnedText === true;
       const hasFloatingText = parsed.hasFloatingTextIn916Frame === true || parsed.hasTextOverlaysIn916Frame === true;
       const hasGraphic = parsed.hasAnimatedGraphicOverlayIn916Frame === true;
@@ -1259,7 +1267,7 @@ Review visual frames carefully against the 5 Mandatory Acceptance Criteria:
           } else if (hasSubtitles || hasFloatingText || mentionsSubtitlesInReason) {
             rejectionMsg = 'Video ditolak: Mengandung subtitle, teks mengambang, atau stiker teks editan pada frame 9:16.';
           } else if (hasFace || mentionsFaceInReason) {
-            rejectionMsg = 'Video ditolak: Menampilkan wajah atau vlogger manusia di dalam frame (wajib 100% faceless tabletop peragaan tangan).';
+            rejectionMsg = 'Video ditolak: Video didominasi wajah atau vlogger manusia tanpa cukup cuplikan peragaan tangan (wajib cuplikan peragaan tangan bersih).';
           } else if (isSynthetic) {
             rejectionMsg = 'Video ditolak: Terdeteksi video AI / animasi / CGI, bukan demonstrasi fisik nyata.';
           } else if (isMatchFalse) {

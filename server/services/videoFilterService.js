@@ -273,7 +273,7 @@ export function checkVideoMetadataCompliance(metadata, productTitle = '', option
  */
 export async function sampleFramesFromStream(streamUrl, outputDir, {
   duration = 60,
-  maxSampleFrames = 20,
+  maxSampleFrames = 30,
   onProgress = () => {}
 } = {}) {
   if (!fs.existsSync(outputDir)) {
@@ -287,7 +287,7 @@ export async function sampleFramesFromStream(streamUrl, outputDir, {
   }
 
   const ffmpegPath = getFFmpegPath();
-  const safeMax = Math.max(5, Math.min(20, Number(maxSampleFrames) || 20));
+  const safeMax = Math.max(5, Math.min(30, Number(maxSampleFrames) || 30));
   const safeDuration = Math.max(10, Number(duration) || 60);
 
   // Generate evenly distributed timestamps across the video timeline (avoiding extreme 0s and last seconds)
@@ -636,11 +636,13 @@ export function inspectFramesLocally(frames, { aspectRatio = '9:16', onProgress 
     };
   }
 
-  // 6. Tolak jika ada wajah / vlogger manusia (>= 2 frame terdeteksi)
-  if (humanFaceSkinCount >= 2) {
+  // 6. Tolak jika video didominasi wajah / vlog manusia (> 45% frame atau > 12 frame terdeteksi)
+  // Kemunculan wajah sesekali ditoleransi lokal (scene wajah akan dibuang oleh AI & backend)
+  const faceRatio = humanFaceSkinCount / frameBuffers.length;
+  if (faceRatio > 0.45 || humanFaceSkinCount > 12) {
     return {
       eligible: false,
-      reason: `Analisa visual lokal mendeteksi keberadaan wajah atau manusia di area atas frame (${humanFaceSkinCount} frame). Wajib 100% faceless tabletop peragaan tangan!`
+      reason: `Analisa visual lokal mendeteksi video didominasi wajah/vlog manusia (${humanFaceSkinCount}/${frameBuffers.length} frame). Tidak cukup cuplikan peragaan produk tangan yang bersih.`
     };
   }
 
@@ -656,7 +658,9 @@ export function inspectFramesLocally(frames, { aspectRatio = '9:16', onProgress 
   return {
     eligible: true,
     hasOpeningIntro: openingBumperCount > 0,
-    introCutoffSec: openingBumperCount > 0 ? 5.0 : 0
+    introCutoffSec: openingBumperCount > 0 ? 5.0 : 0,
+    hasOccasionalFace: humanFaceSkinCount > 0,
+    faceFrameCount: humanFaceSkinCount,
   };
 }
 

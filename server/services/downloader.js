@@ -190,14 +190,18 @@ export const DIRTY_NEGATIVE_OPERATORS = [
   '-jajanan',
   '-streetfood',
   '-vlog',
-  '-repair'
+  '-repair',
+  '-set',
+  '-pack',
+  '-paket',
+  '-bundle'
 ];
 
 export function buildCleanYouTubeQuery(baseQuery) {
   if (!baseQuery) return '';
-  // 1. Strip repair / broken item / disassembly / recipe / mukbang / cara / tutorial / DIY keywords that derail product discovery
+  // 1. Strip repair / broken item / disassembly / recipe / mukbang / cara / tutorial / DIY keywords & bundle/set/pack keywords that derail single product discovery
   let cleaned = String(baseQuery)
-    .replace(/\b(?:cara|tutorial|diy|how\s+to|do\s+it\s+yourself|perbaikan|penggantian|pergantian|mengganti|rusak|service|servis|repair|reparasi|bongkar|resep|recipe|mukbang|kuliner)\b/gi, '')
+    .replace(/\b(?:cara|tutorial|diy|how\s+to|do\s+it\s+yourself|perbaikan|penggantian|pergantian|mengganti|rusak|service|servis|repair|reparasi|bongkar|resep|recipe|mukbang|kuliner|set|pack|packs|package|paket|bundle|bundling|kombo|combo|isi\s*\d+|\d+\s*pcs)\b/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
 

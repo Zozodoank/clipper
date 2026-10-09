@@ -70,7 +70,7 @@ async def render_916(input_video: Path, out_path: Path) -> None:
     vf = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,format=yuv420p"
     await _run_proc(
         ffmpeg, "-y", "-i", str(input_video), "-vf", vf,
-        "-r", "30", "-c:v", "libx264", "-crf", "20", "-preset", "medium",
+        "-r", "30", "-c:v", "libx264", "-crf", "20", "-preset", get_settings().render_preset,
         "-movflags", "+faststart", "-an", str(out_path)
     )
 

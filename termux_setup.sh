@@ -24,7 +24,7 @@ apt install python3 python3-pip python3-venv ffmpeg git -y
 # 5. Buat virtual environment dan install dependensi Python
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt kaggle
+pip install -r requirements.txt
 
 # 6. Jalankan autentikasi OAuth untuk yt-dlp secara langsung!
 # Karena Anda berada di HP, Anda bisa langsung tap/klik link yang muncul.
@@ -34,15 +34,12 @@ yt-dlp --username oauth2 --password '' "https://www.youtube.com/watch?v=gT8_G0lW
 
 # 7. Konfigurasi .env
 # Buat file .env dan atur kredensial Anda.
-# Dapatkan Token Kaggle dari https://kaggle.com -> Settings -> API -> Create New Token
-# Anda juga butuh NGROK_AUTH_TOKEN (opsional jika kaggle secrets diatur)
 cat <<EOF > .env
 GEMINI_API_KEY=Kunci_Gemini_Anda
-KAGGLE_USERNAME=Username_Kaggle_Anda
-KAGGLE_KEY=Key_Kaggle_Anda
-NGROK_AUTH_TOKEN=Token_Ngrok_Anda
+VLM_PROVIDER=gemini
+RENDER_PRESET=veryfast
 PORT=5000
 EOF
 
-# 8. Jalankan Auto-Start Kaggle Oracle dan FastAPI Backend di Termux
+# 8. Jalankan FastAPI Backend di Termux
 bash scripts/start_termux.sh

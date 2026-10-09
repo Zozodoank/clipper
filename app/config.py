@@ -91,6 +91,7 @@ class Settings(BaseSettings):
     max_video_attempts: int = 4
     clip_concurrency: int = 1
     max_source_duration_sec: float = 900.0
+    render_preset: str = "medium"
     output_dir: Path = DATA_DIR / "output"
 
 

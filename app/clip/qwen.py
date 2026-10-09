@@ -6,6 +6,7 @@ from pathlib import Path
 
 import httpx
 from app.config import Settings
+from app.clip.gemini import GeminiClient
 
 logger = logging.getLogger(__name__)
 
@@ -110,8 +111,69 @@ class MockAnalyzer(FrameAnalyzer):
     async def analyze_batch(self, frame_paths: list[Path], mode: str) -> list[dict]:
         return [{"clean": True, "faces": False, "text": False, "logo": False, "animation": False, "overlay": False} for _ in frame_paths]
 
+class GeminiVisionAnalyzer(FrameAnalyzer):
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        self.client = GeminiClient(settings)
+
+    async def analyze_batch(self, frame_paths: list[Path], mode: str) -> list[dict]:
+        results = []
+        batch_size = self.settings.vlm_batch_size
+        
+        prompt = "You are a strict video frame validator. Analyze each frame sequentially. NOT clean if human face, text, logo, animation, or overlay. CLEAN if none of those are present."
+        if mode == "camera":
+            prompt = "Analyze these smartphone camera review frames sequentially. NOT clean if human face, text, logo, animation, or overlay. CLEAN if only camera interface or subject without people."
+        
+        prompt += "\nOutput exactly a JSON array containing one object per frame in the exact same order. Each object must have these boolean keys: 'clean', 'faces', 'text', 'logo', 'animation', 'overlay'."
+
+        for i in range(0, len(frame_paths), batch_size):
+            chunk = frame_paths[i:i + batch_size]
+            parts = [{"text": prompt}]
+            for p in chunk:
+                try:
+                    parts.append(self.client._prepare_image_part(p))
+                except Exception as e:
+                    logger.error(f"Failed to prepare image part for {p.name}: {e}")
+                    # We still append a dummy text part to keep the count consistent if needed, 
+                    # but actually if we skip it the output array length might mismatch.
+                    # It's better to just let the API analyze the valid ones and match by length later.
+            
+            payload = {
+                "contents": [{"parts": parts}],
+                "generationConfig": {"responseMimeType": "application/json"}
+            }
+            
+            try:
+                res = await self.client._call_generate_content(self.settings.gemini_model, payload)
+                text = res["candidates"][0]["content"]["parts"][0]["text"]
+                data = json.loads(text)
+                if not isinstance(data, list):
+                    data = [data]
+                
+                # Match results to chunk
+                for j in range(len(chunk)):
+                    if j < len(data) and isinstance(data[j], dict):
+                        res_obj = data[j]
+                        if "clean" not in res_obj:
+                            res_obj["clean"] = not (res_obj.get("faces") or res_obj.get("text") or res_obj.get("logo") or res_obj.get("animation") or res_obj.get("overlay"))
+                        results.append(res_obj)
+                    else:
+                        results.append({"clean": False})
+            except Exception as e:
+                logger.error(f"GeminiVisionAnalyzer error for batch starting at {chunk[0].name}: {e}")
+                for _ in chunk:
+                    results.append({"clean": False})
+        
+        return results
+
 def get_analyzer(settings: Settings) -> FrameAnalyzer:
     provider = settings.vlm_provider
+
+    if provider == "gemini":
+        if not settings.gemini_api_key:
+            raise VlmUnavailableError("Gemini API Key not set in gemini_api_key")
+        logger.info("Using GeminiVisionAnalyzer")
+        return GeminiVisionAnalyzer(settings)
 
     if provider == "oracle":
         if not settings.vlm_oracle_url:
@@ -130,10 +192,18 @@ def get_analyzer(settings: Settings) -> FrameAnalyzer:
             logger.warning("transformers provider requested but torch/CUDA unavailable, falling back to mock.")
             return MockAnalyzer()
 
+    if provider == "auto":
+        if settings.gemini_api_key:
+            logger.info("Auto fallback: Using GeminiVisionAnalyzer")
+            return GeminiVisionAnalyzer(settings)
+        if settings.vlm_oracle_url:
+            logger.info("Auto fallback: Using OracleAnalyzer at %s", settings.vlm_oracle_url)
+            return OracleAnalyzer(settings.vlm_oracle_url, settings.vlm_timeout_sec or 240.0)
+
     if provider == "mock":
         return MockAnalyzer()
 
-    if settings.vlm_oracle_url:  # auto mode without GPU: use remote oracle if configured
+    if settings.vlm_oracle_url and provider not in ("gemini", "transformers", "mock"):  
         logger.info("Using OracleAnalyzer at %s (fallback)", settings.vlm_oracle_url)
         return OracleAnalyzer(settings.vlm_oracle_url, settings.vlm_timeout_sec or 240.0)
 

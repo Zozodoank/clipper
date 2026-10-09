@@ -1,0 +1,8 @@
+{
+  "query": "site:youtube.com test phone",
+  "results": [
+    {"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "title": "Video one"},
+    {"url": "https://youtu.be/9bZkp7q19f0", "title": "Video two"},
+    {"url": "https://example.com/not-video", "title": "skip me"}
+  ]
+}

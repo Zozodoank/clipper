@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clipper - Tahap 2</title>
+    <style>
+        body { font-family: sans-serif; margin: 2rem; background: #f4f4f9; color: #333; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; cursor: pointer; border-radius: 4px; font-size: 16px; margin-right: 10px; }
+        button:hover { background: #0056b3; }
+        .job-card, .final-card { border: 1px solid #ddd; padding: 1rem; margin-top: 1rem; border-radius: 4px; }
+        textarea { width: 100%; height: 60px; margin-top: 10px; }
+        .oauth-box { background: #e9ecef; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
+        .oauth-box h3 { margin-top: 0; }
+        .code-display { font-size: 24px; font-weight: bold; letter-spacing: 2px; color: #d9534f; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Clipper Tahap 2 - Autorun</h1>
+        
+        <div class="oauth-box">
+            <h3>YouTube Authentication (Cookies)</h3>
+            <p>Fitur "Login via OAuth" telah diblokir permanen oleh pihak YouTube (Error: Login with OAuth is no longer supported).</p>
+            <p>Untuk menghindari pemblokiran/bot detection, Anda harus menggunakan metode <b>cookies.txt</b>.</p>
+            <ul>
+                <li>Install ekstensi <b>"Get cookies.txt LOCALLY"</b> di Google Chrome PC Anda.</li>
+                <li>Buka youtube.com, klik ikon ekstensi, lalu Export.</li>
+                <li>Upload file <code>cookies.txt</code> tersebut ke Kaggle, lalu atur agar yt-dlp membacanya (tambahkan <code>--cookies cookies.txt</code> pada app/config.py atau media.py).</li>
+            </ul>
+        </div>
+
+        <div style="margin-bottom: 20px;">
+            <button id="autorun-btn" style="background: #007bff;">Start Autorun</button>
+            <button id="stop-autorun-btn" style="background: #ffc107; color: black;">Stop Autorun</button>
+            <button id="stop-kaggle-btn" style="background: #dc3545; float: right;">🛑 STOP KAGGLE</button>
+        </div>
+        <p id="status"></p>
+        
+        <h2>Recent Jobs</h2>
+        <div id="jobs"></div>
+
+        <h2>Final Clips</h2>
+        <div id="finals"></div>
+    </div>
+
+    <script>
+        const btn = document.getElementById('autorun-btn');
+        const status = document.getElementById('status');
+        const jobsDiv = document.getElementById('jobs');
+        const finalsDiv = document.getElementById('finals');
+
+
+
+        const stopAutorunBtn = document.getElementById('stop-autorun-btn');
+        stopAutorunBtn.addEventListener('click', async () => {
+            if (confirm("Are you sure you want to stop the current running job?")) {
+                status.textContent = "Stopping autorun...";
+                try {
+                    const res = await fetch('/autorun/stop', { method: 'POST' });
+                    if (res.ok) {
+                        status.textContent = "Autorun stopped.";
+                        btn.disabled = false;
+                    } else {
+                        status.textContent = "Error: " + await res.text();
+                    }
+                } catch(e) {
+                    status.textContent = "Failed to fetch.";
+                }
+            }
+        });
+
+        const stopKaggleBtn = document.getElementById('stop-kaggle-btn');
+        stopKaggleBtn.addEventListener('click', async () => {
+            if (confirm("🛑 PERINGATAN! Ini akan mematikan Kaggle secara paksa untuk menghemat kuota GPU. Lanjutkan?")) {
+                try {
+                    await fetch('/system/stop', { method: 'POST' });
+                    alert("Kaggle session is shutting down. The web UI will become unresponsive.");
+                    status.textContent = "Kaggle has been stopped.";
+                } catch(e) {
+                    // Fetch will likely throw an error because the server dies instantly
+                    alert("Kaggle stopped.");
+                    status.textContent = "Kaggle has been stopped.";
+                }
+            }
+        });
+
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            status.textContent = "Starting autorun...";
+            try {
+                const res = await fetch('/autorun', { method: 'POST' });
+                if (res.ok) {
+                    status.textContent = "Autorun started.";
+                } else {
+                    status.textContent = "Error: " + await res.text();
+                }
+            } catch(e) {
+                status.textContent = "Failed to fetch.";
+            }
+            btn.disabled = false;
+        });
+
+        async function updateStatus() {
+            try {
+                const res = await fetch('/clipjobs?limit=5');
+                const data = await res.json();
+                jobsDiv.innerHTML = data.map(j => `
+                    <div class="job-card">
+                        <strong>${j.query}</strong> - Status: ${j.status}
+                        <p>Step: ${j.step}</p>
+                    </div>
+                `).join('');
+                
+                const res2 = await fetch('/finals?limit=5');
+                const data2 = await res2.json();
+                finalsDiv.innerHTML = data2.map(f => `
+                    <div class="final-card">
+                        <strong>${f.title} (${f.query})</strong>
+                        <textarea readonly>${f.caption}\n${f.hashtags.join(' ')}</textarea>
+                    </div>
+                `).join('');
+            } catch(e) {
+                console.error(e);
+            }
+        }
+
+        setInterval(updateStatus, 5000);
+        updateStatus();
+    </script>
+</body>
+</html>

@@ -1,0 +1,169 @@
+instruksi saya:
+
+lanjut tahap 2, api gemini di panggil untuk:
+1. memeriksa metadata kecocokan produk
+2. memilih bagian yang cocok untuk di potong menjadi klip 9:16 tengah yang bersih dari wajah manusia, teks subtitle, logo, animasi, grafis overlay (kecuali review kamera (hanya menolak wajah vloger))
+3. menentukan time stamp urutan video clipper secara profesional, misal:
+a. adegan pertama hook dan  tentang fitur layar handphone
+b. adegan design fisik smartphone
+c. adegan performa dengan info kapasitas memori dan ram dan prosesor
+d. terakhir review kualitas kamera dan spesifikasinya
+e. CTA soft selling untuk facebook reels dan youtube short
+
+4. memerintahkan ke ffmpeg untuk mendownload full HD 1080p secara berurutan sesuai point (a,b,c,d,e) download section dan mengekstrak frame dalam format 9:16 yang akan di analisa oleh qwen2.5-vl-3b-intruct lokal. jika frame bersih dari wajah manusia, teks subtitle, logo, animasi, grafis overlay (kecuali review kamera (hanya menolak wajah vloger)), maka video di di render 1080p
+5. video yang sudah di render kemudian di ekstract lagi untuk di buatkan naskah voice over sesuai durasi oleh gemini dan di buatkan subtitle
+6. membuat caption dan hastag yang sesuai dan singkat tanpa link produk dan menampilkannya di frontend dengan tombol copy
+7. gemini TTS memberikan suara voice over sesuai model di env lalu satukan voice over+video+subtitle untuk hasil final
+
+catatan: untuk point 4 dan 5, ekstract frame ukuran 360p. untuk point 4, frame di ekstrak 1 frame per detik agar akurat pada download section dan untuk point 5 ektract 1 frame per 3 detik untuk gemini
+
+Deepseek menjawab:
+
+# Backend Clipper Tahap 2 — Klip Otomatis 9:16 + Voice-over (FastAPI, deploy Kaggle T4 2x)
+
+## Ringkasan
+
+Pipeline klip yang mengonsumsi video `status=passed` dari Tahap 1 (atau mencari baru bila kosong) dan menghasilkan klip final Shorts/Reels 1080x1920: Gemini memeriksa kecocokan metadata produk, menentukan timestamp seksi profesional (a–e), menulis naskah voice-over + caption/hashtag; ffmpeg mendownload seksi berurutan dan render 9:16; Qwen2.5-VL-3B lokal memvalidasi kebersihan frame (tanpa wajah/teks/logo/animasi/overlay; seksi kamera hanya menolak wajah vlogger); Gemini TTS + subtitle digabung jadi hasil final. Satu tombol **Autorun** di halaman HTML menjalankan semuanya; bila materi bersih < 45 detik, backend otomatis coba video lain dengan merk+type yang sama (bila pool habis, cari baru via Tahap 1).
+
+## Keputusan Desain Kunci (dari klarifikasi user)
+
+- **Deploy Kaggle T4 2x**: kode tetap portable Windows/Linux (pola subprocess + `asyncio.to_thread` Tahap 1 sudah portable). Qwen jalan via `transformers` + GPU (`VLM_PROVIDER=auto`), fallback: Ollama (localhost:11434) → oracle HTTP (`NGROK_URL`, timeout `VLM_ORACLE_TIMEOUT_SEC=240`). Dev Windows tanpa GPU: test pakai mock.
+- **Kunci Gemini**: aplikasi tetap membaca `GEMINI_API_KEY` apa adanya (format `AQ.…` dibiarkan; user mengganti sendiri nilainya di .env). Error auth dilaporkan jelas di job & `/health`, tidak memblokir endpoint lain.
+- **Frontend**: satu halaman `app/static/index.html` dilayani FastAPI — tombol Autorun, progres job, galeri final (preview video, caption+hashtag, tombol copy).
+- **Aturan 45 detik**: total durasi seksi bersih (lolos Qwen) ≥ `MIN_TOTAL_CLEAN_SEC=45`; jika tidak → video berikutnya untuk query sama; jika pool habis → jalankan pencarian Tahap 1 untuk query itu (tetap menghormati `DAILY_VIDEO_LIMIT`); maks `MAX_VIDEO_ATTEMPTS=4` per produk.
+- **Efisiensi Gemini**: metadata dicek batch (beberapa video per 1 panggilan), penentuan seksi pakai grid frame jarang (1 frame/5 detik, 360p), naskah+caption+hashtag dalam **satu** panggilan JSON-mode, hasil di-cache di DB (video yang sudah diproses tidak dianalisis ulang).
+- **Frame analisis** (sesuai catatan user): seksi download → **1 fps @360p 9:16** untuk Qwen; klip ter-render → **1 frame/3 detik @360p** untuk Gemini (naskah).
+- Voice-over, subtitle, caption dalam **Bahasa Indonesia** (asumsi; target Reels/Shorts).
+
+## Struktur Baru
+
+```
+app\
+├── clip\
+│   ├── __init__.py
+│   ├── models.py          # ClipJob, FinalClip, SectionPlan, FrameVerdict, enum SectionKind/ClipStatus
+│   ├── gemini.py          # GeminiClient: metadata, seksi, naskah+caption, TTS (rantai fallback)
+│   ├── qwen.py            # FrameAnalyzer ABC + Transformers/Ollama/Oracle + seleksi otomatis
+│   ├── media.py           # ffmpeg: download seksi, ekstrak frame, render 9:16, concat, subtitle, merge
+│   ├── pipeline.py        # ClipPipeline: autorun per produk + loop 45-detik + retry video lain
+│   └── jobs.py            # ClipJobRunner (satu autorun berjalan pada satu waktu)
+├── static\
+│   └── index.html         # frontend vanilla: autorun, progres, finals + tombol copy
+kaggle\
+└── kaggle_setup.ipynb    # template notebook: install, model HF, jalankan uvicorn, simpan output
+```
+
+## Langkah Implementasi
+
+### Langkah 1 — Config & dependensi
+- `requirements.txt`: tambah `edge-tts>=6.1` (fallback TTS gratis, unlimited). `transformers`/`torch`/`accelerate` **tidak** ditambahkan (preinstalled Kaggle) — di-import lazy di dalam `TransformersAnalyzer` agar dev Windows tetap jalan tanpa GPU.
+- `app/config.py` — tambah field `Settings` (semua dari .env, default seperti di bawah):
+  - Gemini: `gemini_api_key`, `gemini_model="gemini-2.5-flash"`, `gemini_timeout_sec=180`, `gemini_max_retries=3`, `gemini_rpm=8` (pacing panggilan), `section_discovery_fps=0.2`, `voiceover_frame_fps=1/3`, `qwen_check_fps=1.0`, `analysis_size="360x640"`.
+  - TTS: `tts_provider="gemini_tts"` (TTS_PROVIDER), `gemini_tts_model` (GEMINI_TTS_MODEL), `gemini_tts_fallback_model` (GEMINI_TTS_FALLBACK_MODEL), `gemini_tts_voice="Despina"`, `edge_tts_voice` (TTS_VOICE).
+  - VLM: `vlm_provider="auto"`, `vlm_model_id="Qwen/Qwen2.5-VL-3B-Instruct"`, `vlm_batch_size=8`, `vlm_timeout_sec` (VLM_ORACLE_TIMEOUT_SEC), `vlm_oracle_url` (NGROK_URL), `ollama_url="http://localhost:11434"`.
+  - Pipeline: `min_total_clean_sec=45.0`, `min_clean_frame_ratio=0.7`, `min_subwindow_sec=5.0`, `max_video_attempts=4`, `clip_concurrency=1`, `max_source_duration_sec=900`, `output_dir=DATA_DIR/"output"`.
+- `app/config.py`: tambah `find_ffmpeg()` — pola sama dengan `find_ffprobe()` (PATH → winget glob → `static_ffmpeg.add_paths()`).
+
+### Langkah 2 — Model & DB
+- `app/clip/models.py`: `SectionKind(str,Enum)` = `hook|design|performance|camera|cta` (urutan a–e); `ClipStatus(str,Enum)` = `queued|checking|planning|downloading|validating|rendering|voicing|done|error`; `SectionPlan(kind, start, end, confidence)`; `FrameVerdict(clean, faces, text, logo, animation, overlay)`; `ClipJob(id, query, youtube_id, attempt, status, step, progress: dict, sections: list, clean_sec, error, created_at, finished_at)`; `FinalClip(youtube_id, query, title, channel, duration, final_path, subtitle_path, voiceover_path, caption, hashtags, meta_json, created_at)`.
+- `app/db.py` — tambah 2 tabel di `_SCHEMA` (tanpa menyentuh tabel Tahap 1): `clip_jobs` (kolom sesuai ClipJob; `sections`/`progress` sebagai TEXT JSON) dan `finals` (PK `youtube_id`, upsert). CRUD async via `asyncio.to_thread` sesuai pola ada: `save_clip_job`, `get_clip_job`, `list_clip_jobs`, `upsert_final`, `get_final`, `list_finals`, `count_finals`.
+
+### Langkah 3 — Klien Gemini (`app/clip/gemini.py`)
+- `GeminiClient(settings)`: httpx.AsyncClient → `POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}`. Semua panggilan pakai **JSON mode** (`responseMimeType: application/json` + `responseSchema`) agar output terstruktur; pacing `await sleep(60/gemini_rpm)` antar panggilan; retry 429/5xx backoff eksponensial (hormati `Retry-After`).
+- `check_metadata_match(items) -> list[verdict]`: batch N video per 1 panggilan teks (title, channel, query) → `{match: bool, product: str, reason: str}`.
+- `plan_sections(product, meta, frame_paths) -> list[SectionPlan]`: frame grid 1/5 detik @360p (inline base64 JPEG, maks 150 frame/panggilan) → JSON `[{kind: a–e, start, end, confidence}]`; prompt menuntut urutan profesional: hook+layar → desain fisik → performa (RAM/memori/prosesor) → kamera → CTA soft-selling.
+- `write_script_and_caption(product, meta, frame_paths, duration, sections) -> dict`: frame 1/3 detik @360p dari klip ter-render → satu panggilan menghasilkan `{script: [{section, text}], caption, hashtags[]}`; naskah menyesuaikan durasi total, tanpa link produk.
+- `synthesize(text) -> bytes` (mp3): model utama `gemini_tts_model` → bila 404 (nama model tak dikenal) coba `gemini_tts_fallback_model` → bila gagal fallback `edge-tts` (`edge_tts_voice`) yang mengembalikan juga **word-boundary timings**; kembalikan `(audio_bytes, timings|None)`.
+
+### Langkah 4 — Analis Frame Qwen (`app/clip/qwen.py`)
+- `FrameAnalyzer(ABC)`: `async analyze_batch(frame_paths: list[Path], mode: str) -> list[FrameVerdict]`; `mode="strict"` (tolak wajah+teks+logo+animasi+overlay) vs `mode="camera"` (hanya tolak wajah vlogger — pengecualian seksi kamera).
+- `TransformersAnalyzer` (default Kaggle): lazy-load `Qwen2_5_VLForConditionalGeneration` (float16, `device_map="auto"`) + `AutoProcessor`, inferensi batch `vlm_batch_size` gambar sekali forward pass, dieksekusi via `asyncio.to_thread`; prompt JSON singkat (`{clean, faces, text, logo, animation, overlay}`); parser robust (strip markdown fence, fallback default kotor bila JSON rusak).
+- `OllamaAnalyzer`: POST `{ollama_url}/api/chat` model `qwen2.5-vl:3b` (base64 images).
+- `OracleAnalyzer`: POST `{vlm_oracle_url}/analyze` dengan JSON `{frames: [...], mode}` — kontrak didokumentasikan; dipakai bila endpoint VPS aktif.
+- `get_analyzer(settings)`: `auto` → transformers bila `torch.cuda.is_available()` → ollama bila reachable → oracle bila URL di-set → `VlmUnavailableError` (dilaporkan di /health).
+
+### Langkah 5 — Media ffmpeg (`app/clip/media.py`)
+Semua subprocess via `asyncio.create_subprocess_exec` + kill saat timeout (pola `resolver._run`/`ffprobe._run_proc`):
+- `download_section(stream_url, start, end, out)`: `ffmpeg -y -ss {start} -to {end} -i {url} -c copy -avoid_negative_ts make_zero {out}` (video-only; audio sumber tak dipakai karena diganti voice-over). Bila gagal → retry 1x dengan re-encode `-c:v libx264 -preset veryfast`. Catatan: pemotongan `-c copy` snap ke keyframe (±2–5 dtk, dapat diterima).
+- `extract_frames(video, out_dir, fps, size="360x640")`: `-vf "fps={fps},scale=360:640:force_original_aspect_ratio=increase,crop=360:640" -q:v 3 f_%04d.jpg` — crop 9:16 tengah (umum untuk semua rasio sumber: 16:9 maupun 2:1 seperti 3840x1920).
+- `render_916(input, out)`: `-vf "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,format=yuv420p" -r 30 -c:v libx264 -crf 20 -preset medium -movflags +faststart` (tanpa audio).
+- `concat_videos(paths, out)`: concat demuxer (file list).
+- `burn_subtitles(video, srt, out)`: filter `subtitles=filename='{escaped}'` (escape backslash Windows; test khusus).
+- `merge_audio(video, audio, out)`: `-c:v copy -c:a aac -b:a 192k -shortest`.
+- `get_duration(path)`: ffprobe (reuse `find_ffprobe`).
+
+### Langkah 6 — Pipeline Klip (`app/clip/pipeline.py`, `app/clip/jobs.py`)
+`ClipPipeline.process_product(query)` — satu produk, loop percobaan:
+1. Ambil kandidat `status=passed` dengan query sama (urut `view_count` DESC) yang belum dicoba di autorun ini. Kosong → panggil `pipeline.process_query(query)` Tahap 1 untuk mengisi pool; masih kosong → error produk.
+2. **Metadata batch** (Gemini): cek hingga 3 kandidat sekaligus → simpan verdict; pilih kandidat pertama yang match; tidak ada → error produk ("metadata tidak cocok").
+3. `resolve_video(url, settings)` (reuse Tahap 1) → metadata + stream URL 1080p.
+4. **Penentuan seksi** (Gemini): ekstrak grid frame 1/5 dtk @360p dari stream URL (ffmpeg seek per timestamp) → `plan_sections` → daftar a–e.
+5. **Download seksi berurutan a→e** (ffmpeg): resolve ulang stream URL sesaat sebelum tiap download (URL googlevideo cepat kedaluwarsa) → `download_section` ke `output/{query_slug}/{youtube_id}/sections/{kind}.mp4`.
+6. **Validasi Qwen**: per seksi ekstrak 1 fps @360p → `analyze_batch` (mode `camera` khusus seksi kamera) → seksi diterima bila rasio frame bersih ≥ `min_clean_frame_ratio`; bila kotor, ukir sub-jendela bersih terpanjang (≥ `min_subwindow_sec`); catat `clean_sec` kumulatif.
+7. **Aturan 45 dtk**: `clean_sec < min_total_clean_sec` → tandai kandidat gagal, `attempt+1`, ulangi dari langkah 2 dengan video berikutnya (bila pool habis → cari baru). Berhenti `error` bila `attempt > max_video_attempts`.
+8. **Render**: tiap seksi diterima → `render_916` → `concat_videos` urutan a–e → `concat.mp4` 1080x1920.
+9. **Naskah + caption** (Gemini, 1 panggilan): frame 1/3 dtk @360p dari `concat.mp4` → `write_script_and_caption`.
+10. **TTS + subtitle**: per kalimat `synthesize` (Gemini TTS → fallback model → edge-tts) → `voiceover.mp3` + SRT (timing word-boundary bila tersedia, selain itu proporsional panjang karakter per durasi audio) → `burn_subtitles` + `merge_audio` → `final.mp4`.
+11. Simpan `FinalClip` ke tabel `finals`; simpan `meta.json` (seksi, verdict Qwen, durasi, dll). File: `output/{query_slug}/{youtube_id}/{final.mp4, concat.mp4, voiceover.mp3, subs.srt, meta.json, frames/, g_frames/}`.
+- `run_autorun(queries)` memproses produk berurutan (`clip_concurrency=1`, sesuai "secara berurutan"); `ClipJobRunner` (pola `JobRunner` Tahap 1): satu autorun pada satu waktu, progres per langkah ditulis ke `clip_jobs.progress` untuk polling frontend.
+
+### Langkah 7 — API & Frontend (`app/main.py`, `app/static/index.html`)
+- `POST /autorun` (202) body opsional `{queries?}` → `{job_id}`; 409 bila autorun sedang berjalan.
+- `GET /clipjobs?limit=50` dan `GET /clipjobs/{id}` — status+progres per percobaan video.
+- `GET /finals` dan `GET /finals/{youtube_id}` — hasil jadi: `{query, title, duration, caption, hashtags, video_url, subtitle_url, created_at}`.
+- `POST /videos/{youtube_id}/clip` (202) — jalur uji satu video.
+- `GET /` → `FileResponse(app/static/index.html)`; `app.mount("/output", StaticFiles(...))` untuk preview `final.mp4` (StaticFiles di-import di dalam lifespan agar directory dibuat lebih dulu).
+- `/health` ditambah: `gemini: {configured, model}`, `vlm: {provider, ready}`, `tts: {provider}`, `ffmpeg: path`.
+- `index.html`: vanilla JS + polling 5 dtk; tombol **Autorun**; kartu produk dengan progress bar; galeri final: `<video controls>` + textarea caption/hashtag + tombol **Copy** (`navigator.clipboard`).
+
+### Langkah 8 — Deployment Kaggle (`kaggle/kaggle_setup.ipynb`)
+Template notebook dengan sel: (1) `pip install -r requirements.txt` (torch/transformers sudah ada), (2) set env `OUTPUT_DIR=/kaggle/working/output`, `VLM_PROVIDER=transformers`, (3) download model `Qwen/Qwen2.5-VL-3B-Instruct` via `snapshot_download` ke `/kaggle/working/model`, (4) jalankan `nohup uvicorn app.main:app --port 5000 &` + cek `/health`, (5) pemicu `curl -X POST localhost:5000/autorun`, (6) instruksi persistensi: simpan `output/` + `clipper.db` sebagai Kaggle Dataset (`kaggle datasets version -p`) atau download (sesi Kaggle ephemeral, `/kaggle/working` terhapus saat sesi berakhir).
+
+### Langkah 9 — Pengujian (`tests/`, semua offline dengan monkeypatch sesuai pola `test_api.py`)
+- `test_gemini_client.py`: MockTransport httpx — verifikasi URL/key/method tiap fitur, JSON-mode + responseSchema ada di body, retry 429, rantai fallback TTS (model utama → fallback → edge-tts), parsing respons.
+- `test_qwen.py`: seleksi provider (`auto` → transformers/ollama/oracle), batching, parser JSON robust (fence/JSON korup → kotor), mode kamera.
+- `test_clip_media.py`: monkeypatch `create_subprocess_exec` — perintah download seksi (`-ss/-to/-c copy`), crop/scale 9:16, render 1080x1920, burn subtitle (escape path Windows), merge, kill saat timeout.
+- `test_clip_pipeline.py`: fake Gemini/Qwen/media — alur a–e, metadata reject → ganti video, aturan 45 dtk memicu kandidat berikutnya + pencarian baru saat pool habis, seksi kamera mode longgar, batas `max_video_attempts` → error, final tersimpan di `finals`.
+- `test_clip_api.py`: TestClient dengan fake — `/autorun` 202 + 409 saat berjalan, bentuk `/finals`, `/clipjobs`, field baru `/health`, halaman `/` 200.
+- Jalankan `pytest -v` (tetap 36+ test lama hijau — tidak ada perubahan perilaku Tahap 1).
+
+### Langkah 10 — Verifikasi E2E
+- Lokal (Windows, tanpa GPU): `VLM_PROVIDER=mock` (verdict deterministik dari script test) → autorun 1 query sampai `final.mp4` jadi (validasi rantai ffmpeg+Gemini+TTS nyata dengan kunci yang sudah user perbaiki).
+- Kaggle: notebook → `POST /autorun` 1 query → pantau `/clipjobs` → `/finals` berisi final ≥45 dtk dengan caption/hashtag; spot-check kualitas klip & subtitle.
+
+## Dependensi Antar Langkah
+
+1 → 2 → {3, 4, 5} (paralel) → 6 → 7 → {8, 9} (paralel) → 10.
+Langkah 3–5 mandiri satu sama lain; API (7) terakhir karena mengikat semua modul; Kaggle (8) dan test (9) dapat dikerjakan paralel setelah pipeline stabil.
+
+## Test Plan
+
+1. Unit Gemini: struktur request (JSON-mode), retry/backoff 429, rantai fallback TTS.
+2. Unit Qwen: seleksi provider, batching, parser JSON defensif, mode kamera vs strict.
+3. Unit media: konstruksi perintah ffmpeg (crop 9:16, `-ss/-to`, subtitle escape), timeout kill.
+4. Unit pipeline: loop percobaan video, aturan 45 detik, urutan seksi a–e, penyimpanan final.
+5. API: semua endpoint baru 200/202/404/409 + skema respons.
+6. Integrasi E2E di-gate `RUN_NETWORK_TESTS=1` / manual: autorun penuh lokal (VLM mock) lalu Kaggle (transformers+GPU).
+
+## Risiko & Mitigasi
+
+1. **Kunci Gemini `AQ.…` tidak valid** → panggilan ditolak 403; error tercatat jelas di `clip_jobs` dan `/health.gemini`, endpoint lain tetap jalan; user mengganti nilai .env (sesuai pilihan user).
+2. **Nama model TTS `gemini-3.1-flash-tts-preview` mungkin belum ada** → rantai fallback model → edge-tts (env sudah menyediakan keduanya).
+3. **URL googlevideo kedaluwarsa cepat** → resolve ulang sesaat sebelum tiap download seksi; retry 1x dengan URL baru (pola retry Tahap 1).
+4. **Snap keyframe `-c copy` menggeser batas seksi ±2–5 dtk** → diterima (verifikasi durasi via ffprobe); fallback re-encode bila gagal.
+5. **Qwen 3B salah baca teks/logo kecil** → prompt ketat + pengecualian seksi kamera + threshold rasio bersih + ukir sub-jendela terpanjang sebelum menolak seksi.
+6. **Biaya/kuota Gemini** → grid frame jarang (1/5 dtk), metadata batch, naskah+caption satu panggilan, cache hasil per video di DB, pacing `gemini_rpm`, retry 429.
+7. **Sesi Kaggle ephemeral (12 jam, /kaggle/working terhapus)** → notebook menyimpan output + DB sebagai Kaggle Dataset sebelum sesi berakhir; hasil disimpan progresif ke tabel `finals`.
+8. **YouTube bot-detection dari IP Kaggle** → retry + pacing Tahap 1 sudah ada (`--retries 3`, delay 3 dtk); proxy opsional tetap didukung.
+9. **Escape path subtitle di Windows** → `subtitles=filename='...'` dengan slash-escape; test unit khusus; di Kaggle (Linux) non-issue.
+
+## Rejected Alternatives
+
+- **Kirim video utuh ke Gemini (modality video)** — biaya token besar; grid frame jarang @360p cukup untuk penentuan seksi dan jauh lebih murah.
+- **yt-dlp `--download-sections`** — user meminta ffmpeg untuk download; ffmpeg langsung ke stream URL yang sudah di-resolve lebih ringan (tanpa overhead yt-dlp per seksi).
+- **Download video penuh lalu potong** — buang bandwidth/disk (video 10 menit ≈ 300–800 MB); download per seksi hanya ambil 5 × ~45 dtk.
+- **Gemini untuk seluruh validasi kebersihan frame** — boros kuota; Qwen lokal (sesuai pilihan user) menangani 1-fps berskala, Gemini hanya perencanaan/naskah/caption.
+- **OCR terpisah (easyocr/tesseract) untuk deteksi teks** — Qwen-VL menangani wajah+teks+logo+animasi dalam satu pass, lebih sedikit komponen.
+- **Frontend terpisah (React/Next)** — user memilih halaman HTML tunggal di FastAPI.
+- **ORM/migrasi DB** — konsisten dengan sqlite3 stdlib Tahap 1; tabel baru via `CREATE TABLE IF NOT EXISTS`.
+- **ffmpeg-python / moviepy** — pola subprocess Tahap 1 sudah teruji (kill-safe di Windows), nol dependensi baru.

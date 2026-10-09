@@ -1,40 +1,9 @@
-# Dependencies
-node_modules/
-
-# Production builds
-dist/
-build/
-
-# Local temp, cache, and rendered outputs
-server/temp/
-server/output/
-server/bin/
-server/jobs.json
-server/bandwidth_stats.json
-server/used_keywords.json
-*.mp4
-*.mp3
-*.jpg
-*.jpeg
-*.png
-*.srt
-
-# Environment variables
+.venv/
+data/
+output/
+__pycache__/
+*.pyc
+.pytest_cache/
 .env
-.env.*
-.env*.txt
-!.env.example
-
-# Logs
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Local backup folder
-copy/
-
-# Authentication and session cookies
-*cookies*.txt
-server/cookies.txt
+clipper.zip
+.oracle_url.cache

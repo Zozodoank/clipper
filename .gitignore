@@ -1,0 +1,16 @@
+# Temporary & Runtime Outputs
+output_clips/
+source_video*
+face_scan_cache.json
+*.mp4
+*.wav
+*.ass
+*.srt
+*.json3
+*.info.json
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+.env

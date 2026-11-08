@@ -6,6 +6,7 @@ import cv2
 import json
 import time
 import wave
+import random
 import base64
 import shutil
 import hashlib
@@ -724,10 +725,97 @@ def call_gemini_json(payload, api_key):
     print(f"    [!] Detail kendala terakhir: {last_err}", flush=True)
     return None
 
+ENGLISH_CTA_VARIATIONS = [
+    (
+        "Gaya Antusias & Energetic: Kesimpulan 4-5 kata keunggulan HP + ajakan seperti "
+        "'Smash that like button and subscribe for more daily tech reviews!'"
+    ),
+    (
+        "Gaya Pertanyaan Interaktif: Kesimpulan singkat nilai HP + ajakan seperti "
+        "'Would you rock this phone? Hit like and subscribe so you never miss our next gadget test!'"
+    ),
+    (
+        "Gaya Komunitas Tech: Kesimpulan singkat performa HP + ajakan seperti "
+        "'Drop a like if you found this helpful, and subscribe to join our tech squad today!'"
+    ),
+    (
+        "Gaya Singkat & Punchy: Kesimpulan padat 4-5 kata + ajakan seperti "
+        "'Tap like right now and subscribe for more honest smartphone breakdowns!'"
+    ),
+    (
+        "GayaRekomendasi Pro: Kesimpulan singkat kelayakan beli + ajakan seperti "
+        "'Give this video a thumbs up and hit subscribe to stay ahead on the latest flagship tech!'"
+    ),
+    (
+        "Gaya Viral Shorts: Kesimpulan singkat + ajakan seperti "
+        "'Double tap to like and hit that subscribe button for your daily dose of smartphone reviews!'"
+    ),
+    (
+        "Gaya Tech Enthusiast: Kesimpulan singkat + ajakan seperti "
+        "'Love this upgrade? Leave a like and subscribe right now for more hands-on gadget comparisons!'"
+    ),
+    (
+        "Gaya Smart Buyer: Kesimpulan singkat + ajakan seperti "
+        "'Before you scroll away, hit that like button and subscribe for more quick tech verdicts!'"
+    ),
+]
+
+ENGLISH_CTA_FALLBACK_TEMPLATES = [
+    "This flagship packs serious value, so smash that like button and subscribe for more daily tech reviews!",
+    "An absolute powerhouse for the price, hit like and subscribe so you never miss our next gadget test!",
+    "Truly a standout smartphone this year, drop a like and subscribe to join our tech community today!",
+    "Incredible specs from top to bottom, tap like right now and subscribe for more honest phone breakdowns!",
+    "Easily one of the smartest picks right now, give this a thumbs up and subscribe for more flagship tech!",
+    "That wraps up our quick breakdown, double tap to like and hit subscribe for your daily dose of tech!",
+    "A massive upgrade where it counts, leave a like and subscribe right now for more hands-on reviews!",
+    "Before you scroll to the next video, hit that like button and subscribe for more fast tech verdicts!"
+]
+
+def pick_english_cta_style_and_fallback(video_title=""):
+    """Memilih gaya variasi CTA Bahasa Inggris (Like & Subscribe) yang selalu berbeda di setiap video/eksekusi."""
+    seed_val = int(time.time() * 1000) ^ int(hashlib.md5(video_title.encode("utf-8", errors="ignore")).hexdigest()[:8], 16)
+    rng = random.Random(seed_val)
+    idx = rng.randrange(len(ENGLISH_CTA_VARIATIONS))
+    return idx, ENGLISH_CTA_VARIATIONS[idx], ENGLISH_CTA_FALLBACK_TEMPLATES[idx]
+
+def ensure_english_like_and_subscribe_cta(cta_script, fallback_template):
+    """Memastikan naskah CTA Bahasa Inggris 100% mengandung ajakan Like dan Subscribe dengan kalimat bervariasi."""
+    txt = sanitize_subtitle_text(cta_script)
+    if not txt:
+        return fallback_template
+    low = txt.lower()
+    has_sub = "subscribe" in low
+    has_like = ("like" in low) or ("thumbs up" in low) or ("double tap" in low)
+    if has_sub and has_like:
+        return txt
+    # Jika kalimat pertama adalah kesimpulan namun belum ada like+subscribe lengkap, gabungkan klausa pertama dengan akhiran bervariasi
+    first_clause = re.split(r"[.!?]", txt)[0].strip().rstrip(",;:")
+    suffix_Match = re.split(r",\s*", fallback_template, maxsplit=1)
+    varied_suffix = suffix_Match[1] if len(suffix_Match) > 1 else "hit that like button and subscribe for more tech reviews!"
+    if first_clause and len(first_clause.split()) <= 9:
+        return f"{first_clause}, {varied_suffix}"
+    return fallback_template
+
 def analyze_native_transcript_and_build_chapters(video_title, video_desc, timestamped_transcript, total_dur, api_key, lang="id"):
     short_transcript = timestamped_transcript[:15000] if timestamped_transcript else "(Transkrip tidak tersedia, gunakan spesifikasi asli HP pada judul)"
     lang_label = "Bahasa Inggris (English)" if lang == "en" else "Bahasa Indonesia"
     inch_rule = "kata 'inch'" if lang == "en" else "kata 'inci'"
+
+    var_idx, en_cta_style, en_cta_fallback = pick_english_cta_style_and_fallback(video_title)
+    if lang == "en":
+        cta_instruction = (
+            "6. `cta`: Kesimpulan super singkat keunggulan HP (4-5 kata) + AJAKAN WAJIB untuk LIKE dan SUBSCRIBE "
+            f"dalam Bahasa Inggris dengan diksi yang unik dan segar (1 Adegan, 12-16 kata). Gunakan inspirasi gaya #{var_idx + 1} ini "
+            f"(parafrasekan dengan kreatif sesuai nama/keunggulan HP agar setiap video punya kalimat unik): {en_cta_style}"
+        )
+        cta_simple_hint = (
+            "Khusus key `cta`, WAJIB berisi kesimpulan singkat + ajakan kreatif untuk LIKE dan SUBSCRIBE dalam Bahasa Inggris "
+            f"(contoh gaya: {en_cta_fallback})."
+        )
+    else:
+        cta_instruction = "6. `cta`: Kesimpulan singkat keunggulan utama & ajakan soft selling di akhir (1 Adegan, 11-14 kata)."
+        cta_simple_hint = "Jangan gunakan tanda kutip di dalam nilai string."
+
     prompt = "\n".join([
         f"Judul Video Review: \"{video_title}\"",
         f"Durasi Total Video Sumber: {int(total_dur)} detik",
@@ -743,7 +831,7 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
         "3. `perf_mem`: Seri chipset asli & performa (Adegan 1) DAN kapasitas & jenis RAM (LPDDR), memori internal (UFS/eMMC), serta slot microSD (Adegan 2) (total 16-18 kata).",
         "4. `bat_feat`: Kapasitas baterai (mAh) & kecepatan charging (Watt) (Adegan 1) DAN fitur NFC, speaker stereo, serta sensor sidik jari (Adegan 2) (total 14-16 kata).",
         "5. `camera`: Resolusi kamera belakang utama (OIS/non-OIS) & kamera depan/selfie (Adegan 1) DAN kemampuan perekaman video depan & belakang maksimal beserta FPS asli (Adegan 2) (total 20-23 kata).",
-        "6. `cta`: Kesimpulan singkat keunggulan utama & ajakan soft selling di akhir (1 Adegan, 11-14 kata).",
+        cta_instruction,
         "",
         "ATURAN WAJIB:",
         f"- Seluruh teks `script`, `caption`, dan `hashtags` WAJIB ditulis dalam **{lang_label}**.",
@@ -761,7 +849,7 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
-            "temperature": 0.2,
+            "temperature": 0.35 if lang == "en" else 0.2,
             "responseMimeType": "application/json"
         }
     }
@@ -780,11 +868,11 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
             "",
             "Susun JSON murni dengan key persis: body_ip, screen_os, perf_mem, bat_feat, camera, cta, caption, hashtags.",
             f"Setiap key bab (body_ip s/d cta) berisi objek: {{\"start_sec\": angka, \"end_sec\": angka, \"script\": \"narasi {lang_label} 15-20 kata sesuai spesifikasi asli di transkrip\"}}.",
-            "Jangan gunakan tanda kutip di dalam nilai string."
+            cta_simple_hint
         ])
         simple_payload = {
             "contents": [{"parts": [{"text": simple_prompt}]}],
-            "generationConfig": {"temperature": 0.15, "responseMimeType": "application/json"}
+            "generationConfig": {"temperature": 0.25 if lang == "en" else 0.15, "responseMimeType": "application/json"}
         }
         res = call_gemini_json(simple_payload, api_key)
         res = normalize_parsed_json_to_dict(res) if res else None
@@ -811,6 +899,12 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
             res[k]["script"] = str(val.get("script") or "")
             if not isinstance(val.get("scenes"), list):
                 res[k]["scenes"] = []
+
+    if lang == "en" and "cta" in res and isinstance(res["cta"], dict):
+        enforced_cta = ensure_english_like_and_subscribe_cta(res["cta"].get("script", ""), en_cta_fallback)
+        res["cta"]["script"] = enforced_cta
+        if isinstance(res["cta"].get("scenes"), list) and len(res["cta"]["scenes"]) > 0 and isinstance(res["cta"]["scenes"][0], dict):
+            res["cta"]["scenes"][0]["script"] = enforced_cta
     return res
 
 def sanitize_subtitle_text(raw_text):
@@ -853,7 +947,8 @@ def split_script_into_n_clauses(script_text, target_n):
     # Cari titik potong terbaik di sekitar pertengahan kalimat (30% - 70% posisi kata)
     conjunctions = {
         "tapi", "namun", "berkat", "dengan", "didukung", "dipadu", "serta",
-        "lengkap", "ditambah", "hadir", "menggunakan", "membawa", "dan", "untuk"
+        "lengkap", "ditambah", "hadir", "menggunakan", "membawa", "dan", "untuk",
+        "and", "but", "while", "with", "featuring", "paired", "plus", "running", "powered", "delivering"
     }
     best_split_idx = None
     best_score = -999.0
@@ -1981,17 +2076,30 @@ def main():
 
     if not plan or not isinstance(plan, dict):
         print("   [!] Semua model teks sedang sibuk/gagal JSON, mengaktifkan penyusun bab deterministik dari transkrip...", flush=True)
-        short_title = re.sub(r"[^a-zA-Z0-9\s\-]", "", video_title).strip()[:38] or "HP Flagship ini"
-        plan = {
-            "body_ip": {"start_sec": 45.0, "end_sec": 120.0, "script": f"{short_title} hadir dengan desain bodi belakang yang sangat elegan, material kokoh, serta perlindungan sertifikasi tahan air kelas flagship."},
-            "screen_os": {"start_sec": 120.0, "end_sec": 210.0, "script": "Bagian layarnya menggunakan panel berkualitas tinggi dengan refresh rate seratus dua puluh hertz dan antarmuka sistem operasi yang mulus."},
-            "perf_mem": {"start_sec": 210.0, "end_sec": 320.0, "script": "Dapur pacunya ditenagai chipset kencang dengan kapasitas RAM dan penyimpanan lega untuk melibas multitasking maupun game berat."},
-            "bat_feat": {"start_sec": 320.0, "end_sec": 430.0, "script": "Daya tahan baterainya awet seharian penuh dengan pengisian daya cepat serta fitur pendukung lengkap seperti NFC dan speaker stereo."},
-            "camera": {"start_sec": 430.0, "end_sec": 550.0, "script": "Sektor kamera utamanya sanggup menghasilkan foto dan perekaman video yang stabil dengan detail tajam serta warna natural di berbagai kondisi cahaya."},
-            "cta": {"start_sec": 550.0, "end_sec": max(580.0, total_dur - 30.0), "script": "Dengan segala keunggulan yang ditawarkan, smartphone ini sangat layak masuk daftar pilihan utama kamu. Tulis pendapatmu di kolom komentar!"},
-            "caption": f"Review Lengkap {short_title} Indonesia!",
-            "hashtags": "#ReviewHP #GadgetIndonesia #Smartphone #Shorts"
-        }
+        short_title = re.sub(r"[^a-zA-Z0-9\s\-]", "", video_title).strip()[:38] or ("this flagship phone" if args.lang == "en" else "HP Flagship ini")
+        if args.lang == "en":
+            _, _, en_cta_fb = pick_english_cta_style_and_fallback(video_title)
+            plan = {
+                "body_ip": {"start_sec": 45.0, "end_sec": 120.0, "script": f"{short_title} features a sleek flagship body design, durable build quality, and official water resistance rating."},
+                "screen_os": {"start_sec": 120.0, "end_sec": 210.0, "script": "Its vibrant display panel delivers a smooth one hundred twenty hertz refresh rate with a clean, responsive software interface."},
+                "perf_mem": {"start_sec": 210.0, "end_sec": 320.0, "script": "Powered by a fast processor paired with generous RAM and high speed storage, it handles heavy multitasking and gaming effortlessly."},
+                "bat_feat": {"start_sec": 320.0, "end_sec": 430.0, "script": "The all day battery supports fast charging alongside complete connectivity features including NFC, stereo speakers, and an fingerprint sensor."},
+                "camera": {"start_sec": 430.0, "end_sec": 550.0, "script": "Its main and selfie cameras capture sharp photos and stable high resolution video across various lighting conditions."},
+                "cta": {"start_sec": 550.0, "end_sec": max(580.0, total_dur - 30.0), "script": en_cta_fb},
+                "caption": f"Full Review of {short_title}!",
+                "hashtags": "#SmartphoneReview #TechShorts #GadgetReview #Shorts"
+            }
+        else:
+            plan = {
+                "body_ip": {"start_sec": 45.0, "end_sec": 120.0, "script": f"{short_title} hadir dengan desain bodi belakang yang sangat elegan, material kokoh, serta perlindungan sertifikasi tahan air kelas flagship."},
+                "screen_os": {"start_sec": 120.0, "end_sec": 210.0, "script": "Bagian layarnya menggunakan panel berkualitas tinggi dengan refresh rate seratus dua puluh hertz dan antarmuka sistem operasi yang mulus."},
+                "perf_mem": {"start_sec": 210.0, "end_sec": 320.0, "script": "Dapur pacunya ditenagai chipset kencang dengan kapasitas RAM dan penyimpanan lega untuk melibas multitasking maupun game berat."},
+                "bat_feat": {"start_sec": 320.0, "end_sec": 430.0, "script": "Daya tahan baterainya awet seharian penuh dengan pengisian daya cepat serta fitur pendukung lengkap seperti NFC dan speaker stereo."},
+                "camera": {"start_sec": 430.0, "end_sec": 550.0, "script": "Sektor kamera utamanya sanggup menghasilkan foto dan perekaman video yang stabil dengan detail tajam serta warna natural di berbagai kondisi cahaya."},
+                "cta": {"start_sec": 550.0, "end_sec": max(580.0, total_dur - 30.0), "script": "Dengan segala keunggulan yang ditawarkan, smartphone ini sangat layak masuk daftar pilihan utama kamu. Tulis pendapatmu di kolom komentar!"},
+                "caption": f"Review Lengkap {short_title} Indonesia!",
+                "hashtags": "#ReviewHP #GadgetIndonesia #Smartphone #Shorts"
+            }
 
     chapters_with_scenes = []
     chapter_scripts = []

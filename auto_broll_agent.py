@@ -906,6 +906,7 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
         "- Semua angka spesifikasi & FPS rekaman video wajib 100% asli dari transkrip/deskripsi.",
         "- JANGAN PERNAH menyalin candaan tidak relevan dari transkrip reviewer atau menambahkan kata seperti 'kuliah sore', 'anak kuliah', atau profesi spesifik yang tidak berhubungan dengan spesifikasi teknis HP.",
         "- Kembalikan HANYA objek JSON murni dengan key persis: body_ip, screen_os, perf_mem, bat_feat, camera, cta, caption, hashtags.",
+        "- Nilai `hashtags` WAJIB berupa string berisi 5-7 hashtag relevan yang SETIAP katanya diawali tanda pagar `#` (contoh: \"#SamsungS25FE #ReviewHP #GadgetIndonesia #Shorts\").",
         "- Setiap bab (body_ip s/d cta) wajib memiliki key:",
         "  * `start_sec` (angka detik awal bab di video sumber)",
         "  * `end_sec` (angka detik akhir bab di video sumber)",
@@ -2082,10 +2083,38 @@ def cut_exact_broll_clip_1080p(video_path, seg_start, exact_dur, out_path):
     ]
     subprocess.run(cmd, check=True)
 
-def save_matching_txt(video_file_path, caption_text, hashtags_text=""):
+def normalize_hashtags(raw_hashtags, lang="id"):
+    """Memastikan setiap hashtag selalu diawali tanda pagar '#' dan diformat rapi."""
+    default_tags = "#SmartphoneReview #TechShorts #GadgetReview #Shorts" if lang == "en" else "#ReviewHP #GadgetIndonesia #Smartphone #Shorts"
+    if isinstance(raw_hashtags, list):
+        raw_str = " ".join(str(x) for x in raw_hashtags if x)
+    else:
+        raw_str = str(raw_hashtags or "").strip()
+
+    if not raw_str:
+        return default_tags
+
+    tokens = re.split(r"[\s,;]+", raw_str)
+    formatted = []
+    seen = set()
+    for tok in tokens:
+        clean_tok = re.sub(r"^#+", "", tok.strip())
+        clean_tok = re.sub(r"[^a-zA-Z0-9_]", "", clean_tok)
+        if not clean_tok:
+            continue
+        low = clean_tok.lower()
+        if low not in seen:
+            seen.add(low)
+            formatted.append(f"#{clean_tok}")
+
+    return " ".join(formatted) if formatted else default_tags
+
+def save_matching_txt(video_file_path, caption_text, hashtags_text="", lang="id"):
     base_no_ext = os.path.splitext(video_file_path)[0]
     txt_path = f"{base_no_ext}.txt"
-    content = f"{caption_text.strip()}\n\n{hashtags_text.strip()}" if hashtags_text else caption_text.strip()
+    clean_cap = str(caption_text or "").strip()
+    clean_tags = normalize_hashtags(hashtags_text, lang=lang)
+    content = f"{clean_cap}\n\n{clean_tags}" if clean_tags else clean_cap
     with open(txt_path, "w", encoding="utf-8") as f:
         f.write(content + "\n")
     return txt_path
@@ -2200,7 +2229,7 @@ def main():
             print(f"      🎬 Adegan {idx}.{sc_i} [{sc['visual_focus']}] ({int(sc['start_sec'])}s-{int(sc['end_sec'])}s): \"{sc['script']}\"", flush=True)
 
     caption_txt = plan.get("caption", " ".join(chapter_scripts)[:140]).strip()
-    hashtags_txt = plan.get("hashtags", "#ReviewHP #GadgetIndonesia #Shorts").strip()
+    hashtags_txt = normalize_hashtags(plan.get("hashtags", ""), lang=args.lang)
 
     print("\n[*] Tahap 2/4: Memanggil Gemini TTS (1x Panggilan) & Memisahkan Batas Suara Eksak Tiap Adegan...", flush=True)
     full_wav_path = os.path.join(out_dir, f"full_vo_{args.lang}.wav")
@@ -2363,7 +2392,7 @@ def main():
         "-t", f"{target_final_dur:.2f}", final_output
     ], check=True)
 
-    final_txt_path = save_matching_txt(final_output, caption_txt, hashtags_txt)
+    final_txt_path = save_matching_txt(final_output, caption_txt, hashtags_txt, lang=args.lang)
     target_hp_dir = "/sdcard/Download/Broll_Clips"
     try:
         if os.path.exists(target_hp_dir):

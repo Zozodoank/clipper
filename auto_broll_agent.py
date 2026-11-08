@@ -133,7 +133,7 @@ CHAPTER_CONFIG = [
             {
                 "scene_id": "cta_1",
                 "visual_focus": "Tampilan keseluruhan unit HP yang elegan sebagai kesimpulan & rekomendasi akhir",
-                "keywords": ["kesimpulan", "solusi", "solid", "harga", "worth", "beli", "tertarik", "rekomendasi", "pilihan", "kesimpulannya", "cocok", "pelajar", "pekerja"]
+                "keywords": ["kesimpulan", "solusi", "solid", "harga", "worth", "beli", "tertarik", "rekomendasi", "pilihan", "kesimpulannya", "layak", "unggul"]
             }
         ]
     }
@@ -796,12 +796,71 @@ def ensure_english_like_and_subscribe_cta(cta_script, fallback_template):
         return f"{first_clause}, {varied_suffix}"
     return fallback_template
 
+INDONESIAN_CTA_VARIATIONS = [
+    (
+        "Gaya Soft Selling Afiliasi Standar: Kesimpulan singkat keunggulan utama HP (4-5 kata) + ajakan ramah seperti "
+        "'Tertarik meminangnya? Cek harga promo dan link pembelian resminya sekarang juga!'"
+    ),
+    (
+        "Gaya Rekomendasi Worth-It: Kesimpulan singkat nilai jual HP + ajakan soft selling seperti "
+        "'Sangat layak masuk daftar incaranmu tahun ini, yuk cek penawaran terbaiknya lewat link yang tersedia!'"
+    ),
+    (
+        "Gaya Solusi Upgrade: Kesimpulan singkat spesifikasi unggulan + ajakan soft selling seperti "
+        "'Pilihan tepat buat kamu yang cari upgrade HP awet, langsung amankan unitnya di link pembelian ya!'"
+    ),
+    (
+        "Gaya Afiliasi Elegan: Kesimpulan singkat performa & kamera + ajakan soft selling seperti "
+        "'Paket komplit yang sulit ditolak di kelas harganya, cek ketersediaan stok dan promonya sekarang!'"
+    )
+]
+
+INDONESIAN_CTA_FALLBACK_TEMPLATES = [
+    "Dengan segala keunggulan yang ditawarkan, smartphone ini sangat layak dimiliki, cek harga promo dan link pembeliannya sekarang!",
+    "Paket spesifikasi yang sangat komplit di kelas harganya, langsung cek ketersediaan stok dan penawaran terbaiknya sekarang juga!",
+    "Pilihan paling solid untuk upgrade smartphone kamu tahun ini, yuk amankan unit resminya lewat link pembelian yang tersedia!",
+    "Perpaduan performa, layar, dan kamera yang sangat seimbang, cek info harga terbaru dan promo resminya sekarang juga!"
+]
+
+UNWANTED_HALLUCINATION_PATTERNS = [
+    r"\b(?:buat|untuk|bagi|cocok\s+buat|cocok\s+untuk|anak|mahasiswa|sambil|pas|saat)?\s*kuliah\s+sore\b",
+    r"\bkuliah\s+sore\b",
+    r"\bkuliah\s+malam\b",
+    r"\bkuliah\s+pagi\b",
+    r"\banak\s+kuliahan?\b"
+]
+
+def pick_indonesian_cta_style_and_fallback(video_title=""):
+    """Memilih variasi CTA soft-selling afiliasi Bahasa Indonesia yang bersih dan natural."""
+    seed_val = int(time.time() * 1000) ^ int(hashlib.md5(video_title.encode("utf-8", errors="ignore")).hexdigest()[:8], 16)
+    rng = random.Random(seed_val)
+    idx = rng.randrange(len(INDONESIAN_CTA_VARIATIONS))
+    return idx, INDONESIAN_CTA_VARIATIONS[idx], INDONESIAN_CTA_FALLBACK_TEMPLATES[idx]
+
+def ensure_indonesian_affiliate_soft_selling_cta(cta_script, fallback_template):
+    """Memastikan CTA Bahasa Indonesia tetap bersih, bebas frasa aneh ('kuliah sore'), dan bernuansa soft-selling afiliasi standar."""
+    txt = sanitize_subtitle_text(cta_script)
+    if not txt or len(txt.split()) < 6:
+        return fallback_template
+    # Jika terdeteksi kata aneh atau terlalu pendek setelah sanitasi, gunakan klausa pertama + akhiran soft selling
+    low = txt.lower()
+    has_soft_cta = any(k in low for k in ["cek", "link", "tertarik", "layak", "pilihan", "rekomendasi", "komentar", "incaran", "promo", "harga", "miliki", "pinang"])
+    if has_soft_cta:
+        return txt
+    first_clause = re.split(r"[.!?]", txt)[0].strip().rstrip(",;:")
+    suffix_match = re.split(r",\s*", fallback_template, maxsplit=1)
+    soft_suffix = suffix_match[-1] if len(suffix_match) > 1 else "cek harga promo dan link pembeliannya sekarang!"
+    if first_clause and len(first_clause.split()) <= 9:
+        return f"{first_clause}, {soft_suffix}"
+    return fallback_template
+
 def analyze_native_transcript_and_build_chapters(video_title, video_desc, timestamped_transcript, total_dur, api_key, lang="id"):
     short_transcript = timestamped_transcript[:15000] if timestamped_transcript else "(Transkrip tidak tersedia, gunakan spesifikasi asli HP pada judul)"
     lang_label = "Bahasa Inggris (English)" if lang == "en" else "Bahasa Indonesia"
     inch_rule = "kata 'inch'" if lang == "en" else "kata 'inci'"
 
     var_idx, en_cta_style, en_cta_fallback = pick_english_cta_style_and_fallback(video_title)
+    id_idx, id_cta_style, id_cta_fallback = pick_indonesian_cta_style_and_fallback(video_title)
     if lang == "en":
         cta_instruction = (
             "6. `cta`: Kesimpulan super singkat keunggulan HP (4-5 kata) + AJAKAN WAJIB untuk LIKE dan SUBSCRIBE "
@@ -813,8 +872,15 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
             f"(contoh gaya: {en_cta_fallback})."
         )
     else:
-        cta_instruction = "6. `cta`: Kesimpulan singkat keunggulan utama & ajakan soft selling di akhir (1 Adegan, 11-14 kata)."
-        cta_simple_hint = "Jangan gunakan tanda kutip di dalam nilai string."
+        cta_instruction = (
+            "6. `cta`: Kesimpulan singkat keunggulan utama HP & ajakan CTA afiliasi standar soft selling di akhir "
+            f"(1 Adegan, 11-15 kata). Gunakan gaya soft selling standar ini: {id_cta_style} "
+            "DILARANG KERAS menambahkan istilah mengada-ada di luar spesifikasi HP seperti 'kuliah sore', 'anak kos', dsb."
+        )
+        cta_simple_hint = (
+            "Khusus key `cta`, gunakan kesimpulan singkat + CTA afiliasi standar soft selling (contoh: "
+            f"{id_cta_fallback}). Jangan gunakan tanda kutip di dalam nilai string dan jangan mengarang istilah seperti 'kuliah sore'."
+        )
 
     prompt = "\n".join([
         f"Judul Video Review: \"{video_title}\"",
@@ -838,6 +904,7 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
         "- Total gabungan kata dari seluruh `script` ke-6 bab WAJIB sekitar 90-100 kata agar seluruh kalimat hingga akhir CTA selesai diucapkan dengan utuh (< 55 detik).",
         f"- Jangan gunakan tanda kutip ganda (\") di dalam isi kalimat `script` atau `visual_focus` (gunakan {inch_rule} untuk ukuran layar).",
         "- Semua angka spesifikasi & FPS rekaman video wajib 100% asli dari transkrip/deskripsi.",
+        "- JANGAN PERNAH menyalin candaan tidak relevan dari transkrip reviewer atau menambahkan kata seperti 'kuliah sore', 'anak kuliah', atau profesi spesifik yang tidak berhubungan dengan spesifikasi teknis HP.",
         "- Kembalikan HANYA objek JSON murni dengan key persis: body_ip, screen_os, perf_mem, bat_feat, camera, cta, caption, hashtags.",
         "- Setiap bab (body_ip s/d cta) wajib memiliki key:",
         "  * `start_sec` (angka detik awal bab di video sumber)",
@@ -896,12 +963,15 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
                 res[k]["end_sec"] = float(val.get("end_sec") or default_e)
             except Exception:
                 res[k]["end_sec"] = default_e
-            res[k]["script"] = str(val.get("script") or "")
+            res[k]["script"] = sanitize_subtitle_text(val.get("script") or "")
             if not isinstance(val.get("scenes"), list):
                 res[k]["scenes"] = []
 
-    if lang == "en" and "cta" in res and isinstance(res["cta"], dict):
-        enforced_cta = ensure_english_like_and_subscribe_cta(res["cta"].get("script", ""), en_cta_fallback)
+    if "cta" in res and isinstance(res["cta"], dict):
+        if lang == "en":
+            enforced_cta = ensure_english_like_and_subscribe_cta(res["cta"].get("script", ""), en_cta_fallback)
+        else:
+            enforced_cta = ensure_indonesian_affiliate_soft_selling_cta(res["cta"].get("script", ""), id_cta_fallback)
         res["cta"]["script"] = enforced_cta
         if isinstance(res["cta"].get("scenes"), list) and len(res["cta"]["scenes"]) > 0 and isinstance(res["cta"]["scenes"][0], dict):
             res["cta"]["scenes"][0]["script"] = enforced_cta
@@ -911,6 +981,9 @@ def sanitize_subtitle_text(raw_text):
     text = str(raw_text or "").strip().strip('"').strip("'")
     text = re.sub(r"^(voice\s*over|narasi|naskah|script|vo|teks|bab\s*\d+|adegan\s*\d+)\s*:\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\*+", "", text)
+    for pat in UNWANTED_HALLUCINATION_PATTERNS:
+        text = re.sub(pat, "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s+([,.!?;:])", r"\1", text)
     return " ".join(text.split())
 
 def find_keyword_time_window_in_transcript(events, keywords, fallback_start, fallback_end, total_dur):

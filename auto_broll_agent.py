@@ -905,8 +905,11 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
         f"- Jangan gunakan tanda kutip ganda (\") di dalam isi kalimat `script` atau `visual_focus` (gunakan {inch_rule} untuk ukuran layar).",
         "- Semua angka spesifikasi & FPS rekaman video wajib 100% asli dari transkrip/deskripsi.",
         "- JANGAN PERNAH menyalin candaan tidak relevan dari transkrip reviewer atau menambahkan kata seperti 'kuliah sore', 'anak kuliah', atau profesi spesifik yang tidak berhubungan dengan spesifikasi teknis HP.",
-        "- Kembalikan HANYA objek JSON murni dengan key persis: body_ip, screen_os, perf_mem, bat_feat, camera, cta, caption, hashtags.",
+        "- Kembalikan HANYA objek JSON murni dengan key persis: body_ip, screen_os, perf_mem, bat_feat, camera, cta, caption, hashtags, thumbnail_badge, thumbnail_headline, thumbnail_specs.",
         "- Nilai `hashtags` WAJIB berupa string berisi 5-7 hashtag relevan yang SETIAP katanya diawali tanda pagar `#` (contoh: \"#SamsungS25FE #ReviewHP #GadgetIndonesia #Shorts\").",
+        f"- Nilai `thumbnail_badge` berisi 2-3 kata huruf kapital singkat yang menarik perhatian dalam **{lang_label}** (contoh ID: \"TURUN HARGA!\" / \"SPEK FLAGSHIP!\", contoh EN: \"PRICE DROP!\" / \"HONEST REVIEW!\").",
+        f"- Nilai `thumbnail_headline` berisi 3-5 kata huruf kapital singkat berupa nama seri HP + daya tarik utama dalam **{lang_label}** (contoh ID: \"SAMSUNG S25 FE MASIH LAYAK?!\", contoh EN: \"SAMSUNG S25 FE WORTH IT?!\").",
+        f"- Nilai `thumbnail_specs` berisi 3 poin spesifikasi inti singkat yang dipisahkan tanda ` • ` dalam **{lang_label}** (contoh: \"AMOLED 120Hz • Exynos 2400e • IP68\").",
         "- Setiap bab (body_ip s/d cta) wajib memiliki key:",
         "  * `start_sec` (angka detik awal bab di video sumber)",
         "  * `end_sec` (angka detik akhir bab di video sumber)",
@@ -934,7 +937,7 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
             "Transkrip:",
             short_transcript[:10000],
             "",
-            "Susun JSON murni dengan key persis: body_ip, screen_os, perf_mem, bat_feat, camera, cta, caption, hashtags.",
+            "Susun JSON murni dengan key persis: body_ip, screen_os, perf_mem, bat_feat, camera, cta, caption, hashtags, thumbnail_badge, thumbnail_headline, thumbnail_specs.",
             f"Setiap key bab (body_ip s/d cta) berisi objek: {{\"start_sec\": angka, \"end_sec\": angka, \"script\": \"narasi {lang_label} 15-20 kata sesuai spesifikasi asli di transkrip\"}}.",
             cta_simple_hint
         ])
@@ -2119,6 +2122,307 @@ def save_matching_txt(video_file_path, caption_text, hashtags_text="", lang="id"
         f.write(content + "\n")
     return txt_path
 
+THUMBNAIL_PALETTES = [
+    {
+        "name": "Cyber Yellow & Crimson",
+        "badge_bg_bgr": (25, 25, 230),
+        "badge_border_bgr": (255, 255, 255),
+        "accent_bgr": (0, 225, 255),
+        "ass_line1_primary": "&H00FFFFFF",
+        "ass_line2_primary": "&H0000E5FF",
+        "ass_badge_primary": "&H00FFFFFF",
+        "ass_spec_primary": "&H00B5F5FF"
+    },
+    {
+        "name": "Neon Cyan & Gold",
+        "badge_bg_bgr": (210, 85, 0),
+        "badge_border_bgr": (255, 235, 120),
+        "accent_bgr": (255, 230, 0),
+        "ass_line1_primary": "&H00FFFFFF",
+        "ass_line2_primary": "&H00FFE600",
+        "ass_badge_primary": "&H00FFFFFF",
+        "ass_spec_primary": "&H0090F0FF"
+    },
+    {
+        "name": "Vibrant Orange & Lime",
+        "badge_bg_bgr": (0, 95, 245),
+        "badge_border_bgr": (255, 255, 255),
+        "accent_bgr": (60, 255, 140),
+        "ass_line1_primary": "&H00FFFFFF",
+        "ass_line2_primary": "&H003CFF8C",
+        "ass_badge_primary": "&H00FFFFFF",
+        "ass_spec_primary": "&H00B8FFE0"
+    }
+]
+
+def extract_short_phone_name(video_title):
+    """Mengekstrak nama seri HP singkat (2-4 kata) dari judul video YouTube untuk headline thumbnail."""
+    known_brands = [
+        "samsung", "galaxy", "iphone", "xiaomi", "redmi", "poco", "oppo", "vivo", "iqoo",
+        "realme", "infinix", "tecno", "itel", "honor", "asus", "rog", "zenfone", "huawei",
+        "motorola", "moto", "nothing", "google", "pixel", "oneplus", "nubia", "zflip", "zfold"
+    ]
+    clean = re.sub(r"[^\w\s\+]", " ", str(video_title or ""))
+    words = [w for w in clean.split() if w]
+    start_idx = None
+    for i, w in enumerate(words):
+        if w.lower() in known_brands:
+            start_idx = i
+            break
+    if start_idx is not None:
+        picked = words[start_idx:start_idx + 4]
+        if picked and picked[0].lower() == "samsung" and len(picked) >= 3 and picked[1].lower() == "galaxy":
+            picked = picked[1:4]
+        return " ".join(picked).upper()
+    return " ".join(words[:3]).upper() if words else "FLAGSHIP PHONE"
+
+def ensure_dynamic_thumbnail_copy(plan, video_title, lang="id"):
+    """
+    Menyiapkan dan memvalidasi teks dinamis untuk Thumbnail Video Short sesuai bahasa (`id` / `en`):
+    - `badge`: Lencana atas 2-3 kata (mis. 'REVIEW JUJUR!' / 'HONEST REVIEW!')
+    - `line1` & `line2`: Headline utama 2 baris (nama HP + hook memikat)
+    - `specs`: Pita ringkasan 3 poin spesifikasi inti
+    """
+    phone_name = extract_short_phone_name(video_title)
+    seed_val = int(time.time() * 1000) ^ int(hashlib.md5(str(video_title).encode("utf-8", errors="ignore")).hexdigest()[:8], 16)
+    rng = random.Random(seed_val)
+
+    id_badges = ["REVIEW JUJUR!", "SPEK FLAGSHIP!", "PALING WORTH IT!", "TURUN HARGA!", "WAJIB TAHU!"]
+    en_badges = ["HONEST REVIEW!", "FLAGSHIP KILLER!", "WORTH BUYING?!", "PRICE DROP!", "FULL BREAKDOWN!"]
+    id_hooks = ["MASIH LAYAK?!", "SPEKNYA NGERI!", "JAWARA BARU!", "WAJIB BELI?!"]
+    en_hooks = ["WORTH IT?!", "TOTAL BEAST!", "BEST VALUE?!", "GAME CHANGER!"]
+
+    raw_badge = sanitize_subtitle_text(plan.get("thumbnail_badge", "")).upper()
+    raw_head = sanitize_subtitle_text(plan.get("thumbnail_headline", "")).upper()
+    raw_specs = sanitize_subtitle_text(plan.get("thumbnail_specs", ""))
+
+    # Jika bahasa Inggris diminta tetapi badge/headline masih mengandung kata Bahasa Indonesia umum, ganti otomatis
+    indo_markers = {"MASIH", "LAYAK", "HARGA", "TURUN", "SPEK", "JUJUR", "WAJIB", "BELI", "TAHU", "JAWARA"}
+    if lang == "en":
+        if not raw_badge or any(w in raw_badge.split() for w in indo_markers):
+            raw_badge = rng.choice(en_badges)
+        if not raw_head or any(w in raw_head.split() for w in indo_markers):
+            raw_head = f"{phone_name} {rng.choice(en_hooks)}"
+    else:
+        if not raw_badge:
+            raw_badge = rng.choice(id_badges)
+        if not raw_head:
+            raw_head = f"{phone_name} {rng.choice(id_hooks)}"
+
+    raw_badge = " ".join(raw_badge.split()[:3])
+    if raw_badge and raw_badge[-1] not in "!?":
+        raw_badge += "!"
+
+    head_words = [w for w in raw_head.split() if w]
+    if len(head_words) <= 2:
+        line1 = phone_name
+        line2 = raw_head if raw_head != phone_name else (rng.choice(en_hooks) if lang == "en" else rng.choice(id_hooks))
+    else:
+        mid = max(2, min(3, (len(head_words) + 1) // 2))
+        line1 = " ".join(head_words[:mid])[:20]
+        line2 = " ".join(head_words[mid:mid + 3])[:20]
+        if not line2:
+            line2 = rng.choice(en_hooks) if lang == "en" else rng.choice(id_hooks)
+
+    if not raw_specs or len(raw_specs) < 6:
+        raw_specs = "120Hz Display • Fast Chipset • Pro Camera" if lang == "en" else "Layar 120Hz • Chipset Kencang • Kamera Stabil"
+    else:
+        spec_parts = [p.strip() for p in re.split(r"[•|/,\-]+", raw_specs) if p.strip()]
+        if len(spec_parts) >= 2:
+            raw_specs = " • ".join(spec_parts[:3])
+        raw_specs = raw_specs[:44]
+
+    palette = rng.choice(THUMBNAIL_PALETTES)
+    return {
+        "badge": raw_badge,
+        "line1": line1,
+        "line2": line2,
+        "specs": raw_specs.upper(),
+        "palette": palette
+    }
+
+def select_best_thumbnail_frame(all_final_clips, detector=None):
+    """
+    Memilih frame 1080x1920 paling tajam, cerah proporsional, dan 100% bebas wajah
+    dari klip-klip B-Roll terbaik (mengutamakan Bab 1 Desain Fisik & Bab 2 Layar).
+    """
+    best_frame = None
+    best_score = -1.0
+
+    # Utamakan klip dari paruh awal (Bab 1 & Bab 2 menampilkan fisik bodi & layar HP paling ikonik)
+    priority_clips = all_final_clips[:8] if len(all_final_clips) >= 4 else all_final_clips
+    for clip_idx, clip_path in enumerate(priority_clips):
+        if not os.path.exists(clip_path):
+            continue
+        cap = cv2.VideoCapture(clip_path)
+        n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if n_frames <= 0:
+            cap.release()
+            continue
+
+        sample_indices = [
+            max(0, int(n_frames * 0.25)),
+            max(0, int(n_frames * 0.50)),
+            max(0, int(n_frames * 0.75))
+        ]
+        for f_idx in sample_indices:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
+            ret, frame = cap.read()
+            if not ret or frame is None:
+                continue
+            if detector is not None:
+                sm = cv2.resize(frame, (270, 480), interpolation=cv2.INTER_AREA)
+                _, faces = detector.detect(sm)
+                if faces is not None and len(faces) > 0:
+                    continue
+                if has_animated_subscribe_badge([sm]):
+                    continue
+
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            # Fokus pengukuran ketajaman pada area tengah tempat unit HP berada
+            h, w = gray.shape[:2]
+            center_roi = gray[int(h * 0.18):int(h * 0.72), int(w * 0.12):int(w * 0.88)]
+            sharpness = float(cv2.Laplacian(center_roi, cv2.CV_64F).var())
+            mean_bri = float(np.mean(center_roi))
+
+            # Penalti jika terlalu gelap (< 45) atau overexposed (> 220)
+            bri_factor = 1.0
+            if mean_bri < 45.0 or mean_bri > 220.0:
+                bri_factor = 0.45
+            elif 75.0 <= mean_bri <= 185.0:
+                bri_factor = 1.20
+
+            # Bonus prioritas untuk klip Bab 1 & 2 (indeks 0..3)
+            chap_bonus = 1.25 if clip_idx < 4 else 1.0
+            score = sharpness * bri_factor * chap_bonus
+            if score > best_score:
+                best_score = score
+                best_frame = frame.copy()
+        cap.release()
+
+    if best_frame is None and all_final_clips:
+        cap = cv2.VideoCapture(all_final_clips[0])
+        ret, fr = cap.read()
+        cap.release()
+        if ret and fr is not None:
+            best_frame = fr
+
+    return best_frame
+
+def escape_ass_text(txt):
+    return str(txt or "").replace("\\", "").replace("{", "(").replace("}", ")")
+
+def generate_dynamic_short_thumbnail(all_final_clips, plan, video_title, lang, out_thumb_path, out_dir, detector=None):
+    """
+    Merender Gambar Thumbnail Dinamis Video Short (1080x1920) sesuai bahasa (`id` / `en`):
+    1. Memilih frame B-Roll produk paling tajam & bebas wajah.
+    2. Menerapkan peningkatan kontras produk, cinematic dark gradient di bawah & atas,
+       serta elemen grafis Badge Pill + Spec Card + Accent Frame menggunakan OpenCV.
+    3. Merender tipografi bertingkat (Badge + 2 Baris Headline Besar + Pita Spesifikasi)
+       menggunakan mesin subtitle ASS FFmpeg agar anti-aliasing teks sangat tajam di semua perangkat.
+    """
+    base_frame = select_best_thumbnail_frame(all_final_clips, detector=detector)
+    if base_frame is None:
+        return None
+
+    h, w = 1920, 1080
+    if base_frame.shape[0] != h or base_frame.shape[1] != w:
+        base_frame = cv2.resize(base_frame, (w, h), interpolation=cv2.INTER_LANCZOS4)
+
+    # 1. Pertajam & tingkatkan vibrance area produk HP
+    blurred = cv2.GaussianBlur(base_frame, (0, 0), 2.2)
+    canvas = cv2.addWeighted(base_frame, 1.18, blurred, -0.18, 4)
+
+    # 2. Buat cinematic gradient vignette di bagian atas (0..360) dan bagian bawah (1120..1920)
+    grad_mask = np.ones((h, 1), dtype=np.float32)
+    for y in range(0, 360):
+        t = 1.0 - (y / 360.0)
+        grad_mask[y, 0] = 1.0 - (0.58 * (t ** 1.4))
+    for y in range(1100, h):
+        t = (y - 1100) / float(h - 1100)
+        grad_mask[y, 0] = 1.0 - (0.86 * (t ** 1.15))
+
+    grad_3c = np.repeat(grad_mask, w, axis=1)[:, :, np.newaxis]
+    canvas = np.clip(canvas.astype(np.float32) * grad_3c, 0, 255).astype(np.uint8)
+
+    meta = ensure_dynamic_thumbnail_copy(plan, video_title, lang=lang)
+    pal = meta["palette"]
+
+    # 3. Gambar dekorasi grafis (Top Badge Pill, Bottom Spec Bar, & Glowing Accent Lines)
+    overlay = canvas.copy()
+
+    # Lencana atas (Badge Pill) di y=1260..1338 (tepat di atas Headline utama agar seluruh komposisi berada di zona fokus mata)
+    badge_txt = meta["badge"]
+    badge_w = min(860, max(420, int(len(badge_txt) * 34 + 90)))
+    bx0 = (w - badge_w) // 2
+    by0, by1 = 1235, 1315
+    cv2.rectangle(overlay, (bx0, by0), (bx0 + badge_w, by1), pal["badge_bg_bgr"], -1, lineType=cv2.LINE_AA)
+    cv2.rectangle(overlay, (bx0, by0), (bx0 + badge_w, by1), pal["badge_border_bgr"], 3, lineType=cv2.LINE_AA)
+
+    # Kotak pita spesifikasi di bawah Headline (y=1640..1716)
+    sx0, sx1 = 70, w - 70
+    sy0, sy1 = 1645, 1720
+    cv2.rectangle(overlay, (sx0, sy0), (sx1, sy1), (18, 18, 22), -1, lineType=cv2.LINE_AA)
+    cv2.rectangle(overlay, (sx0, sy0), (sx1, sy1), pal["accent_bgr"], 3, lineType=cv2.LINE_AA)
+
+    # Garis bingkai aksen tipis di tepi layar
+    cv2.rectangle(overlay, (22, 22), (w - 22, h - 22), pal["accent_bgr"], 4, lineType=cv2.LINE_AA)
+
+    canvas = cv2.addWeighted(overlay, 0.88, canvas, 0.12, 0)
+
+    # 4. Render teks bertingkat beresolusi tinggi dengan FFmpeg ASS
+    temp_bg_jpg = os.path.join(out_dir, f"_thumb_bg_{lang}.jpg")
+    temp_ass = os.path.join(out_dir, f"_thumb_overlay_{lang}.ass")
+    cv2.imwrite(temp_bg_jpg, canvas, [int(cv2.IMWRITE_JPEG_QUALITY), 96])
+
+    b_str = escape_ass_text(meta["badge"])
+    l1_str = escape_ass_text(meta["line1"])
+    l2_str = escape_ass_text(meta["line2"])
+    sp_str = escape_ass_text(meta["specs"])
+
+    ass_content = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: ThumbBadge,Sans,44,{pal['ass_badge_primary']},&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,2,0,1,3,0,5,40,40,10,1
+Style: ThumbLine1,Sans,92,{pal['ass_line1_primary']},&H00000000,&H00000000,&H80000000,-1,0,0,0,100,100,1,0,1,9,4,5,40,40,10,1
+Style: ThumbLine2,Sans,100,{pal['ass_line2_primary']},&H00000000,&H00000000,&H80000000,-1,0,0,0,100,100,1,0,1,10,5,5,40,40,10,1
+Style: ThumbSpecs,Sans,36,{pal['ass_spec_primary']},&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,1,0,1,2,0,5,40,40,10,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 2,0:00:00.00,0:00:05.00,ThumbBadge,,0,0,0,,{{\\pos(540,1275)}}{b_str}
+Dialogue: 3,0:00:00.00,0:00:05.00,ThumbLine1,,0,0,0,,{{\\pos(540,1415)}}{l1_str}
+Dialogue: 3,0:00:00.00,0:00:05.00,ThumbLine2,,0,0,0,,{{\\pos(540,1545)}}{l2_str}
+Dialogue: 2,0:00:00.00,0:00:05.00,ThumbSpecs,,0,0,0,,{{\\pos(540,1682)}}{sp_str}
+"""
+    with open(temp_ass, "w", encoding="utf-8") as f:
+        f.write(ass_content)
+
+    try:
+        subprocess.run([
+            "ffmpeg", "-nostdin", "-y", "-loglevel", "fatal",
+            "-i", temp_bg_jpg,
+            "-vf", f"ass={temp_ass}",
+            "-frames:v", "1", "-q:v", "2",
+            out_thumb_path
+        ], check=True)
+    except Exception:
+        shutil.copy(temp_bg_jpg, out_thumb_path)
+
+    for tmp_f in (temp_bg_jpg, temp_ass):
+        if os.path.exists(tmp_f):
+            try:
+                os.remove(tmp_f)
+            except Exception:
+                pass
+
+    return out_thumb_path, meta
+
 def main():
     parser = argparse.ArgumentParser(description="AI Agent Pro Clipper 1080p (Smart Scene-Level VO Segmentation & Visual Sync)")
     parser.add_argument("--url", required=True)
@@ -2393,6 +2697,19 @@ def main():
     ], check=True)
 
     final_txt_path = save_matching_txt(final_output, caption_txt, hashtags_txt, lang=args.lang)
+
+    thumb_output = os.path.join(out_dir, f"THUMBNAIL_PRO_1080P_{args.voice.upper()}_{args.lang.upper()}.jpg")
+    print(f"\n[*] Membuat Gambar Thumbnail Dinamis Video Short ({args.lang.upper()})...", flush=True)
+    thumb_res = generate_dynamic_short_thumbnail(
+        all_final_clips, plan, video_title, args.lang, thumb_output, out_dir, detector=clip_detector
+    )
+    if thumb_res and os.path.exists(thumb_output):
+        _, thumb_meta = thumb_res
+        print(
+            f"🖼️ Thumbnail Siap: [{thumb_meta['badge']}] {thumb_meta['line1']} / {thumb_meta['line2']} ({thumb_meta['specs']})",
+            flush=True
+        )
+
     target_hp_dir = "/sdcard/Download/Broll_Clips"
     try:
         if os.path.exists(target_hp_dir):
@@ -2401,9 +2718,13 @@ def main():
         shutil.copy(final_output, target_hp_dir)
         shutil.copy(final_txt_path, target_hp_dir)
         shutil.copy(srt_path, target_hp_dir)
+        if os.path.exists(thumb_output):
+            shutil.copy(thumb_output, target_hp_dir)
         print("\n=====================================================", flush=True)
         print(f" ✅ SELESAI! ({len(all_visual_cuts)} Adegan Terkunci VO Per Klausa | Durasi: {target_final_dur:.1f}s)", flush=True)
         print(f" 🎬 Video 1080p  : /sdcard/Download/Broll_Clips/{os.path.basename(final_output)}", flush=True)
+        if os.path.exists(thumb_output):
+            print(f" 🖼️ Thumbnail    : /sdcard/Download/Broll_Clips/{os.path.basename(thumb_output)}", flush=True)
         print(f" 📝 File Caption : /sdcard/Download/Broll_Clips/{os.path.basename(final_txt_path)}", flush=True)
         print(f" 📊 Peta Sinkron : {sync_json_path}", flush=True)
         print("=====================================================", flush=True)

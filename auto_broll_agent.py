@@ -2491,16 +2491,166 @@ def ensure_dynamic_thumbnail_copy(plan, video_title, lang="id"):
         "palette": palette
     }
 
-def select_best_thumbnail_frame(all_final_clips, detector=None):
+def _score_frame_for_thumbnail(frame, clip_idx, detector):
     """
-    Memilih frame 1080x1920 paling tajam, cerah proporsional, dan 100% bebas wajah
-    dari klip-klip B-Roll terbaik (mengutamakan Bab 1 Desain Fisik & Bab 2 Layar).
+    Mengembalikan skor ketajaman & kecerahan frame untuk seleksi thumbnail.
+    Mengembalikan (skor, gray_roi) atau (None, None) jika frame tidak memenuhi syarat.
     """
-    best_frame = None
-    best_score = -1.0
+    if detector is not None:
+        sm = cv2.resize(frame, (270, 480), interpolation=cv2.INTER_AREA)
+        _, faces = detector.detect(sm)
+        if faces is not None and len(faces) > 0:
+            return None, None
+        if has_animated_subscribe_badge([sm]):
+            return None, None
 
-    # Utamakan klip dari paruh awal (Bab 1 & Bab 2 menampilkan fisik bodi & layar HP paling ikonik)
-    priority_clips = all_final_clips[:8] if len(all_final_clips) >= 4 else all_final_clips
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape[:2]
+    center_roi = gray[int(h * 0.12):int(h * 0.78), int(w * 0.10):int(w * 0.90)]
+    sharpness = float(cv2.Laplacian(center_roi, cv2.CV_64F).var())
+    mean_bri = float(np.mean(center_roi))
+
+    bri_factor = 1.0
+    if mean_bri < 45.0 or mean_bri > 220.0:
+        bri_factor = 0.45
+    elif 75.0 <= mean_bri <= 185.0:
+        bri_factor = 1.20
+
+    chap_bonus = 1.35 if clip_idx < 4 else 1.0
+    score = sharpness * bri_factor * chap_bonus
+    return score, center_roi
+
+
+def _estimate_vertical_phone_score(frame):
+    """
+    Memperkirakan seberapa vertikal dan utuh HP yang terlihat di frame menggunakan
+    analisis kontur dan aspek rasio objek dominan di tengah frame.
+    Skor lebih tinggi = HP lebih cenderung terlihat vertikal & utuh.
+    """
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape[:2]
+
+    # Fokus pada zona tengah bawah (area showcase HP, hindari text overlay)
+    roi = gray[int(h * 0.05):int(h * 0.70), int(w * 0.10):int(w * 0.90)]
+
+    # Deteksi tepi dengan Canny lalu cari kontur
+    blurred = cv2.GaussianBlur(roi, (5, 5), 0)
+    edges = cv2.Canny(blurred, 40, 120)
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    if not contours:
+        return 0.0
+
+    # Cari kontur paling besar (kemungkinan adalah bodi HP)
+    largest = max(contours, key=cv2.contourArea)
+    area = cv2.contourArea(largest)
+    roi_area = roi.shape[0] * roi.shape[1]
+    if roi_area == 0 or area < (roi_area * 0.03):
+        return 0.0
+
+    # Bounding rect dari kontur terbesar
+    x, y, bw, bh = cv2.boundingRect(largest)
+    if bw == 0:
+        return 0.0
+
+    aspect_ratio = bh / float(bw)  # > 1.5 artinya cenderung vertikal
+
+    # Skor vertikal: semakin tinggi aspek rasio (> 1.6), semakin baik
+    if aspect_ratio >= 1.8:
+        vert_score = 1.0
+    elif aspect_ratio >= 1.5:
+        vert_score = 0.75
+    elif aspect_ratio >= 1.0:
+        vert_score = 0.3
+    else:
+        # Sangat horisontal (landscape) - penalti berat
+        vert_score = 0.05
+
+    # Skor area: HP yang mengisi sebagian besar frame mendapat bonus
+    fill_ratio = area / roi_area
+    fill_score = min(1.0, fill_ratio * 2.5)
+
+    return (vert_score * 0.7 + fill_score * 0.3)
+
+
+def _pick_best_vertical_back_frame_with_gemini(candidates_b64_list, api_key):
+    """
+    Meminta Gemini Vision memilih frame terbaik yang menampilkan bagian belakang HP
+    secara vertikal dan utuh dari daftar kandidat (maks 9 frame).
+    Mengembalikan indeks terpilih (0-based) atau None jika gagal.
+    """
+    if not api_key or not candidates_b64_list:
+        return None
+
+    n = len(candidates_b64_list)
+    prompt = (
+        f"You are given {n} candidate video frames numbered 1 to {n}. "
+        "Each frame is a screenshot from a smartphone review video. "
+        "Your task: pick the SINGLE BEST frame that shows "
+        "(1) the BACK SIDE of the smartphone (rear camera module visible, NOT the front screen), "
+        "(2) the ENTIRE phone body visible (not cropped or macro close-up), "
+        "(3) the phone in a VERTICAL / UPRIGHT portrait orientation (taller than wide), "
+        "(4) clean background with good lighting. "
+        "If none show the full vertical back, pick the closest one. "
+        "Reply with ONLY a JSON object: {\"best\": <number 1 to N>}. "
+        "No explanation."
+    )
+
+    # Bangun payload multi-gambar
+    parts = [{"text": prompt}]
+    for i, b64_data in enumerate(candidates_b64_list):
+        parts.append({
+            "inline_data": {
+                "mime_type": "image/jpeg",
+                "data": b64_data
+            }
+        })
+        parts.append({"text": f"Frame {i + 1}:"})
+
+    payload = {"contents": [{"parts": parts}]}
+    headers = {"Content-Type": "application/json"}
+
+    # Coba model vision yang tersedia
+    for model in VISION_MODELS[:4]:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=25)
+            if resp.status_code != 200:
+                continue
+            data = resp.json()
+            raw_text = ""
+            for cand in data.get("candidates", []):
+                for part in cand.get("content", {}).get("parts", []):
+                    raw_text += part.get("text", "")
+            parsed = extract_json_object(raw_text)
+            if parsed and "best" in parsed:
+                idx = int(parsed["best"]) - 1
+                if 0 <= idx < n:
+                    print(f"      [Thumbnail] Gemini ({model}) memilih frame #{idx + 1} sebagai kandidat terbaik (belakang HP vertikal).", flush=True)
+                    return idx
+        except Exception as e:
+            print(f"      [Thumbnail] Gemini Vision ({model}) error: {e}", flush=True)
+            continue
+    return None
+
+
+def select_best_thumbnail_frame(all_final_clips, detector=None, api_key=None):
+    """
+    Memilih frame 1080x1920 yang menampilkan BAGIAN BELAKANG HP secara VERTIKAL dan UTUH
+    dari klip-klip B-Roll (mengutamakan Bab 1 body_ip = tampak belakang HP yang paling ikonik).
+
+    Tahap seleksi:
+    1. Kumpulkan kandidat tajam & bebas wajah dari 10 klip pertama (Bab 1 & 2 prioritas).
+    2. Skoring geometri lokal (aspek rasio kontur = mendeteksi vertikal vs horisontal).
+    3. Gemini Vision memilih kandidat terbaik dari top-9 (back + vertikal + utuh).
+    4. Fallback: frame dengan skor geometri + ketajaman tertinggi.
+    """
+    candidate_frames = []   # list of (score, vert_score, frame)
+    candidate_b64s = []     # base64 JPEG untuk Gemini Vision
+
+    # Klip prioritas: 10 pertama (body_ip & screen_os ada di sini)
+    priority_clips = all_final_clips[:10] if len(all_final_clips) >= 4 else all_final_clips
+
     for clip_idx, clip_path in enumerate(priority_clips):
         if not os.path.exists(clip_path):
             continue
@@ -2510,68 +2660,76 @@ def select_best_thumbnail_frame(all_final_clips, detector=None):
             cap.release()
             continue
 
+        # Sampel 4 titik per klip untuk mendapat kandidat lebih beragam
         sample_indices = [
-            max(0, int(n_frames * 0.25)),
-            max(0, int(n_frames * 0.50)),
-            max(0, int(n_frames * 0.75))
+            max(0, int(n_frames * 0.15)),
+            max(0, int(n_frames * 0.38)),
+            max(0, int(n_frames * 0.62)),
+            max(0, int(n_frames * 0.85)),
         ]
         for f_idx in sample_indices:
             cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
             ret, frame = cap.read()
             if not ret or frame is None:
                 continue
-            if detector is not None:
-                sm = cv2.resize(frame, (270, 480), interpolation=cv2.INTER_AREA)
-                _, faces = detector.detect(sm)
-                if faces is not None and len(faces) > 0:
-                    continue
-                if has_animated_subscribe_badge([sm]):
-                    continue
 
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            # Fokus pengukuran ketajaman pada area tengah tempat unit HP berada
-            h, w = gray.shape[:2]
-            center_roi = gray[int(h * 0.18):int(h * 0.72), int(w * 0.12):int(w * 0.88)]
-            sharpness = float(cv2.Laplacian(center_roi, cv2.CV_64F).var())
-            mean_bri = float(np.mean(center_roi))
+            sharp_score, _ = _score_frame_for_thumbnail(frame, clip_idx, detector)
+            if sharp_score is None:
+                continue  # wajah terdeteksi atau subscribe badge
 
-            # Penalti jika terlalu gelap (< 45) atau overexposed (> 220)
-            bri_factor = 1.0
-            if mean_bri < 45.0 or mean_bri > 220.0:
-                bri_factor = 0.45
-            elif 75.0 <= mean_bri <= 185.0:
-                bri_factor = 1.20
+            vert_score = _estimate_vertical_phone_score(frame)
 
-            # Bonus prioritas untuk klip Bab 1 & 2 (indeks 0..3)
-            chap_bonus = 1.25 if clip_idx < 4 else 1.0
-            score = sharpness * bri_factor * chap_bonus
-            if score > best_score:
-                best_score = score
-                best_frame = frame.copy()
+            # Gabungan skor: 60% ketajaman + 40% vertikal
+            combined = (sharp_score * 0.60) + (vert_score * 10000 * 0.40)
+            candidate_frames.append((combined, vert_score, frame.copy()))
+
         cap.release()
 
-    if best_frame is None and all_final_clips:
-        cap = cv2.VideoCapture(all_final_clips[0])
-        ret, fr = cap.read()
-        cap.release()
-        if ret and fr is not None:
-            best_frame = fr
+    if not candidate_frames:
+        # Fallback darurat: ambil frame pertama klip pertama
+        if all_final_clips and os.path.exists(all_final_clips[0]):
+            cap = cv2.VideoCapture(all_final_clips[0])
+            ret, fr = cap.read()
+            cap.release()
+            if ret and fr is not None:
+                return fr
+        return None
 
-    return best_frame
+    # Urutkan: skor gabungan terbaik dulu
+    candidate_frames.sort(key=lambda x: x[0], reverse=True)
+
+    # Ambil top 9 untuk Gemini Vision
+    top_n = candidate_frames[:9]
+
+    # Jika ada API key, gunakan Gemini untuk memilih frame terbaik secara semantik
+    if api_key:
+        for _, _, frm in top_n:
+            # Encode ke JPEG base64 ukuran kecil (270x480) agar hemat kuota
+            small = cv2.resize(frm, (270, 480), interpolation=cv2.INTER_AREA)
+            _, buf = cv2.imencode(".jpg", small, [int(cv2.IMWRITE_JPEG_QUALITY), 72])
+            candidate_b64s.append(base64.b64encode(buf.tobytes()).decode("utf-8"))
+
+        gemini_pick = _pick_best_vertical_back_frame_with_gemini(candidate_b64s, api_key)
+        if gemini_pick is not None:
+            return top_n[gemini_pick][2]
+
+    # Fallback: frame dengan vert_score tertinggi di antara top candidates
+    top_n.sort(key=lambda x: x[1], reverse=True)
+    return top_n[0][2]
 
 def escape_ass_text(txt):
     return str(txt or "").replace("\\", "").replace("{", "(").replace("}", ")")
 
-def generate_dynamic_short_thumbnail(all_final_clips, plan, video_title, lang, out_thumb_path, out_dir, detector=None):
+def generate_dynamic_short_thumbnail(all_final_clips, plan, video_title, lang, out_thumb_path, out_dir, detector=None, api_key=None):
     """
     Merender Gambar Thumbnail Dinamis Video Short (1080x1920) sesuai bahasa (`id` / `en`):
-    1. Memilih frame B-Roll produk paling tajam & bebas wajah.
+    1. Memilih frame B-Roll bagian BELAKANG HP secara VERTIKAL & UTUH via Gemini Vision.
     2. Menerapkan peningkatan kontras produk, cinematic dark gradient di bawah & atas,
        serta elemen grafis Badge Pill + Spec Card + Accent Frame menggunakan OpenCV.
     3. Merender tipografi bertingkat (Badge + 2 Baris Headline Besar + Pita Spesifikasi)
        menggunakan mesin subtitle ASS FFmpeg agar anti-aliasing teks sangat tajam di semua perangkat.
     """
-    base_frame = select_best_thumbnail_frame(all_final_clips, detector=detector)
+    base_frame = select_best_thumbnail_frame(all_final_clips, detector=detector, api_key=api_key)
     if base_frame is None:
         return None
 
@@ -2953,7 +3111,8 @@ def main():
     thumb_output = os.path.join(out_dir, f"THUMBNAIL_PRO_1080P_{args.voice.upper()}_{args.lang.upper()}.jpg")
     print(f"\n[*] Membuat Gambar Thumbnail Dinamis Video Short ({args.lang.upper()})...", flush=True)
     thumb_res = generate_dynamic_short_thumbnail(
-        all_final_clips, plan, video_title, args.lang, thumb_output, out_dir, detector=clip_detector
+        all_final_clips, plan, video_title, args.lang, thumb_output, out_dir,
+        detector=clip_detector, api_key=args.api_key
     )
     if thumb_res and os.path.exists(thumb_output):
         _, thumb_meta = thumb_res

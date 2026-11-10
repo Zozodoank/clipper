@@ -780,23 +780,58 @@ def pick_english_cta_style_and_fallback(video_title=""):
     idx = rng.randrange(len(ENGLISH_CTA_VARIATIONS))
     return idx, ENGLISH_CTA_VARIATIONS[idx], ENGLISH_CTA_FALLBACK_TEMPLATES[idx]
 
+def _remove_leading_word_repetition(text):
+    """
+    Menghapus pengulangan kata yang sama di awal kalimat kedua setelah tanda koma/titik.
+    Contoh: 'Baterai badak, baterai awet seharian' -> 'Baterai badak, awet seharian'
+    Juga menghapus pengulangan kata jika klausa terakhir kalimat pertama diulang di awal kalimat kedua.
+    """
+    # Pisah di koma/tanda titik koma pertama
+    split_match = re.split(r'([,;])\s*', text, maxsplit=1)
+    if len(split_match) < 3:
+        return text
+    part1, sep, part2 = split_match[0], split_match[1], split_match[2]
+    words1 = [w.lower().strip(".,!?;:") for w in part1.split() if w]
+    words2 = part2.split()
+    if not words1 or not words2:
+        return text
+    # Hapus kata-kata awal part2 yang sudah ada di akhir part1
+    last3_words1 = set(words1[-3:])
+    cleaned2 = []
+    skip_mode = True
+    for w in words2:
+        bare = w.lower().strip(".,!?;:")
+        if skip_mode and bare in last3_words1:
+            continue  # lewati kata duplikat di awal part2
+        skip_mode = False
+        cleaned2.append(w)
+    if not cleaned2:
+        return text
+    # Pastikan huruf awal part2 kapital
+    result_part2 = " ".join(cleaned2)
+    if result_part2:
+        result_part2 = result_part2[0].upper() + result_part2[1:]
+    return f"{part1}{sep} {result_part2}"
+
+
 def ensure_english_like_and_subscribe_cta(cta_script, fallback_template):
     """Memastikan naskah CTA Bahasa Inggris 100% mengandung ajakan Like dan Subscribe dengan kalimat bervariasi."""
     txt = sanitize_subtitle_text(cta_script)
     if not txt:
         return fallback_template
     low = txt.lower()
-    has_sub = "subscribe" in low
+    has_sub  = "subscribe" in low
     has_like = ("like" in low) or ("thumbs up" in low) or ("double tap" in low)
     if has_sub and has_like:
-        return txt
+        return _remove_leading_word_repetition(txt)
     # Jika kalimat pertama adalah kesimpulan namun belum ada like+subscribe lengkap, gabungkan klausa pertama dengan akhiran bervariasi
     first_clause = re.split(r"[.!?]", txt)[0].strip().rstrip(",;:")
-    suffix_Match = re.split(r",\s*", fallback_template, maxsplit=1)
-    varied_suffix = suffix_Match[1] if len(suffix_Match) > 1 else "hit that like button and subscribe for more tech reviews!"
+    suffix_match = re.split(r",\s*", fallback_template, maxsplit=1)
+    varied_suffix = suffix_match[1] if len(suffix_match) > 1 else "hit that like button and subscribe for more tech reviews!"
     if first_clause and len(first_clause.split()) <= 9:
-        return f"{first_clause}, {varied_suffix}"
-    return fallback_template
+        combined = f"{first_clause}, {varied_suffix}"
+        return _remove_leading_word_repetition(combined)
+    return _remove_leading_word_repetition(fallback_template)
 
 INDONESIAN_CTA_VARIATIONS = [
     (
@@ -848,13 +883,14 @@ def ensure_indonesian_affiliate_soft_selling_cta(cta_script, fallback_template):
     low = txt.lower()
     has_soft_cta = any(k in low for k in ["cek", "link", "tertarik", "layak", "pilihan", "rekomendasi", "komentar", "incaran", "promo", "harga", "miliki", "pinang"])
     if has_soft_cta:
-        return txt
+        return _remove_leading_word_repetition(txt)
     first_clause = re.split(r"[.!?]", txt)[0].strip().rstrip(",;:")
     suffix_match = re.split(r",\s*", fallback_template, maxsplit=1)
     soft_suffix = suffix_match[-1] if len(suffix_match) > 1 else "cek harga promo dan link pembeliannya sekarang!"
     if first_clause and len(first_clause.split()) <= 9:
-        return f"{first_clause}, {soft_suffix}"
-    return fallback_template
+        combined = f"{first_clause}, {soft_suffix}"
+        return _remove_leading_word_repetition(combined)
+    return _remove_leading_word_repetition(fallback_template)
 
 def analyze_native_transcript_and_build_chapters(video_title, video_desc, timestamped_transcript, total_dur, api_key, lang="id"):
     short_transcript = timestamped_transcript[:15000] if timestamped_transcript else "(Transkrip tidak tersedia, gunakan spesifikasi asli HP pada judul)"
@@ -908,7 +944,7 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
         "",
         "TUGAS ANALISIS VOICEOVER BAWAAN & PENYUSUNAN 6 BAB + SUB-ADEGAN VISUAL PRO-CLIPPER:",
         f"Analisa transkrip asli di atas, lalu petakan rentang waktu detik (`start_sec` dan `end_sec`) di video sumber serta tulis naskah voiceover **{lang_label}** untuk 6 BAB berikut beserta pemecahan sub-adegan (`scenes`) di dalamnya:",
-        "1. `body_ip`: Hook menggebrak + nama HP + desain bodi/ketebalan/bobot (Adegan 1) DAN sertifikasi ketahanan air/debu IP rating asli (Adegan 2) (total 15-17 kata).",
+        "1. `body_ip`: WAJIB diawali hook 1 kalimat singkat yang menggebrak dan langsung menyebut nama seri HP (contoh hook Bahasa Indonesia: 'Ini dia si jagoan baru yang bikin flagship lain ketar-ketir!' / contoh hook Bahasa Inggris: 'This beast just changed the game for mid-range phones!') + nama HP + desain bodi/ketebalan/bobot (Adegan 1) DAN sertifikasi ketahanan air/debu IP rating asli (Adegan 2) (total 15-17 kata).",
         "2. `screen_os`: Spesifikasi asli panel layar, ukuran inci, refresh rate (Hz), kecerahan (Adegan 1) DAN versi OS/UI bawaan (Adegan 2) (total 14-16 kata).",
         "3. `perf_mem`: Seri chipset asli & performa (Adegan 1) DAN kapasitas & jenis RAM (LPDDR), memori internal (UFS/eMMC), serta slot microSD (Adegan 2) (total 16-18 kata).",
         "4. `bat_feat`: Kapasitas baterai (mAh) & kecepatan charging (Watt) (Adegan 1) DAN fitur NFC, speaker stereo, serta sensor sidik jari (Adegan 2) (total 14-16 kata).",
@@ -921,6 +957,8 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
         f"- Jangan gunakan tanda kutip ganda (\") di dalam isi kalimat `script` atau `visual_focus` (gunakan {inch_rule} untuk ukuran layar).",
         "- Semua angka spesifikasi & FPS rekaman video wajib 100% asli dari transkrip/deskripsi.",
         "- JANGAN PERNAH menyalin candaan tidak relevan dari transkrip reviewer atau menambahkan kata seperti 'kuliah sore', 'anak kuliah', atau profesi spesifik yang tidak berhubungan dengan spesifikasi teknis HP.",
+        "- HOOK WAJIB KUAT: Kalimat PERTAMA dari `script` bab body_ip HARUS berupa hook 1 kalimat singkat yang menggebrak dan langsung menyebut nama HP — DILARANG memulai dengan 'Halo', 'Hai', 'Yuk', 'Oke', 'Jadi', 'Nah', atau sapaan generik.",
+        "- CTA ANTI-DUPLIKASI: Pastikan TIDAK ADA pengulangan kata yang sama berurutan di kalimat CTA (contoh salah: 'Baterai badak, baterai awet' — hapus kata duplikat).",
         "- Kembalikan HANYA objek JSON murni dengan key persis: body_ip, screen_os, perf_mem, bat_feat, camera, cta, caption, hashtags, thumbnail_badge, thumbnail_headline, thumbnail_specs.",
         "- Nilai `hashtags` WAJIB berupa string berisi 5-7 hashtag relevan yang SETIAP katanya diawali tanda pagar `#` (contoh: \"#SamsungS25FE #ReviewHP #GadgetIndonesia #Shorts\").",
         *thumb_lang_rules,
@@ -953,6 +991,8 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
             "",
             "Susun JSON murni dengan key persis: body_ip, screen_os, perf_mem, bat_feat, camera, cta, caption, hashtags, thumbnail_badge, thumbnail_headline, thumbnail_specs.",
             f"Setiap key bab (body_ip s/d cta) berisi objek: {{\"start_sec\": angka, \"end_sec\": angka, \"script\": \"narasi {lang_label} 15-20 kata sesuai spesifikasi asli di transkrip\"}}.",
+            "HOOK WAJIB: script bab body_ip HARUS diawali hook 1 kalimat menggebrak yang langsung menyebut nama HP — DILARANG memulai dengan Halo/Hai/Yuk/Oke/Jadi.",
+            "CTA ANTI-DUPLIKASI: Tidak boleh ada pengulangan kata berurutan di kalimat CTA.",
             cta_simple_hint
         ])
         simple_payload = {
@@ -2205,35 +2245,103 @@ def save_matching_txt(video_file_path, caption_text, hashtags_text="", lang="id"
 
 THUMBNAIL_PALETTES = [
     {
-        "name": "Cyber Yellow & Crimson",
-        "badge_bg_bgr": (25, 25, 230),
+        "name": "Cyber Red & White",
+        "badge_bg_bgr": (20, 20, 210),          # merah solid
         "badge_border_bgr": (255, 255, 255),
-        "accent_bgr": (0, 225, 255),
+        "accent_bgr": (0, 220, 255),              # kuning-oranye
         "ass_line1_primary": "&H00FFFFFF",
-        "ass_line2_primary": "&H0000E5FF",
+        "ass_line2_primary": "&H0000DCFF",
         "ass_badge_primary": "&H00FFFFFF",
-        "ass_spec_primary": "&H00B5F5FF"
+        "ass_spec_primary": "&H00AAEEFF",
+        "gradient_bottom_bgr": (0, 0, 0),
     },
     {
-        "name": "Neon Cyan & Gold",
-        "badge_bg_bgr": (210, 85, 0),
-        "badge_border_bgr": (255, 235, 120),
-        "accent_bgr": (255, 230, 0),
+        "name": "Electric Gold & Black",
+        "badge_bg_bgr": (10, 160, 255),          # oranye-amber
+        "badge_border_bgr": (0, 220, 255),
+        "accent_bgr": (0, 220, 255),              # kuning neon
         "ass_line1_primary": "&H00FFFFFF",
-        "ass_line2_primary": "&H00FFE600",
+        "ass_line2_primary": "&H00FFDC00",
         "ass_badge_primary": "&H00FFFFFF",
-        "ass_spec_primary": "&H0090F0FF"
+        "ass_spec_primary": "&H0070E8FF",
+        "gradient_bottom_bgr": (10, 10, 20),
     },
     {
-        "name": "Vibrant Orange & Lime",
-        "badge_bg_bgr": (0, 95, 245),
-        "badge_border_bgr": (255, 255, 255),
-        "accent_bgr": (60, 255, 140),
+        "name": "Neon Cyan & Lime",
+        "badge_bg_bgr": (200, 55, 0),            # biru-teal solid
+        "badge_border_bgr": (40, 255, 140),
+        "accent_bgr": (40, 255, 140),             # hijau neon
         "ass_line1_primary": "&H00FFFFFF",
-        "ass_line2_primary": "&H003CFF8C",
+        "ass_line2_primary": "&H002CFF8C",
         "ass_badge_primary": "&H00FFFFFF",
-        "ass_spec_primary": "&H00B8FFE0"
-    }
+        "ass_spec_primary": "&H00B0FFE0",
+        "gradient_bottom_bgr": (0, 15, 10),
+    },
+    {
+        "name": "Purple Haze & Cyan",
+        "badge_bg_bgr": (200, 30, 180),          # ungu solid
+        "badge_border_bgr": (255, 220, 255),
+        "accent_bgr": (255, 100, 220),            # magenta/pink neon
+        "ass_line1_primary": "&H00FFFFFF",
+        "ass_line2_primary": "&H00DC64FF",
+        "ass_badge_primary": "&H00FFFFFF",
+        "ass_spec_primary": "&H00FFB8FF",
+        "gradient_bottom_bgr": (10, 0, 20),
+    },
+    {
+        "name": "Platinum & Ice Blue",
+        "badge_bg_bgr": (140, 100, 60),          # biru-slate solid
+        "badge_border_bgr": (220, 220, 255),
+        "accent_bgr": (220, 200, 255),            # lavender terang
+        "ass_line1_primary": "&H00FFFFFF",
+        "ass_line2_primary": "&H00DCC8FF",
+        "ass_badge_primary": "&H00FFFFFF",
+        "ass_spec_primary": "&H00EEE0FF",
+        "gradient_bottom_bgr": (5, 0, 15),
+    },
+]
+
+# Layout variasi thumbnail (posisi zona teks Y, ukuran font relatif, posisi badge)
+THUMBNAIL_LAYOUTS = [
+    # Layout A: teks di bawah (default klasik)
+    {
+        "name": "bottom_text",
+        "badge_y_range": (1235, 1315),
+        "line1_y": 1415,
+        "line2_y": 1545,
+        "specs_y": 1682,
+        "specs_bar_y": (1645, 1720),
+        "frame_y_vignette_top_end": 360,
+        "frame_y_vignette_bot_start": 1100,
+        "line1_fontsize": 92,
+        "line2_fontsize": 100,
+    },
+    # Layout B: teks di bawah lebih besar (bold impact)
+    {
+        "name": "bold_impact",
+        "badge_y_range": (1180, 1265),
+        "line1_y": 1370,
+        "line2_y": 1510,
+        "specs_y": 1660,
+        "specs_bar_y": (1625, 1700),
+        "frame_y_vignette_top_end": 300,
+        "frame_y_vignette_bot_start": 1050,
+        "line1_fontsize": 102,
+        "line2_fontsize": 110,
+    },
+    # Layout C: teks di atas (phone showcase di bawah)
+    {
+        "name": "top_text",
+        "badge_y_range": (100, 180),
+        "line1_y": 285,
+        "line2_y": 420,
+        "specs_y": 545,
+        "specs_bar_y": (510, 585),
+        "frame_y_vignette_top_end": 640,
+        "frame_y_vignette_bot_start": 1600,
+        "line1_fontsize": 92,
+        "line2_fontsize": 100,
+    },
 ]
 
 def extract_short_phone_name(video_title):
@@ -2421,10 +2529,26 @@ def ensure_dynamic_thumbnail_copy(plan, video_title, lang="id"):
     seed_val = int(time.time() * 1000) ^ int(hashlib.md5(str(video_title).encode("utf-8", errors="ignore")).hexdigest()[:8], 16)
     rng = random.Random(seed_val)
 
-    id_badges = ["REVIEW JUJUR!", "SPEK FLAGSHIP!", "PALING WORTH IT!", "TURUN HARGA!", "WAJIB TAHU!"]
-    en_badges = ["HONEST REVIEW!", "FLAGSHIP KILLER!", "WORTH BUYING?!", "PRICE DROP!", "FULL BREAKDOWN!"]
-    id_hooks = ["MASIH LAYAK?!", "SPEKNYA NGERI!", "JAWARA BARU!", "WAJIB BELI?!"]
-    en_hooks = ["WORTH IT?!", "TOTAL BEAST!", "BEST VALUE?!", "GAME CHANGER!"]
+    id_badges = [
+        "REVIEW JUJUR!", "SPEK FLAGSHIP!", "PALING WORTH IT!", "TURUN HARGA!",
+        "WAJIB TAHU!", "REVIEW KILAT!", "HARGA NGERI!", "SPEK GILA!",
+        "MUST WATCH!", "JANGAN LEWATKAN!", "BELI ATAU TIDAK?!", "RATING DEWA!"
+    ]
+    en_badges = [
+        "HONEST REVIEW!", "FLAGSHIP KILLER!", "WORTH BUYING?!", "PRICE DROP!",
+        "FULL BREAKDOWN!", "MUST WATCH!", "BEST VALUE!", "REAL VERDICT!",
+        "SPECS INSANE!", "BUY OR SKIP?!", "QUICK VERDICT!", "INSANE DEAL!"
+    ]
+    id_hooks = [
+        "MASIH LAYAK?!", "SPEKNYA NGERI!", "JAWARA BARU!", "WAJIB BELI?!",
+        "SAINGI FLAGSHIP?!", "HARGA MIRING!", "KAMERA DEWA?!", "PERFORMA MONSTER!",
+        "HP TERBAIK?!", "WORTH IT BANGET!", "BATERAI BADAK!", "LAYAR JUARA!"
+    ]
+    en_hooks = [
+        "WORTH IT?!", "TOTAL BEAST!", "BEST VALUE?!", "GAME CHANGER!",
+        "INSANE SPECS!", "BUY OR SKIP?!", "REAL KING?!", "MUST BUY!",
+        "LEGIT BEAST!", "CAMERA KING?!", "BATTERY MONSTER!", "INSANE DEAL!"
+    ]
 
     raw_badge = sanitize_subtitle_text(plan.get("thumbnail_badge", "")).upper()
     raw_head = sanitize_subtitle_text(plan.get("thumbnail_headline", "")).upper()
@@ -2483,12 +2607,14 @@ def ensure_dynamic_thumbnail_copy(plan, video_title, lang="id"):
         raw_badge += "!"
 
     palette = rng.choice(THUMBNAIL_PALETTES)
+    layout = rng.choice(THUMBNAIL_LAYOUTS)
     return {
         "badge": raw_badge,
         "line1": line1,
         "line2": line2,
         "specs": final_specs.upper(),
-        "palette": palette
+        "palette": palette,
+        "layout": layout
     }
 
 def _score_frame_for_thumbnail(frame, clip_idx, detector):
@@ -2724,10 +2850,11 @@ def generate_dynamic_short_thumbnail(all_final_clips, plan, video_title, lang, o
     """
     Merender Gambar Thumbnail Dinamis Video Short (1080x1920) sesuai bahasa (`id` / `en`):
     1. Memilih frame B-Roll bagian BELAKANG HP secara VERTIKAL & UTUH via Gemini Vision.
-    2. Menerapkan peningkatan kontras produk, cinematic dark gradient di bawah & atas,
-       serta elemen grafis Badge Pill + Spec Card + Accent Frame menggunakan OpenCV.
-    3. Merender tipografi bertingkat (Badge + 2 Baris Headline Besar + Pita Spesifikasi)
-       menggunakan mesin subtitle ASS FFmpeg agar anti-aliasing teks sangat tajam di semua perangkat.
+    2. Layout bervariasi (bottom_text / bold_impact / top_text) + 5 palet warna berbeda
+       sehingga setiap video menghasilkan tampilan thumbnail yang berbeda.
+    3. Efek grafis: cinematic vignette gradient, diagonal accent stripe, badge pill rounded,
+       glow line aksen, spec bar, dan double border frame.
+    4. Tipografi bertingkat (Badge + Headline 2 baris + Spec bar) via FFmpeg ASS.
     """
     base_frame = select_best_thumbnail_frame(all_final_clips, detector=detector, api_key=api_key)
     if base_frame is None:
@@ -2737,56 +2864,85 @@ def generate_dynamic_short_thumbnail(all_final_clips, plan, video_title, lang, o
     if base_frame.shape[0] != h or base_frame.shape[1] != w:
         base_frame = cv2.resize(base_frame, (w, h), interpolation=cv2.INTER_LANCZOS4)
 
-    # 1. Pertajam & tingkatkan vibrance area produk HP
-    blurred = cv2.GaussianBlur(base_frame, (0, 0), 2.2)
-    canvas = cv2.addWeighted(base_frame, 1.18, blurred, -0.18, 4)
+    meta = ensure_dynamic_thumbnail_copy(plan, video_title, lang=lang)
+    pal = meta["palette"]
+    lay = meta["layout"]
 
-    # 2. Buat cinematic gradient vignette di bagian atas (0..360) dan bagian bawah (1120..1920)
+    # ── 1. Sharpness boost + vibrance ───────────────────────────────────────
+    blurred = cv2.GaussianBlur(base_frame, (0, 0), 2.4)
+    canvas = cv2.addWeighted(base_frame, 1.22, blurred, -0.22, 6)
+
+    # ── 2. Cinematic vignette gradient (zona teks gelap, foto produk terang) ─
     grad_mask = np.ones((h, 1), dtype=np.float32)
-    for y in range(0, 360):
-        t = 1.0 - (y / 360.0)
-        grad_mask[y, 0] = 1.0 - (0.58 * (t ** 1.4))
-    for y in range(1100, h):
-        t = (y - 1100) / float(h - 1100)
-        grad_mask[y, 0] = 1.0 - (0.86 * (t ** 1.15))
-
+    top_end   = lay["frame_y_vignette_top_end"]
+    bot_start = lay["frame_y_vignette_bot_start"]
+    for y in range(0, top_end):
+        t = 1.0 - (y / max(top_end, 1))
+        grad_mask[y, 0] = 1.0 - (0.72 * (t ** 1.3))
+    for y in range(bot_start, h):
+        t = (y - bot_start) / max(float(h - bot_start), 1)
+        grad_mask[y, 0] = 1.0 - (0.92 * (t ** 1.1))
     grad_3c = np.repeat(grad_mask, w, axis=1)[:, :, np.newaxis]
     canvas = np.clip(canvas.astype(np.float32) * grad_3c, 0, 255).astype(np.uint8)
 
-    meta = ensure_dynamic_thumbnail_copy(plan, video_title, lang=lang)
-    pal = meta["palette"]
-
-    # 3. Gambar dekorasi grafis (Top Badge Pill, Bottom Spec Bar, & Glowing Accent Lines)
+    # ── 3. Dekorasi grafis dinamis ──────────────────────────────────────────
     overlay = canvas.copy()
+    ac = pal["accent_bgr"]
+    bg_dark = pal.get("gradient_bottom_bgr", (0, 0, 0))
 
-    # Lencana atas (Badge Pill) di y=1260..1338 (tepat di atas Headline utama agar seluruh komposisi berada di zona fokus mata)
+    # Diagonal stripe aksen (kiri ke kanan, 1/3 lebar, tipis) — memberi kesan energik
+    stripe_pts = np.array([
+        [0, h - 320], [220, h - 320],
+        [280, h - 260], [0, h - 260]
+    ], dtype=np.int32)
+    cv2.fillPoly(overlay, [stripe_pts], ac)
+
+    # Badge Pill
+    by0, by1 = lay["badge_y_range"]
     badge_txt = meta["badge"]
-    badge_w = min(860, max(420, int(len(badge_txt) * 34 + 90)))
+    badge_w = min(840, max(380, int(len(badge_txt) * 33 + 80)))
     bx0 = (w - badge_w) // 2
-    by0, by1 = 1235, 1315
-    cv2.rectangle(overlay, (bx0, by0), (bx0 + badge_w, by1), pal["badge_bg_bgr"], -1, lineType=cv2.LINE_AA)
-    cv2.rectangle(overlay, (bx0, by0), (bx0 + badge_w, by1), pal["badge_border_bgr"], 3, lineType=cv2.LINE_AA)
+    # Isi solid + border putih
+    cv2.rectangle(overlay, (bx0, by0), (bx0 + badge_w, by1),
+                  pal["badge_bg_bgr"], -1, lineType=cv2.LINE_AA)
+    cv2.rectangle(overlay, (bx0, by0), (bx0 + badge_w, by1),
+                  pal["badge_border_bgr"], 3, lineType=cv2.LINE_AA)
+    # Glow line tipis di bawah badge
+    cv2.line(overlay, (bx0 + 20, by1 + 6), (bx0 + badge_w - 20, by1 + 6), ac, 4, lineType=cv2.LINE_AA)
 
-    # Kotak pita spesifikasi di bawah Headline (y=1640..1716)
-    sx0, sx1 = 70, w - 70
-    sy0, sy1 = 1645, 1720
-    cv2.rectangle(overlay, (sx0, sy0), (sx1, sy1), (18, 18, 22), -1, lineType=cv2.LINE_AA)
-    cv2.rectangle(overlay, (sx0, sy0), (sx1, sy1), pal["accent_bgr"], 3, lineType=cv2.LINE_AA)
+    # Spec bar
+    sy0, sy1 = lay["specs_bar_y"]
+    sx0, sx1 = 60, w - 60
+    cv2.rectangle(overlay, (sx0, sy0), (sx1, sy1), bg_dark, -1, lineType=cv2.LINE_AA)
+    cv2.rectangle(overlay, (sx0, sy0), (sx1, sy1), ac, 3, lineType=cv2.LINE_AA)
 
-    # Garis bingkai aksen tipis di tepi layar
-    cv2.rectangle(overlay, (22, 22), (w - 22, h - 22), pal["accent_bgr"], 4, lineType=cv2.LINE_AA)
+    # Double border frame tepi layar
+    cv2.rectangle(overlay, (18, 18), (w - 18, h - 18), ac, 5, lineType=cv2.LINE_AA)
+    cv2.rectangle(overlay, (28, 28), (w - 28, h - 28), (255, 255, 255), 1, lineType=cv2.LINE_AA)
 
-    canvas = cv2.addWeighted(overlay, 0.88, canvas, 0.12, 0)
+    # Corner accent squares di 4 sudut
+    cs = 32  # ukuran sudut
+    for cx, cy in [(18, 18), (w - 18 - cs, 18), (18, h - 18 - cs), (w - 18 - cs, h - 18 - cs)]:
+        cv2.rectangle(overlay, (cx, cy), (cx + cs, cy + cs), ac, -1, lineType=cv2.LINE_AA)
 
-    # 4. Render teks bertingkat beresolusi tinggi dengan FFmpeg ASS
+    canvas = cv2.addWeighted(overlay, 0.90, canvas, 0.10, 0)
+
+    # ── 4. Render teks via FFmpeg ASS ───────────────────────────────────────
     temp_bg_jpg = os.path.join(out_dir, f"_thumb_bg_{lang}.jpg")
-    temp_ass = os.path.join(out_dir, f"_thumb_overlay_{lang}.ass")
+    temp_ass    = os.path.join(out_dir, f"_thumb_overlay_{lang}.ass")
     cv2.imwrite(temp_bg_jpg, canvas, [int(cv2.IMWRITE_JPEG_QUALITY), 96])
 
-    b_str = escape_ass_text(meta["badge"])
+    b_str  = escape_ass_text(meta["badge"])
     l1_str = escape_ass_text(meta["line1"])
     l2_str = escape_ass_text(meta["line2"])
     sp_str = escape_ass_text(meta["specs"])
+
+    l1_fs = lay["line1_fontsize"]
+    l2_fs = lay["line2_fontsize"]
+    l1_y  = lay["line1_y"]
+    l2_y  = lay["line2_y"]
+    sp_y  = lay["specs_y"]
+    b_y   = (lay["badge_y_range"][0] + lay["badge_y_range"][1]) // 2
 
     ass_content = f"""[Script Info]
 ScriptType: v4.00+
@@ -2797,16 +2953,16 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: ThumbBadge,Sans,44,{pal['ass_badge_primary']},&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,2,0,1,3,0,5,40,40,10,1
-Style: ThumbLine1,Sans,92,{pal['ass_line1_primary']},&H00000000,&H00000000,&H80000000,-1,0,0,0,100,100,1,0,1,9,4,5,40,40,10,1
-Style: ThumbLine2,Sans,100,{pal['ass_line2_primary']},&H00000000,&H00000000,&H80000000,-1,0,0,0,100,100,1,0,1,10,5,5,40,40,10,1
+Style: ThumbLine1,Sans,{l1_fs},{pal['ass_line1_primary']},&H00000000,&H00000000,&H90000000,-1,0,0,0,100,100,1,0,1,10,5,5,40,40,10,1
+Style: ThumbLine2,Sans,{l2_fs},{pal['ass_line2_primary']},&H00000000,&H00000000,&H90000000,-1,0,0,0,100,100,1,0,1,11,6,5,40,40,10,1
 Style: ThumbSpecs,Sans,36,{pal['ass_spec_primary']},&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,1,0,1,2,0,5,40,40,10,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 2,0:00:00.00,0:00:05.00,ThumbBadge,,0,0,0,,{{\\pos(540,1275)}}{b_str}
-Dialogue: 3,0:00:00.00,0:00:05.00,ThumbLine1,,0,0,0,,{{\\pos(540,1415)}}{l1_str}
-Dialogue: 3,0:00:00.00,0:00:05.00,ThumbLine2,,0,0,0,,{{\\pos(540,1545)}}{l2_str}
-Dialogue: 2,0:00:00.00,0:00:05.00,ThumbSpecs,,0,0,0,,{{\\pos(540,1682)}}{sp_str}
+Dialogue: 2,0:00:00.00,0:00:05.00,ThumbBadge,,0,0,0,,{{\\pos(540,{b_y})}}{b_str}
+Dialogue: 3,0:00:00.00,0:00:05.00,ThumbLine1,,0,0,0,,{{\\pos(540,{l1_y})}}{l1_str}
+Dialogue: 3,0:00:00.00,0:00:05.00,ThumbLine2,,0,0,0,,{{\\pos(540,{l2_y})}}{l2_str}
+Dialogue: 2,0:00:00.00,0:00:05.00,ThumbSpecs,,0,0,0,,{{\\pos(540,{sp_y})}}{sp_str}
 """
     with open(temp_ass, "w", encoding="utf-8") as f:
         f.write(ass_content)

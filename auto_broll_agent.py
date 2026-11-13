@@ -960,7 +960,12 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
         "- HOOK WAJIB KUAT: Kalimat PERTAMA dari `script` bab body_ip HARUS berupa hook 1 kalimat singkat yang menggebrak dan langsung menyebut nama HP — DILARANG memulai dengan 'Halo', 'Hai', 'Yuk', 'Oke', 'Jadi', 'Nah', atau sapaan generik.",
         "- CTA ANTI-DUPLIKASI: Pastikan TIDAK ADA pengulangan kata yang sama berurutan di kalimat CTA (contoh salah: 'Baterai badak, baterai awet' — hapus kata duplikat).",
         "- Kembalikan HANYA objek JSON murni dengan key persis: body_ip, screen_os, perf_mem, bat_feat, camera, cta, caption, hashtags, thumbnail_badge, thumbnail_headline, thumbnail_specs.",
-        "- Nilai `hashtags` WAJIB berupa string berisi 5-7 hashtag relevan yang SETIAP katanya diawali tanda pagar `#` (contoh: \"#SamsungS25FE #ReviewHP #GadgetIndonesia #Shorts\").",
+        "- Nilai `hashtags` WAJIB berupa string berisi 5-7 hashtag relevan yang SETIAP katanya diawali tanda pagar `#` " + (
+            "(contoh untuk ENGLISH video: \"#SmartphoneReview #TechShorts #GadgetReview #PhoneReview #Shorts\"). "
+            "WAJIB 100% berbahasa Inggris — DILARANG menggunakan kata Indonesia seperti 'ReviewHP', 'GadgetIndonesia', 'Smartphone Indonesia', dsb."
+            if lang == "en" else
+            "(contoh: \"#ReviewHP #GadgetIndonesia #Smartphone #Shorts\")."
+        ) + "",
         *thumb_lang_rules,
         "- Setiap bab (body_ip s/d cta) wajib memiliki key:",
         "  * `start_sec` (angka detik awal bab di video sumber)",
@@ -2208,8 +2213,26 @@ def cut_exact_broll_clip_1080p(video_path, seg_start, exact_dur, out_path):
     subprocess.run(cmd, check=True)
 
 def normalize_hashtags(raw_hashtags, lang="id"):
-    """Memastikan setiap hashtag selalu diawali tanda pagar '#' dan diformat rapi."""
-    default_tags = "#SmartphoneReview #TechShorts #GadgetReview #Shorts" if lang == "en" else "#ReviewHP #GadgetIndonesia #Smartphone #Shorts"
+    """
+    Memastikan setiap hashtag selalu diawali tanda pagar '#' dan diformat rapi.
+    Untuk lang='en': hapus hashtag yang mengandung kata berbahasa Indonesia.
+    """
+    default_tags = "#SmartphoneReview #TechShorts #GadgetReview #PhoneReview #Shorts" if lang == "en" else "#ReviewHP #GadgetIndonesia #Smartphone #Shorts"
+
+    # Kata-kata Indonesia yang TIDAK boleh muncul di hashtag bahasa Inggris
+    INDO_HASHTAG_WORDS = {
+        "indonesia", "indonesian", "reviewhp", "gadgetindonesia", "smartphoneindonesia",
+        "hp", "ponsel", "unboxinghp", "reviewjujur", "rekomendasi", "pilihan",
+        "beli", "harga", "murah", "mahal", "terbaik", "terbaru", "spek", "layak",
+        "worth", "kamera", "layar", "baterai", "gaming", "performa",  # gaming/performa masih oke tapi skip jika campur
+    }
+    # Kata KHUSUS yang pasti Indonesia dan harus diblokir untuk EN
+    STRICT_INDO_BLOCKS = {
+        "indonesia", "indonesian", "reviewhp", "gadgetindonesia", "smartphoneindonesia",
+        "hp", "ponsel", "unboxinghp", "reviewjujur", "rekomendasi", "pilihan",
+        "harga", "murah", "mahal", "terbaik", "terbaru", "spek", "layak",
+    }
+
     if isinstance(raw_hashtags, list):
         raw_str = " ".join(str(x) for x in raw_hashtags if x)
     else:
@@ -2227,16 +2250,41 @@ def normalize_hashtags(raw_hashtags, lang="id"):
         if not clean_tok:
             continue
         low = clean_tok.lower()
+        # Filter hashtag Indonesia saat mode EN
+        if lang == "en" and any(block in low for block in STRICT_INDO_BLOCKS):
+            continue
         if low not in seen:
             seen.add(low)
             formatted.append(f"#{clean_tok}")
 
     return " ".join(formatted) if formatted else default_tags
 
+def sanitize_english_caption(caption, video_title=""):
+    """
+    Membersihkan caption untuk video bahasa Inggris:
+    - Hapus kata 'Indonesia' / 'Indonesian' (case-insensitive)
+    - Hapus frasa seperti 'Review Indonesia', 'di Indonesia', 'untuk Indonesia'
+    - Fallback jika hasil kosong/terlalu pendek
+    """
+    if not caption:
+        return caption
+    # Hapus pola umum kata Indonesia dalam caption
+    cleaned = re.sub(r"\b(?:di\s+|untuk\s+|in\s+|from\s+)?indonesia(?:n)?\b", "", caption, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip().strip("!,.:-").strip()
+    # Jika hasil pembersihan terlalu pendek atau kosong, buat fallback dari judul
+    if len(cleaned.split()) < 3:
+        short_title = re.sub(r"[^a-zA-Z0-9\s\-]", " ", video_title).strip()[:50] or "Flagship Phone"
+        cleaned = f"Full Review of {short_title}!"
+    return cleaned
+
+
 def save_matching_txt(video_file_path, caption_text, hashtags_text="", lang="id"):
     base_no_ext = os.path.splitext(video_file_path)[0]
     txt_path = f"{base_no_ext}.txt"
     clean_cap = str(caption_text or "").strip()
+    # Bersihkan kata Indonesia dari caption & hashtag saat mode EN
+    if lang == "en":
+        clean_cap = sanitize_english_caption(clean_cap, video_title=os.path.basename(video_file_path))
     clean_tags = normalize_hashtags(hashtags_text, lang=lang)
     content = f"{clean_cap}\n\n{clean_tags}" if clean_tags else clean_cap
     with open(txt_path, "w", encoding="utf-8") as f:

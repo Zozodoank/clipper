@@ -4,6 +4,7 @@ import sys
 import ast
 import cv2
 import json
+import math
 import time
 import wave
 import random
@@ -922,16 +923,19 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
 
     if lang == "en":
         thumb_lang_rules = [
-            "- `thumbnail_badge`, `thumbnail_headline`, and `thumbnail_specs` MUST BE 100% IN ENGLISH! DO NOT use any Indonesian words (such as 'LAYAR', 'BATERAI', 'KAMERA', 'HARGA', 'LAYAK', 'TAHAN AIR', 'KENCANG', 'STABIL').",
-            "- `thumbnail_badge`: 2-3 punchy uppercase ENGLISH words (e.g. \"HONEST REVIEW!\", \"PRICE DROP!\", \"FLAGSHIP KILLER!\", \"WORTH BUYING?!\").",
-            "- `thumbnail_headline`: 3-5 uppercase ENGLISH words with phone model + English hook (e.g. \"GALAXY S25 FE WORTH IT?!\", \"OPPO A6 PRO TOTAL BEAST!\").",
-            "- `thumbnail_specs`: 3 short technical highlights in ENGLISH separated by ` • ` (e.g. \"120Hz AMOLED • Exynos 2400e • IP68 Waterproof\")."
+            "- `thumbnail_hook`, `thumbnail_phone`, `thumbnail_verdict`, `thumbnail_badge`, and `thumbnail_headline` MUST BE 100% IN ENGLISH! DO NOT use any Indonesian words (such as 'LAYAR', 'BATERAI', 'KAMERA', 'HARGA', 'LAYAK', 'TAHAN AIR', 'KENCANG', 'STABIL', 'INDONESIA', 'JUJUR').",
+            "- `thumbnail_hook`: 2-4 punchy uppercase ENGLISH hook words for the TOP of the thumbnail WITHOUT repeating the phone name (e.g. \"WORTH IT?!\", \"DON'T BUY YET!?!\", \"THE NEW KING?!\", \"WORTH THE HYPE?!\", \"NEW BUDGET KING?!\").",
+            "- `thumbnail_phone`: clean mixed-case phone brand and model ONLY, 2-4 words max (e.g. \"Nubia Neo 5 GT\", \"Redmi A7 Pro\", \"Poco X8\", \"Samsung S25 FE\").",
+            "- `thumbnail_verdict`: 2-3 punchy uppercase ENGLISH words for the BOTTOM beneath the red banner (e.g. \"HONEST REVIEW!\", \"BEST BUDGET PHONE?!\", \"144HZ BEAST!\", \"REAL VERDICT!\").",
+            "- Also keep `thumbnail_badge` (= `thumbnail_verdict`) and `thumbnail_headline` (= `thumbnail_hook`) consistent in ENGLISH.",
+            "- GLOBAL ENGLISH AUDIENCE: `script`, `caption`, and `hashtags` MUST NOT mention 'Indonesia', 'Indonesian', or local currency 'rupiah/IDR'. Keep everything 100% natural for an international English tech audience."
         ]
     else:
         thumb_lang_rules = [
-            "- Nilai `thumbnail_badge` berisi 2-3 kata huruf kapital singkat yang menarik perhatian dalam Bahasa Indonesia (contoh: \"TURUN HARGA!\" / \"SPEK FLAGSHIP!\" / \"REVIEW JUJUR!\").",
-            "- Nilai `thumbnail_headline` berisi 3-5 kata huruf kapital singkat berupa nama seri HP + daya tarik utama dalam Bahasa Indonesia (contoh: \"SAMSUNG S25 FE MASIH LAYAK?!\").",
-            "- Nilai `thumbnail_specs` berisi 3 poin spesifikasi inti singkat yang dipisahkan tanda ` • ` dalam Bahasa Indonesia (contoh: \"AMOLED 120Hz • Exynos 2400e • Tahan Air IP68\")."
+            "- Nilai `thumbnail_hook`: 2-4 kata hook huruf kapital super memikat untuk bagian ATAS thumbnail TANPA menyebut ulang nama HP (contoh: \"JANGAN BELI DULU?!\", \"RAJA BARU?!\", \"WORTH IT KAH?!\", \"SERIUS SEBAGUS INI?!\").",
+            "- Nilai `thumbnail_phone`: nama merek dan seri HP yang rapi maksimal 2-4 kata (contoh: \"Nubia Neo 5 GT\", \"Redmi A7 Pro\", \"Samsung S25 FE\").",
+            "- Nilai `thumbnail_verdict`: 2-3 kata huruf kapital untuk bagian BAWAH pita merah (contoh: \"REVIEW JUJUR!\", \"HP GAMING TERBAIK?!\", \"SPEK DEWA BANGET!\").",
+            "- Sertakan juga `thumbnail_badge` (= `thumbnail_verdict`) dan `thumbnail_headline` (= `thumbnail_hook`) dalam Bahasa Indonesia."
         ]
 
     prompt = "\n".join([
@@ -952,14 +956,14 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
         cta_instruction,
         "",
         "ATURAN WAJIB:",
-        f"- Seluruh teks `script`, `caption`, `hashtags`, `thumbnail_badge`, `thumbnail_headline`, dan `thumbnail_specs` WAJIB 100% ditulis dalam **{lang_label}**.",
+        f"- Seluruh teks `script`, `caption`, `hashtags`, `thumbnail_hook`, `thumbnail_verdict`, `thumbnail_badge`, dan `thumbnail_headline` WAJIB 100% ditulis dalam **{lang_label}**.",
         "- Total gabungan kata dari seluruh `script` ke-6 bab WAJIB sekitar 90-100 kata agar seluruh kalimat hingga akhir CTA selesai diucapkan dengan utuh (< 55 detik).",
         f"- Jangan gunakan tanda kutip ganda (\") di dalam isi kalimat `script` atau `visual_focus` (gunakan {inch_rule} untuk ukuran layar).",
         "- Semua angka spesifikasi & FPS rekaman video wajib 100% asli dari transkrip/deskripsi.",
         "- JANGAN PERNAH menyalin candaan tidak relevan dari transkrip reviewer atau menambahkan kata seperti 'kuliah sore', 'anak kuliah', atau profesi spesifik yang tidak berhubungan dengan spesifikasi teknis HP.",
         "- HOOK WAJIB KUAT: Kalimat PERTAMA dari `script` bab body_ip HARUS berupa hook 1 kalimat singkat yang menggebrak dan langsung menyebut nama HP — DILARANG memulai dengan 'Halo', 'Hai', 'Yuk', 'Oke', 'Jadi', 'Nah', atau sapaan generik.",
         "- CTA ANTI-DUPLIKASI: Pastikan TIDAK ADA pengulangan kata yang sama berurutan di kalimat CTA (contoh salah: 'Baterai badak, baterai awet' — hapus kata duplikat).",
-        "- Kembalikan HANYA objek JSON murni dengan key persis: body_ip, screen_os, perf_mem, bat_feat, camera, cta, caption, hashtags, thumbnail_badge, thumbnail_headline, thumbnail_specs.",
+        "- Kembalikan HANYA objek JSON murni dengan key persis: body_ip, screen_os, perf_mem, bat_feat, camera, cta, caption, hashtags, thumbnail_hook, thumbnail_phone, thumbnail_verdict, thumbnail_badge, thumbnail_headline.",
         "- Nilai `hashtags` WAJIB berupa string berisi 5-7 hashtag relevan yang SETIAP katanya diawali tanda pagar `#` " + (
             "(contoh untuk ENGLISH video: \"#SmartphoneReview #TechShorts #GadgetReview #PhoneReview #Shorts\"). "
             "WAJIB 100% berbahasa Inggris — DILARANG menggunakan kata Indonesia seperti 'ReviewHP', 'GadgetIndonesia', 'Smartphone Indonesia', dsb."
@@ -994,10 +998,11 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
             "Transkrip:",
             short_transcript[:10000],
             "",
-            "Susun JSON murni dengan key persis: body_ip, screen_os, perf_mem, bat_feat, camera, cta, caption, hashtags, thumbnail_badge, thumbnail_headline, thumbnail_specs.",
+            "Susun JSON murni dengan key persis: body_ip, screen_os, perf_mem, bat_feat, camera, cta, caption, hashtags, thumbnail_hook, thumbnail_phone, thumbnail_verdict.",
             f"Setiap key bab (body_ip s/d cta) berisi objek: {{\"start_sec\": angka, \"end_sec\": angka, \"script\": \"narasi {lang_label} 15-20 kata sesuai spesifikasi asli di transkrip\"}}.",
             "HOOK WAJIB: script bab body_ip HARUS diawali hook 1 kalimat menggebrak yang langsung menyebut nama HP — DILARANG memulai dengan Halo/Hai/Yuk/Oke/Jadi.",
             "CTA ANTI-DUPLIKASI: Tidak boleh ada pengulangan kata berurutan di kalimat CTA.",
+            ("GLOBAL EN: caption and hashtags must be 100% English without mentioning Indonesia or rupiah." if lang == "en" else ""),
             cta_simple_hint
         ])
         simple_payload = {
@@ -2215,22 +2220,14 @@ def cut_exact_broll_clip_1080p(video_path, seg_start, exact_dur, out_path):
 def normalize_hashtags(raw_hashtags, lang="id"):
     """
     Memastikan setiap hashtag selalu diawali tanda pagar '#' dan diformat rapi.
-    Untuk lang='en': hapus hashtag yang mengandung kata berbahasa Indonesia.
+    Untuk lang='en': hapus hashtag yang mengandung kata berbahasa Indonesia tanpa memblokir kata Inggris valid.
     """
     default_tags = "#SmartphoneReview #TechShorts #GadgetReview #PhoneReview #Shorts" if lang == "en" else "#ReviewHP #GadgetIndonesia #Smartphone #Shorts"
 
-    # Kata-kata Indonesia yang TIDAK boleh muncul di hashtag bahasa Inggris
-    INDO_HASHTAG_WORDS = {
-        "indonesia", "indonesian", "reviewhp", "gadgetindonesia", "smartphoneindonesia",
-        "hp", "ponsel", "unboxinghp", "reviewjujur", "rekomendasi", "pilihan",
-        "beli", "harga", "murah", "mahal", "terbaik", "terbaru", "spek", "layak",
-        "worth", "kamera", "layar", "baterai", "gaming", "performa",  # gaming/performa masih oke tapi skip jika campur
-    }
-    # Kata KHUSUS yang pasti Indonesia dan harus diblokir untuk EN
-    STRICT_INDO_BLOCKS = {
-        "indonesia", "indonesian", "reviewhp", "gadgetindonesia", "smartphoneindonesia",
-        "hp", "ponsel", "unboxinghp", "reviewjujur", "rekomendasi", "pilihan",
-        "harga", "murah", "mahal", "terbaik", "terbaru", "spek", "layak",
+    indo_substrings = ("indonesia", "indonesian", "reviewhp", "unboxinghp", "reviewjujur")
+    indo_tokens = {
+        "hp", "ponsel", "rekomendasi", "pilihan", "harga", "murah", "mahal",
+        "terbaik", "terbaru", "spek", "layak", "gadgetindonesia", "smartphoneindonesia"
     }
 
     if isinstance(raw_hashtags, list):
@@ -2250,9 +2247,12 @@ def normalize_hashtags(raw_hashtags, lang="id"):
         if not clean_tok:
             continue
         low = clean_tok.lower()
-        # Filter hashtag Indonesia saat mode EN
-        if lang == "en" and any(block in low for block in STRICT_INDO_BLOCKS):
-            continue
+        if lang == "en":
+            if any(sub in low for sub in indo_substrings):
+                continue
+            sub_words = [w.lower() for w in re.findall(r"[A-Z]?[a-z0-9]+|[A-Z]+(?=[A-Z]|$)", clean_tok)]
+            if any(w in indo_tokens for w in sub_words):
+                continue
         if low not in seen:
             seen.add(low)
             formatted.append(f"#{clean_tok}")
@@ -2262,16 +2262,14 @@ def normalize_hashtags(raw_hashtags, lang="id"):
 def sanitize_english_caption(caption, video_title=""):
     """
     Membersihkan caption untuk video bahasa Inggris:
-    - Hapus kata 'Indonesia' / 'Indonesian' (case-insensitive)
-    - Hapus frasa seperti 'Review Indonesia', 'di Indonesia', 'untuk Indonesia'
-    - Fallback jika hasil kosong/terlalu pendek
+    - Hapus kata 'Indonesia' / 'Indonesian' beserta preposisi pendahulu (in/di/from/for Indonesia)
+    - Bersihkan sisa tanda baca menggantung & buat fallback bersih jika terlalu pendek
     """
     if not caption:
         return caption
-    # Hapus pola umum kata Indonesia dalam caption
-    cleaned = re.sub(r"\b(?:di\s+|untuk\s+|in\s+|from\s+)?indonesia(?:n)?\b", "", caption, flags=re.IGNORECASE)
-    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip().strip("!,.:-").strip()
-    # Jika hasil pembersihan terlalu pendek atau kosong, buat fallback dari judul
+    cleaned = re.sub(r"\b(?:di|untuk|in|from|for|of)?\s*indonesia(?:n)?\b", "", caption, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+([,.;!?])", r"\1", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip().strip(",.:-").strip()
     if len(cleaned.split()) < 3:
         short_title = re.sub(r"[^a-zA-Z0-9\s\-]", " ", video_title).strip()[:50] or "Flagship Phone"
         cleaned = f"Full Review of {short_title}!"
@@ -2291,106 +2289,133 @@ def save_matching_txt(video_file_path, caption_text, hashtags_text="", lang="id"
         f.write(content + "\n")
     return txt_path
 
-THUMBNAIL_PALETTES = [
+THUMBNAIL_FONT_URLS = {
+    "Anton-Regular.ttf": "https://raw.githubusercontent.com/google/fonts/main/ofl/anton/Anton-Regular.ttf",
+    "Bangers-Regular.ttf": "https://raw.githubusercontent.com/google/fonts/main/ofl/bangers/Bangers-Regular.ttf",
+    "Poppins-Bold.ttf": "https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-Bold.ttf",
+}
+
+def ensure_thumbnail_fonts(work_dir=None):
+    """Memastikan font YouTube Shorts (Anton, Bangers, Poppins Bold) tersedia di folder fonts/ (path absolut)."""
+    base_dir = os.path.abspath(work_dir or os.path.dirname(os.path.abspath(__file__)))
+    fonts_dir = os.path.abspath(os.path.join(base_dir, "fonts"))
+    os.makedirs(fonts_dir, exist_ok=True)
+    for fname, url in THUMBNAIL_FONT_URLS.items():
+        fpath = os.path.join(fonts_dir, fname)
+        if os.path.exists(fpath) and os.path.getsize(fpath) > 20000:
+            continue
+        try:
+            resp = requests.get(url, timeout=15)
+            if resp.status_code == 200 and len(resp.content) > 20000:
+                with open(fpath, "wb") as f:
+                    f.write(resp.content)
+        except Exception:
+            pass
+    return fonts_dir
+
+# Preset gaya thumbnail Shorts dinamis (terinspirasi creator tech review modern:
+# foto full-bleed terang tanpa bingkai kaku, hook 2-warna miring di atas,
+# pita/blok merah tegas + nama HP rapi, dan verdict kuning mencolok di bawahnya).
+THUMBNAIL_STYLES = [
     {
-        "name": "Cyber Red & White",
-        "badge_bg_bgr": (20, 20, 210),          # merah solid
-        "badge_border_bgr": (255, 255, 255),
-        "accent_bgr": (0, 220, 255),              # kuning-oranye
-        "ass_line1_primary": "&H00FFFFFF",
-        "ass_line2_primary": "&H0000DCFF",
-        "ass_badge_primary": "&H00FFFFFF",
-        "ass_spec_primary": "&H00AAEEFF",
-        "gradient_bottom_bgr": (0, 0, 0),
+        "name": "comic_snug_yellow_white",
+        "top_font": "Bangers",
+        "bot_font": "Bangers",
+        "tilt_deg": 4.2,
+        "ribbon_tilt": 0.0,
+        "ribbon_full": False,
+        "red_bgr": (24, 16, 234),
+        "color_order": "yellow_white",
+        "top_y_center": 255,
+        "rib_cy": 1565,
     },
     {
-        "name": "Electric Gold & Black",
-        "badge_bg_bgr": (10, 160, 255),          # oranye-amber
-        "badge_border_bgr": (0, 220, 255),
-        "accent_bgr": (0, 220, 255),              # kuning neon
-        "ass_line1_primary": "&H00FFFFFF",
-        "ass_line2_primary": "&H00FFDC00",
-        "ass_badge_primary": "&H00FFFFFF",
-        "ass_spec_primary": "&H0070E8FF",
-        "gradient_bottom_bgr": (10, 10, 20),
+        "name": "bold_full_ribbon_slant",
+        "top_font": "Anton",
+        "bot_font": "Anton",
+        "tilt_deg": 4.8,
+        "ribbon_tilt": 2.6,
+        "ribbon_full": True,
+        "red_bgr": (22, 12, 232),
+        "color_order": "yellow_white",
+        "top_y_center": 240,
+        "rib_cy": 1555,
     },
     {
-        "name": "Neon Cyan & Lime",
-        "badge_bg_bgr": (200, 55, 0),            # biru-teal solid
-        "badge_border_bgr": (40, 255, 140),
-        "accent_bgr": (40, 255, 140),             # hijau neon
-        "ass_line1_primary": "&H00FFFFFF",
-        "ass_line2_primary": "&H002CFF8C",
-        "ass_badge_primary": "&H00FFFFFF",
-        "ass_spec_primary": "&H00B0FFE0",
-        "gradient_bottom_bgr": (0, 15, 10),
+        "name": "counter_slant_snug_box",
+        "top_font": "Anton",
+        "bot_font": "Bangers",
+        "tilt_deg": -3.8,
+        "ribbon_tilt": 1.8,
+        "ribbon_full": False,
+        "red_bgr": (20, 15, 224),
+        "color_order": "white_yellow",
+        "top_y_center": 250,
+        "rib_cy": 1560,
     },
     {
-        "name": "Purple Haze & Cyan",
-        "badge_bg_bgr": (200, 30, 180),          # ungu solid
-        "badge_border_bgr": (255, 220, 255),
-        "accent_bgr": (255, 100, 220),            # magenta/pink neon
-        "ass_line1_primary": "&H00FFFFFF",
-        "ass_line2_primary": "&H00DC64FF",
-        "ass_badge_primary": "&H00FFFFFF",
-        "ass_spec_primary": "&H00FFB8FF",
-        "gradient_bottom_bgr": (10, 0, 20),
+        "name": "comic_ribbon_left_tilt",
+        "top_font": "Bangers",
+        "bot_font": "Anton",
+        "tilt_deg": -4.2,
+        "ribbon_tilt": -2.2,
+        "ribbon_full": True,
+        "red_bgr": (28, 12, 236),
+        "color_order": "yellow_white",
+        "top_y_center": 245,
+        "rib_cy": 1555,
     },
     {
-        "name": "Platinum & Ice Blue",
-        "badge_bg_bgr": (140, 100, 60),          # biru-slate solid
-        "badge_border_bgr": (220, 220, 255),
-        "accent_bgr": (220, 200, 255),            # lavender terang
-        "ass_line1_primary": "&H00FFFFFF",
-        "ass_line2_primary": "&H00DCC8FF",
-        "ass_badge_primary": "&H00FFFFFF",
-        "ass_spec_primary": "&H00EEE0FF",
-        "gradient_bottom_bgr": (5, 0, 15),
+        "name": "angled_comic_white_first",
+        "top_font": "Bangers",
+        "bot_font": "Bangers",
+        "tilt_deg": 3.5,
+        "ribbon_tilt": -2.4,
+        "ribbon_full": False,
+        "red_bgr": (20, 10, 228),
+        "color_order": "white_yellow",
+        "top_y_center": 248,
+        "rib_cy": 1565,
     },
 ]
 
-# Layout variasi thumbnail (posisi zona teks Y, ukuran font relatif, posisi badge)
-THUMBNAIL_LAYOUTS = [
-    # Layout A: teks di bawah (default klasik)
-    {
-        "name": "bottom_text",
-        "badge_y_range": (1235, 1315),
-        "line1_y": 1415,
-        "line2_y": 1545,
-        "specs_y": 1682,
-        "specs_bar_y": (1645, 1720),
-        "frame_y_vignette_top_end": 360,
-        "frame_y_vignette_bot_start": 1100,
-        "line1_fontsize": 92,
-        "line2_fontsize": 100,
-    },
-    # Layout B: teks di bawah lebih besar (bold impact)
-    {
-        "name": "bold_impact",
-        "badge_y_range": (1180, 1265),
-        "line1_y": 1370,
-        "line2_y": 1510,
-        "specs_y": 1660,
-        "specs_bar_y": (1625, 1700),
-        "frame_y_vignette_top_end": 300,
-        "frame_y_vignette_bot_start": 1050,
-        "line1_fontsize": 102,
-        "line2_fontsize": 110,
-    },
-    # Layout C: teks di atas (phone showcase di bawah)
-    {
-        "name": "top_text",
-        "badge_y_range": (100, 180),
-        "line1_y": 285,
-        "line2_y": 420,
-        "specs_y": 545,
-        "specs_bar_y": (510, 585),
-        "frame_y_vignette_top_end": 640,
-        "frame_y_vignette_bot_start": 1600,
-        "line1_fontsize": 92,
-        "line2_fontsize": 100,
-    },
-]
+_PHONE_TOKEN_CASE_MAP = {
+    "iphone": "iPhone", "ipad": "iPad", "iqoo": "iQOO", "vivo": "vivo", "oppo": "OPPO",
+    "rog": "ROG", "gt": "GT", "fe": "FE", "se": "SE", "5g": "5G", "4g": "4G",
+    "xl": "XL", "ai": "AI", "nfc": "NFC", "os": "OS", "pro": "Pro", "max": "Max",
+    "ultra": "Ultra", "plus": "Plus", "lite": "Lite", "neo": "Neo", "mini": "Mini",
+    "note": "Note", "fold": "Fold", "flip": "Flip", "edge": "Edge", "play": "Play",
+    "power": "Power", "turbo": "Turbo", "prime": "Prime", "air": "Air",
+    "redmi": "Redmi", "poco": "Poco", "nubia": "Nubia", "samsung": "Samsung",
+    "galaxy": "Galaxy", "xiaomi": "Xiaomi", "realme": "realme", "infinix": "Infinix",
+    "tecno": "Tecno", "itel": "itel", "honor": "HONOR", "asus": "ASUS", "zenfone": "Zenfone",
+    "huawei": "HUAWEI", "motorola": "Motorola", "moto": "Moto", "nothing": "Nothing",
+    "google": "Google", "pixel": "Pixel", "oneplus": "OnePlus", "sony": "Sony", "xperia": "Xperia",
+}
+
+def format_pretty_phone_name(raw_name):
+    """Memformat nama HP menjadi mixed-case rapi untuk pita merah thumbnail (mis. 'Nubia Neo 5 GT', 'Redmi A7 Pro', 'Poco X8')."""
+    tokens = [t for t in re.sub(r"[^\w\s\+]", " ", str(raw_name or "")).split() if t]
+    out = []
+    for tok in tokens[:4]:
+        low = tok.lower()
+        if low in _PHONE_TOKEN_CASE_MAP:
+            out.append(_PHONE_TOKEN_CASE_MAP[low])
+        elif re.match(r"^[a-z]?\d+[a-z]*$", low) or len(low) <= 2:
+            out.append(tok.upper())
+        else:
+            out.append(tok[:1].upper() + tok[1:].lower())
+    return " ".join(out)
+
+def extract_pretty_phone_name(video_title, plan=None):
+    """Mengambil nama model HP mixed-case yang rapi dari plan JSON maupun judul video sumber."""
+    if isinstance(plan, dict):
+        cand = sanitize_subtitle_text(plan.get("thumbnail_phone", ""))
+        cand = re.sub(r"\b(indonesia|resmi|review|unboxing|harga|spek)\b", "", cand, flags=re.I).strip()
+        cand_words = [w for w in cand.split() if w]
+        if 1 <= len(cand_words) <= 4 and 3 <= len(cand) <= 24:
+            return format_pretty_phone_name(cand)
+    return format_pretty_phone_name(extract_short_phone_name(video_title))
 
 def extract_short_phone_name(video_title):
     """Mengekstrak nama seri HP singkat (2-4 kata) yang bersih dari kata-kata Bahasa Indonesia pada judul video."""
@@ -2506,7 +2531,8 @@ INDONESIAN_DETECTION_WORDS = {
     "DESAIN", "BODI", "TIPIS", "MEWAH", "KOKOH", "JERNIH", "TAJAM", "INCI", "JUTAAN", "MURAH",
     "MAHAL", "TERBAIK", "TERBARU", "DENGAN", "UNTUK", "BUAT", "YANG", "INI", "ITU", "DAN", "ATAU",
     "DI", "KE", "DARI", "TAHUN", "RESMI", "GARANSI", "HP", "PONSEL", "CANGGIH", "MANTAP", "KEREN",
-    "BANGET", "PARAH", "CUMA", "HANYA", "PALING", "SOLUSI", "PILIHAN", "REKOMENDASI"
+    "BANGET", "PARAH", "CUMA", "HANYA", "PALING", "SOLUSI", "PILIHAN", "REKOMENDASI",
+    "JANGAN", "DULU", "KAH", "SERIUS", "SEBAGUS", "GILA", "NGERI", "RAJA", "INDONESIA", "INDONESIAN", "RUPIAH"
 }
 
 def translate_or_clean_english_thumb_text(text_up):
@@ -2566,133 +2592,151 @@ def extract_english_specs_from_plan(plan):
             found.append(d)
     return " • ".join(found[:3])
 
+def split_hook_lines(hook_str):
+    """Memecah teks hook atas menjadi 1 baris super besar (jika singkat <= 10 huruf) atau 2 baris seimbang."""
+    words = [w for w in str(hook_str or "").strip().split() if w]
+    if not words:
+        return ["WORTH IT?!"]
+    words = words[:5]
+    joined = " ".join(words)
+    if len(words) <= 2 and len(joined) <= 11:
+        return [joined]
+    best_idx = 1
+    best_diff = 10**9
+    for idx in range(1, len(words)):
+        l1 = " ".join(words[:idx])
+        l2 = " ".join(words[idx:])
+        diff = abs(len(l1) - len(l2) * 1.05) + (3 if len(l2) <= 2 else 0)
+        if diff < best_diff:
+            best_diff = diff
+            best_idx = idx
+    return [" ".join(words[:best_idx]), " ".join(words[best_idx:])]
+
+
 def ensure_dynamic_thumbnail_copy(plan, video_title, lang="id"):
     """
-    Menyiapkan dan memvalidasi teks dinamis untuk Thumbnail Video Short sesuai bahasa (`id` / `en`):
-    - `badge`: Lencana atas 2-3 kata (mis. 'REVIEW JUJUR!' / 'HONEST REVIEW!')
-    - `line1` & `line2`: Headline utama 2 baris (nama HP + hook memikat)
-    - `specs`: Pita ringkasan 3 poin spesifikasi inti (100% sesuai bahasa yang dipilih)
+    Menyiapkan copywriting & style preset Thumbnail Shorts bergaya tech-review modern:
+    - `top_lines`: 1-2 baris hook besar miring dua warna (tanpa mengulang nama HP)
+    - `phone_name`: nama seri HP mixed-case bersih untuk pita/kotak merah (mis. 'Nubia Neo 5 GT')
+    - `bottom_text`: verdict singkat mencolok di bawah pita merah (mis. 'HONEST REVIEW!')
+    - `style`: salah satu preset THUMBNAIL_STYLES agar tiap video tampil variatif & tidak kaku.
     """
-    phone_name = extract_short_phone_name(video_title)
+    phone_name = extract_pretty_phone_name(video_title, plan)
     seed_val = int(time.time() * 1000) ^ int(hashlib.md5(str(video_title).encode("utf-8", errors="ignore")).hexdigest()[:8], 16)
     rng = random.Random(seed_val)
 
-    id_badges = [
-        "REVIEW JUJUR!", "SPEK FLAGSHIP!", "PALING WORTH IT!", "TURUN HARGA!",
-        "WAJIB TAHU!", "REVIEW KILAT!", "HARGA NGERI!", "SPEK GILA!",
-        "MUST WATCH!", "JANGAN LEWATKAN!", "BELI ATAU TIDAK?!", "RATING DEWA!"
-    ]
-    en_badges = [
-        "HONEST REVIEW!", "FLAGSHIP KILLER!", "WORTH BUYING?!", "PRICE DROP!",
-        "FULL BREAKDOWN!", "MUST WATCH!", "BEST VALUE!", "REAL VERDICT!",
-        "SPECS INSANE!", "BUY OR SKIP?!", "QUICK VERDICT!", "INSANE DEAL!"
-    ]
     id_hooks = [
-        "MASIH LAYAK?!", "SPEKNYA NGERI!", "JAWARA BARU!", "WAJIB BELI?!",
-        "SAINGI FLAGSHIP?!", "HARGA MIRING!", "KAMERA DEWA?!", "PERFORMA MONSTER!",
-        "HP TERBAIK?!", "WORTH IT BANGET!", "BATERAI BADAK!", "LAYAR JUARA!"
+        "JANGAN BELI DULU?!", "RAJA BARU?!", "WORTH IT KAH?!", "SERIUS SEBAGUS INI?!",
+        "SPEKNYA NGERI!", "MASIH LAYAK?!", "SAINGI FLAGSHIP?!"
     ]
     en_hooks = [
-        "WORTH IT?!", "TOTAL BEAST!", "BEST VALUE?!", "GAME CHANGER!",
-        "INSANE SPECS!", "BUY OR SKIP?!", "REAL KING?!", "MUST BUY!",
-        "LEGIT BEAST!", "CAMERA KING?!", "BATTERY MONSTER!", "INSANE DEAL!"
+        "DON'T BUY YET!?!", "WORTH IT?!", "THE NEW KING?!", "WORTH THE HYPE?!",
+        "BUY OR SKIP?!", "TOTAL BEAST?!", "GAME CHANGER?!"
+    ]
+    id_verdicts = [
+        "REVIEW JUJUR!", "HP GAMING TERBAIK?!", "BEST BUDGET?!",
+        "RAJA HARGA MIRING!", "WAJIB TAHU!", "TES JUJUR!"
+    ]
+    en_verdicts = [
+        "HONEST REVIEW!", "BEST BUDGET PHONE?!", "REAL VERDICT!",
+        "VALUE KING?!", "MUST WATCH!", "FULL BREAKDOWN!"
     ]
 
-    raw_badge = sanitize_subtitle_text(plan.get("thumbnail_badge", "")).upper()
-    raw_head = sanitize_subtitle_text(plan.get("thumbnail_headline", "")).upper()
-    raw_specs = sanitize_subtitle_text(plan.get("thumbnail_specs", "")).upper()
+    raw_hook = sanitize_subtitle_text(plan.get("thumbnail_hook") or plan.get("thumbnail_headline", "")).upper()
+    raw_verdict = sanitize_subtitle_text(plan.get("thumbnail_verdict") or plan.get("thumbnail_badge", "")).upper()
+
+    phone_tokens = {re.sub(r"[^A-Z0-9]", "", t) for t in phone_name.upper().split() if t}
+    phone_tokens |= {"SAMSUNG", "GALAXY", "IPHONE", "XIAOMI", "REDMI", "POCO", "OPPO", "VIVO", "IQOO", "REALME", "INFINIX", "TECNO", "NUBIA", "GOOGLE", "PIXEL", "ONEPLUS", "HONOR"}
+
+    def _strip_phone_tokens(txt_up):
+        kept = []
+        for tok in txt_up.split():
+            bare = re.sub(r"[^A-Z0-9]", "", tok)
+            if bare and bare in phone_tokens:
+                continue
+            kept.append(tok)
+        return " ".join(kept).strip()
+
+    raw_hook = _strip_phone_tokens(raw_hook)
 
     if lang == "en":
-        raw_badge = translate_or_clean_english_thumb_text(raw_badge)
-        if not raw_badge or has_indonesian_words(raw_badge) or len(raw_badge) < 4:
-            raw_badge = rng.choice(en_badges)
-
-        # Untuk bahasa Inggris, paksa Baris 1 selalu nama seri HP bersih & Baris 2 hook Bahasa Inggris murni
-        raw_head_clean = translate_or_clean_english_thumb_text(raw_head)
-        # Hapus kata-kata nama HP dari raw_head_clean untuk melihat apakah ada hook Bahasa Inggris yang bagus
-        phone_tokens = set(phone_name.split())
-        hook_candidates = [w for w in raw_head_clean.split() if re.sub(r"[^A-Z0-9]", "", w) not in phone_tokens]
-        hook_str = " ".join(hook_candidates[:3]).strip()
-        if not hook_str or has_indonesian_words(hook_str) or len(hook_str) < 4:
+        raw_hook = translate_or_clean_english_thumb_text(raw_hook)
+        raw_hook = _strip_phone_tokens(raw_hook)
+        if not raw_hook or has_indonesian_words(raw_hook) or len(raw_hook) < 5:
             hook_str = rng.choice(en_hooks)
-        elif hook_str[-1] not in "!?":
-            hook_str += "!"
-        line1 = phone_name[:20]
-        line2 = hook_str[:20]
-
-        # Terjemahkan & bersihkan specs Bahasa Inggris
-        raw_specs_en = translate_or_clean_english_thumb_text(raw_specs)
-        spec_parts = [p.strip() for p in re.split(r"[•|/,\-]+", raw_specs_en) if p.strip() and not has_indonesian_words(p)]
-        if len(spec_parts) >= 2:
-            final_specs = " • ".join(spec_parts[:3])[:44]
         else:
-            final_specs = extract_english_specs_from_plan(plan)[:44]
+            hook_str = " ".join(raw_hook.split()[:4])
+            if hook_str[-1] not in "!?":
+                hook_str += "?!"
+
+        raw_verdict = translate_or_clean_english_thumb_text(raw_verdict)
+        if not raw_verdict or has_indonesian_words(raw_verdict) or len(raw_verdict) < 5:
+            verdict_str = rng.choice(en_verdicts)
+        else:
+            verdict_str = " ".join(raw_verdict.split()[:3])
+            if verdict_str[-1] not in "!?":
+                verdict_str += "!"
     else:
-        if not raw_badge:
-            raw_badge = rng.choice(id_badges)
-        if not raw_head:
-            raw_head = f"{phone_name} {rng.choice(id_hooks)}"
-
-        head_words = [w for w in raw_head.split() if w]
-        if len(head_words) <= 2:
-            line1 = phone_name[:20]
-            line2 = raw_head if raw_head != phone_name else rng.choice(id_hooks)
+        if not raw_hook or len(raw_hook) < 5:
+            hook_str = rng.choice(id_hooks)
         else:
-            mid = max(2, min(3, (len(head_words) + 1) // 2))
-            line1 = " ".join(head_words[:mid])[:20]
-            line2 = " ".join(head_words[mid:mid + 3])[:20]
-            if not line2:
-                line2 = rng.choice(id_hooks)
+            hook_str = " ".join(raw_hook.split()[:4])
+            if hook_str[-1] not in "!?":
+                hook_str += "?!"
 
-        if not raw_specs or len(raw_specs) < 6:
-            final_specs = "LAYAR 120HZ • CHIPSET KENCANG • KAMERA STABIL"
+        if not raw_verdict or len(raw_verdict) < 5:
+            verdict_str = rng.choice(id_verdicts)
         else:
-            spec_parts = [p.strip() for p in re.split(r"[•|/,\-]+", raw_specs) if p.strip()]
-            final_specs = (" • ".join(spec_parts[:3]) if len(spec_parts) >= 2 else raw_specs)[:44]
+            verdict_str = " ".join(raw_verdict.split()[:3])
+            if verdict_str[-1] not in "!?":
+                verdict_str += "!"
 
-    raw_badge = " ".join(raw_badge.split()[:3])
-    if raw_badge and raw_badge[-1] not in "!?":
-        raw_badge += "!"
-
-    palette = rng.choice(THUMBNAIL_PALETTES)
-    layout = rng.choice(THUMBNAIL_LAYOUTS)
+    top_lines = split_hook_lines(hook_str)
+    style = rng.choice(THUMBNAIL_STYLES)
     return {
-        "badge": raw_badge,
-        "line1": line1,
-        "line2": line2,
-        "specs": final_specs.upper(),
-        "palette": palette,
-        "layout": layout
+        "top_lines": top_lines,
+        "phone_name": phone_name[:22],
+        "bottom_text": verdict_str[:24],
+        "style": style,
+        "badge": verdict_str[:24],
+        "line1": phone_name[:22],
+        "line2": " ".join(top_lines),
     }
 
-def _score_frame_for_thumbnail(frame, clip_idx, detector):
-    """
-    Mengembalikan skor ketajaman & kecerahan frame untuk seleksi thumbnail.
-    Mengembalikan (skor, gray_roi) atau (None, None) jika frame tidak memenuhi syarat.
-    """
+
+def _crop_9_16_centered(frame, cx_norm=0.5):
+    """Memotong frame menjadi rasio 9:16 (1080x1920) yang berpusat pada posisi horizontal cx_norm."""
+    fh, fw = frame.shape[:2]
+    if fw == 1080 and fh == 1920:
+        return frame
+    target_ratio = 9.0 / 16.0
+    if (fw / max(float(fh), 1.0)) > (target_ratio * 1.04):
+        crop_w = max(1, int(round(fh * target_ratio)))
+        cx_px = int(round(max(0.0, min(1.0, float(cx_norm))) * fw))
+        x0 = max(0, min(fw - crop_w, cx_px - crop_w // 2))
+        cropped = frame[0:fh, x0:x0 + crop_w]
+    elif (fw / max(float(fh), 1.0)) < (target_ratio * 0.96):
+        crop_h = max(1, int(round(fw / target_ratio)))
+        y0 = max(0, (fh - crop_h) // 2)
+        cropped = frame[y0:y0 + crop_h, 0:fw]
+    else:
+        cropped = frame
+    return cv2.resize(cropped, (1080, 1920), interpolation=cv2.INTER_LANCZOS4)
+
+
+def _frame_is_clean_for_thumb(frame_9_16, detector):
+    """Menolak frame gelap, mengandung wajah, atau mengandung animasi subscribe/teks mengganggu."""
+    sm = cv2.resize(frame_9_16, (270, 480), interpolation=cv2.INTER_AREA)
+    gray_sm = cv2.cvtColor(sm, cv2.COLOR_BGR2GRAY)
+    if float(np.mean(gray_sm)) < 36.0:
+        return False
     if detector is not None:
-        sm = cv2.resize(frame, (270, 480), interpolation=cv2.INTER_AREA)
         _, faces = detector.detect(sm)
         if faces is not None and len(faces) > 0:
-            return None, None
-        if has_animated_subscribe_badge([sm]):
-            return None, None
-
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    h, w = gray.shape[:2]
-    center_roi = gray[int(h * 0.12):int(h * 0.78), int(w * 0.10):int(w * 0.90)]
-    sharpness = float(cv2.Laplacian(center_roi, cv2.CV_64F).var())
-    mean_bri = float(np.mean(center_roi))
-
-    bri_factor = 1.0
-    if mean_bri < 45.0 or mean_bri > 220.0:
-        bri_factor = 0.45
-    elif 75.0 <= mean_bri <= 185.0:
-        bri_factor = 1.20
-
-    chap_bonus = 1.35 if clip_idx < 4 else 1.0
-    score = sharpness * bri_factor * chap_bonus
-    return score, center_roi
+            return False
+    if has_animated_subscribe_badge([sm]):
+        return False
+    return True
 
 
 def _estimate_vertical_phone_score(frame):
@@ -2703,208 +2747,461 @@ def _estimate_vertical_phone_score(frame):
     """
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     h, w = gray.shape[:2]
-
-    # Fokus pada zona tengah bawah (area showcase HP, hindari text overlay)
-    roi = gray[int(h * 0.05):int(h * 0.70), int(w * 0.10):int(w * 0.90)]
-
-    # Deteksi tepi dengan Canny lalu cari kontur
+    roi = gray[int(h * 0.08):int(h * 0.78), int(w * 0.10):int(w * 0.90)]
     blurred = cv2.GaussianBlur(roi, (5, 5), 0)
     edges = cv2.Canny(blurred, 40, 120)
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
     if not contours:
         return 0.0
-
-    # Cari kontur paling besar (kemungkinan adalah bodi HP)
     largest = max(contours, key=cv2.contourArea)
     area = cv2.contourArea(largest)
     roi_area = roi.shape[0] * roi.shape[1]
     if roi_area == 0 or area < (roi_area * 0.03):
         return 0.0
-
-    # Bounding rect dari kontur terbesar
-    x, y, bw, bh = cv2.boundingRect(largest)
+    _, _, bw, bh = cv2.boundingRect(largest)
     if bw == 0:
         return 0.0
-
-    aspect_ratio = bh / float(bw)  # > 1.5 artinya cenderung vertikal
-
-    # Skor vertikal: semakin tinggi aspek rasio (> 1.6), semakin baik
+    aspect_ratio = bh / float(bw)
     if aspect_ratio >= 1.8:
         vert_score = 1.0
     elif aspect_ratio >= 1.5:
         vert_score = 0.75
     elif aspect_ratio >= 1.0:
-        vert_score = 0.3
+        vert_score = 0.30
     else:
-        # Sangat horisontal (landscape) - penalti berat
         vert_score = 0.05
-
-    # Skor area: HP yang mengisi sebagian besar frame mendapat bonus
-    fill_ratio = area / roi_area
-    fill_score = min(1.0, fill_ratio * 2.5)
-
+    fill_score = min(1.0, (area / roi_area) * 2.5)
     return (vert_score * 0.7 + fill_score * 0.3)
 
 
-def _pick_best_vertical_back_frame_with_gemini(candidates_b64_list, api_key):
-    """
-    Meminta Gemini Vision memilih frame terbaik yang menampilkan bagian belakang HP
-    secara vertikal dan utuh dari daftar kandidat (maks 9 frame).
-    Mengembalikan indeks terpilih (0-based) atau None jika gagal.
-    """
-    if not api_key or not candidates_b64_list:
-        return None
+def _heuristic_back_phone_score(frame_9_16, priority_weight=1.0):
+    """Skor fallback lokal bila Vision API gagal: memprioritaskan belakang HP vertikal (modul kamera atas kontras, panel bawah bersih) & menekan layar UI teks/popup."""
+    sm = cv2.resize(frame_9_16, (270, 480), interpolation=cv2.INTER_AREA)
+    gray = cv2.cvtColor(sm, cv2.COLOR_BGR2GRAY)
+    roi = gray[70:380, 35:235]
+    up_panel = gray[100:220, 60:210]
+    lo_panel = gray[225:360, 60:210]
 
-    n = len(candidates_b64_list)
-    prompt = (
-        f"You are given {n} candidate video frames numbered 1 to {n}. "
-        "Each frame is a screenshot from a smartphone review video. "
-        "Your task: pick the SINGLE BEST frame that shows "
-        "(1) the BACK SIDE of the smartphone (rear camera module visible, NOT the front screen), "
-        "(2) the ENTIRE phone body visible (not cropped or macro close-up), "
-        "(3) the phone in a VERTICAL / UPRIGHT portrait orientation (taller than wide), "
-        "(4) clean background with good lighting. "
-        "If none show the full vertical back, pick the closest one. "
-        "Reply with ONLY a JSON object: {\"best\": <number 1 to N>}. "
-        "No explanation."
-    )
+    mean_bri = float(np.mean(roi))
+    e_up = float(np.mean(cv2.Canny(up_panel, 50, 140) > 0))
+    e_lo = float(np.mean(cv2.Canny(lo_panel, 50, 140) > 0))
+    white_lo = float(np.mean(lo_panel > 205))
+    sharpness = min(900.0, float(cv2.Laplacian(roi, cv2.CV_64F).var()))
 
-    # Bangun payload multi-gambar
-    parts = [{"text": prompt}]
-    for i, b64_data in enumerate(candidates_b64_list):
-        parts.append({
-            "inline_data": {
-                "mime_type": "image/jpeg",
-                "data": b64_data
-            }
-        })
-        parts.append({"text": f"Frame {i + 1}:"})
+    # Layar depan/UI teks memiliki panel bawah ber-tepi padat (e_lo >= 0.085) & area popup/latar terang tinggi
+    if white_lo > 0.18 or (e_lo > 0.085 and (e_up / max(e_lo, 0.02)) < 1.25):
+        ui_penalty = 0.08
+    elif e_lo > 0.075:
+        ui_penalty = 0.40
+    else:
+        ui_penalty = 1.0
 
-    payload = {"contents": [{"parts": parts}]}
-    headers = {"Content-Type": "application/json"}
+    # Bonus belakang HP nyata: modul kamera di atas (e_up) lebih menonjol dibanding panel bawah yang bersih
+    cam_ratio = min(2.2, e_up / max(e_lo, 0.025))
+    cam_bonus = 1.35 if (cam_ratio >= 1.35 and white_lo < 0.08) else (0.75 if cam_ratio < 0.95 else 1.0)
+    bri_factor = 1.25 if (65.0 <= mean_bri <= 185.0) else 0.55
+    vert_score = _estimate_vertical_phone_score(sm)
+    return ((sharpness * 0.30) + (vert_score * 850.0)) * bri_factor * ui_penalty * cam_bonus * priority_weight
 
-    # Coba model vision yang tersedia
-    for model in VISION_MODELS[:4]:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-        try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=25)
-            if resp.status_code != 200:
-                continue
-            data = resp.json()
-            raw_text = ""
-            for cand in data.get("candidates", []):
-                for part in cand.get("content", {}).get("parts", []):
-                    raw_text += part.get("text", "")
-            parsed = extract_json_object(raw_text)
-            if parsed and "best" in parsed:
-                idx = int(parsed["best"]) - 1
-                if 0 <= idx < n:
-                    print(f"      [Thumbnail] Gemini ({model}) memilih frame #{idx + 1} sebagai kandidat terbaik (belakang HP vertikal).", flush=True)
-                    return idx
-        except Exception as e:
-            print(f"      [Thumbnail] Gemini Vision ({model}) error: {e}", flush=True)
+
+def _compute_frame_hist(frame_bgr):
+    """Histogram HSV ringan untuk deduplikasi kandidat visual agar variasi maksimal."""
+    sm = cv2.resize(frame_bgr, (64, 114), interpolation=cv2.INTER_AREA)
+    hsv = cv2.cvtColor(sm, cv2.COLOR_BGR2HSV)
+    hist = cv2.calcHist([hsv], [0, 1], None, [12, 8], [0, 180, 0, 256])
+    cv2.normalize(hist, hist, alpha=1.0, norm_type=cv2.NORM_L2)
+    return hist
+
+
+def _fit_tile_letterbox(frame_bgr, tile_size=220):
+    """Memuat frame 16:9 atau 9:16 ke kotak seragam tanpa memotong sisi kiri/kanan subjek."""
+    fh, fw = frame_bgr.shape[:2]
+    scale = min(tile_size / max(float(fw), 1.0), tile_size / max(float(fh), 1.0))
+    nw = max(1, int(round(fw * scale)))
+    nh = max(1, int(round(fh * scale)))
+    resized = cv2.resize(frame_bgr, (nw, nh), interpolation=cv2.INTER_AREA)
+    canvas = np.zeros((tile_size, tile_size, 3), dtype=np.uint8)
+    x0 = (tile_size - nw) // 2
+    y0 = (tile_size - nh) // 2
+    canvas[y0:y0 + nh, x0:x0 + nw] = resized
+    return canvas, x0, y0, nw, nh
+
+
+def _build_numbered_contact_sheet(tiles_bgr, cols, tile_w, tile_h, quality=82):
+    """Menyusun grid gambar bernomor jelas menjadi satu JPEG base64 untuk panggilan Gemini Vision."""
+    rows = max(1, math.ceil(len(tiles_bgr) / cols))
+    sheet = np.zeros((rows * tile_h, cols * tile_w, 3), dtype=np.uint8)
+    for idx, tile in enumerate(tiles_bgr):
+        r, c = divmod(idx, cols)
+        cell = cv2.resize(tile, (tile_w, tile_h), interpolation=cv2.INTER_AREA) if (tile.shape[1] != tile_w or tile.shape[0] != tile_h) else tile.copy()
+        y0, x0 = r * tile_h, c * tile_w
+        sheet[y0:y0 + tile_h, x0:x0 + tile_w] = cell
+        label = str(idx + 1)
+        cv2.rectangle(sheet, (x0 + 4, y0 + 4), (x0 + 18 + 18 * len(label), y0 + 38), (0, 0, 0), -1)
+        cv2.putText(sheet, label, (x0 + 10, y0 + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.85, (0, 235, 255), 2, cv2.LINE_AA)
+    _, buf = cv2.imencode(".jpg", sheet, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+    return base64.b64encode(buf.tobytes()).decode("utf-8")
+
+
+def _gather_source_sample_timestamps(face_free_segs, chapters_with_scenes, total_dur, max_samples=68):
+    """Menentukan timestamp terprioritas bebas-wajah dari source_video.mp4 (utama di body_ip & paruh awal review)."""
+    if total_dur <= 0 or not face_free_segs:
+        return []
+    safe_min = max(22.0, total_dur * 0.025) if total_dur > 90 else 6.0
+    safe_max = max(safe_min + 10.0, total_dur - 14.0)
+
+    body_win, cam_win = (0.0, 0.0), (0.0, 0.0)
+    for ch in (chapters_with_scenes or []):
+        cid = ch.get("id", "")
+        if cid == "body_ip":
+            body_win = (float(ch.get("start_sec", 0.0)), float(ch.get("end_sec", 0.0)))
+        elif cid == "camera":
+            cam_win = (float(ch.get("start_sec", 0.0)), float(ch.get("end_sec", 0.0)))
+
+    samples = []
+    for seg_s, seg_e in face_free_segs:
+        s0 = max(safe_min, float(seg_s) + (0.12 if (seg_e - seg_s) > 0.6 else 0.0))
+        e0 = min(safe_max, float(seg_e) - (0.12 if (seg_e - seg_s) > 0.6 else 0.0))
+        if e0 <= s0:
             continue
+        in_body = (body_win[1] > body_win[0] and not (e0 < body_win[0] or s0 > body_win[1]))
+        in_cam = (cam_win[1] > cam_win[0] and not (e0 < cam_win[0] or s0 > cam_win[1]))
+        is_early = s0 < (total_dur * 0.55)
+        step = 1.6 if in_body else (2.4 if is_early else 4.2)
+        prio = 1.45 if in_body else (1.20 if (is_early or in_cam) else 1.0)
+        t = s0 + 0.15
+        while t < e0:
+            samples.append((round(t, 2), prio))
+            t += step
+
+    samples.sort(key=lambda x: (-x[1], x[0]))
+    if len(samples) > max_samples:
+        # Pertahankan seluruh sampel prioritas tertinggi, lalu sebar sisanya merata
+        picked = []
+        step_pick = max(1, len(samples) // max_samples)
+        for i, item in enumerate(samples):
+            if i < 28 or (i % step_pick == 0):
+                picked.append(item)
+            if len(picked) >= max_samples:
+                break
+        samples = picked
+    # Urutkan tetap memprioritaskan segmen prio tinggi (body_ip/hands-on) agar tidak terpotong batas 28 kandidat
+    samples.sort(key=lambda x: (-x[1], x[0]))
+    return samples
+
+
+def _vision_pass1_discover_back_phones(pool_items, api_key):
+    """Pass 1: mengirim 1 grid contact sheet seluruh video ke Gemini Vision untuk mencari tampak belakang HP terbaik."""
+    tiles = [it["tile"] for it in pool_items]
+    b64_sheet = _build_numbered_contact_sheet(tiles, cols=6, tile_w=220, tile_h=220, quality=80)
+    prompt = (
+        f"Look at this numbered contact sheet of {len(pool_items)} video frames from a smartphone review.\n"
+        "Select the TOP 3 frame numbers showing the CLEANEST, FULLEST, UNOBSTRUCTED **BACK SIDE** of the smartphone "
+        "(rear camera bump/lenses & rear panel clearly visible, preferably held upright/vertically in hand or studio table).\n"
+        "STRICTLY AVOID:\n"
+        "- Front screens showing UI/apps/home screen/benchmarks\n"
+        "- Frames showing only a retail box or heavy cardboard clutter\n"
+        "- Frames with human faces, big overlaid channel logos, or 'SUBSCRIBE' banners\n"
+        "- Extreme cropped close-ups where most of the phone body is cut off.\n\n"
+        "Return ONLY valid JSON: "
+        '{"picks": [{"id": <int 1..N>, "cx": <int 0..1000 horizontal center of the phone inside that numbered tile>, "upright": <true|false>}]}.'
+    )
+    payload = {
+        "contents": [{
+            "parts": [
+                {"text": prompt},
+                {"inline_data": {"mime_type": "image/jpeg", "data": b64_sheet}}
+            ]
+        }],
+        "generationConfig": {"responseMimeType": "application/json"}
+    }
+    parsed = call_gemini_json(payload, api_key)
+    if not isinstance(parsed, dict) or not parsed.get("picks"):
+        return []
+    valid = []
+    for p in parsed["picks"]:
+        try:
+            idx = int(p["id"]) - 1
+            if 0 <= idx < len(pool_items):
+                cx_tile = max(0.0, min(1.0, float(p.get("cx", 500)) / 1000.0))
+                it = pool_items[idx]
+                tw = 220.0
+                # Konversi koordinat cx tile 220x220 (yang ber-letterbox) ke koordinat X sumber (0..1)
+                cx_px = cx_tile * tw
+                src_cx = max(0.22, min(0.78, (cx_px - it["x0"]) / max(1.0, float(it["disp_w"]))))
+                valid.append((idx, src_cx, bool(p.get("upright", True))))
+        except Exception:
+            continue
+    return valid[:3]
+
+
+def _vision_pass2_pick_best_portrait(portrait_candidates, api_key):
+    """Pass 2: mengirim top-9 crop 9:16 portrait resolusi tajam untuk memilih frame final + koordinat batas atas/bawah HP."""
+    if not portrait_candidates:
+        return None
+    n = len(portrait_candidates)
+    tiles = [cv2.resize(frm, (240, 426), interpolation=cv2.INTER_AREA) for frm in portrait_candidates]
+    b64_sheet = _build_numbered_contact_sheet(tiles, cols=3, tile_w=240, tile_h=426, quality=86)
+    prompt = (
+        f"These {n} vertical 9:16 portrait frames come from the candidate back-of-phone moments.\n"
+        "Pick the SINGLE BEST photo for a YouTube Shorts thumbnail that shows:\n"
+        "1) The crisp FULL BACK SIDE of the phone vertically/upright with camera lenses on top (NEVER the front screen)\n"
+        "2) Clean uncluttered top background above the phone (~top 25% of frame) so big hook text sits cleanly above the camera bump\n"
+        "3) No face, no ugly subscribe popup, crisp focus and good lighting.\n\n"
+        "Also measure the phone body vertical span inside the chosen frame in 0..1000 scale (0=very top edge, 1000=very bottom edge).\n"
+        'Return ONLY JSON: {"best": <int 1..N>, "phone_top_y": <int 150..500>, "phone_bot_y": <int 600..920>}.'
+    )
+    payload = {
+        "contents": [{
+            "parts": [
+                {"text": prompt},
+                {"inline_data": {"mime_type": "image/jpeg", "data": b64_sheet}}
+            ]
+        }],
+        "generationConfig": {"responseMimeType": "application/json"}
+    }
+    parsed = call_gemini_json(payload, api_key)
+    if not isinstance(parsed, dict) or "best" not in parsed:
+        return None
+    try:
+        best_idx = int(parsed["best"]) - 1
+        if 0 <= best_idx < n:
+            top_y = max(0.14, min(0.45, float(parsed.get("phone_top_y", 260)) / 1000.0))
+            bot_y = max(0.62, min(0.90, float(parsed.get("phone_bot_y", 780)) / 1000.0))
+            return best_idx, top_y, bot_y
+    except Exception:
+        pass
     return None
 
 
-def select_best_thumbnail_frame(all_final_clips, detector=None, api_key=None):
+def select_best_thumbnail_frame(all_final_clips, video_path=None, face_free_segs=None,
+                                chapters_with_scenes=None, total_dur=0.0,
+                                detector=None, api_key=None):
     """
-    Memilih frame 1080x1920 yang menampilkan BAGIAN BELAKANG HP secara VERTIKAL dan UTUH
-    dari klip-klip B-Roll (mengutamakan Bab 1 body_ip = tampak belakang HP yang paling ikonik).
-
-    Tahap seleksi:
-    1. Kumpulkan kandidat tajam & bebas wajah dari 10 klip pertama (Bab 1 & 2 prioritas).
-    2. Skoring geometri lokal (aspek rasio kontur = mendeteksi vertikal vs horisontal).
-    3. Gemini Vision memilih kandidat terbaik dari top-9 (back + vertikal + utuh).
-    4. Fallback: frame dengan skor geometri + ketajaman tertinggi.
+    Memilih frame 1080x1920 terbaik yang menampilkan BAGIAN BELAKANG HP secara VERTIKAL & UTUH:
+    1. Menyapu keseluruhan video sumber (via `face_scan_cache` / `face_free_segs` termasuk bab unboxing/body_ip/camera)
+       sekaligus SEMUA klip akhir (`all_final_clips`), dideduplikasi berdasarkan kemiripan histogram HSV.
+    2. Pass 1 Gemini Vision (6x6 whole-video sheet): menemukan momen back-of-phone terbaik + pusat X HP.
+    3. Pass 2 Gemini Vision (3x3 crop 9:16 HD terpusat di HP): memilih foto paling bersih + koordinat Y atas/bawah HP.
+    4. Fallback lokal: mengutamakan rasio kontur vertikal dan menekan layar UI putih yang menyilaukan.
+    Returns: (frame_1080x1920, phone_top_y_norm, phone_bot_y_norm)
     """
-    candidate_frames = []   # list of (score, vert_score, frame)
-    candidate_b64s = []     # base64 JPEG untuk Gemini Vision
+    raw_pool = []  # item: {kind, path, t_sec, prio, tile, x0, y0, disp_w, disp_h, hist, preview_916, score}
 
-    # Klip prioritas: 10 pertama (body_ip & screen_os ada di sini)
-    priority_clips = all_final_clips[:10] if len(all_final_clips) >= 4 else all_final_clips
+    def _try_add_candidate(raw_frame, kind, path, t_sec, prio):
+        preview_916 = _crop_9_16_centered(raw_frame, cx_norm=0.5)
+        if not _frame_is_clean_for_thumb(preview_916, detector):
+            return
+        hist = _compute_frame_hist(raw_frame)
+        for existing in raw_pool:
+            if cv2.compareHist(hist, existing["hist"], cv2.HISTCMP_CORREL) > 0.90:
+                return
+        tile, x0, y0, dw, dh = _fit_tile_letterbox(raw_frame, tile_size=220)
+        sc = _heuristic_back_phone_score(preview_916, prio)
+        raw_pool.append({
+            "kind": kind, "path": path, "t_sec": t_sec, "prio": prio,
+            "tile": tile, "x0": x0, "y0": y0, "disp_w": dw, "disp_h": dh,
+            "hist": hist, "preview_916": preview_916, "score": sc
+        })
 
-    for clip_idx, clip_path in enumerate(priority_clips):
+    # 1. Sampel dari source_video.mp4 sepanjang face_free_segs (menangkap momen showcase belakangan/awal yang tak terpilih B-Roll)
+    if video_path and os.path.exists(video_path):
+        cap_src = cv2.VideoCapture(video_path)
+        if total_dur <= 0:
+            fps_src = cap_src.get(cv2.CAP_PROP_FPS) or 30.0
+            total_dur = (cap_src.get(cv2.CAP_PROP_FRAME_COUNT) / fps_src) if fps_src > 0 else 0.0
+        timestamps = _gather_source_sample_timestamps(face_free_segs, chapters_with_scenes, total_dur)
+        if not timestamps and total_dur > 40:
+            # Fallback sampling merata jika cache wajah belum ada
+            step_fb = max(6.0, (total_dur - 40.0) / 36.0)
+            t = 22.0
+            while t < total_dur - 15.0:
+                timestamps.append((round(t, 2), 1.0))
+                t += step_fb
+        for t_sec, prio in timestamps:
+            cap_src.set(cv2.CAP_PROP_POS_MSEC, t_sec * 1000.0)
+            ret, frm = cap_src.read()
+            if ret and frm is not None:
+                _try_add_candidate(frm, "source", video_path, t_sec, prio)
+            if len(raw_pool) >= 28:
+                break
+        cap_src.release()
+
+    # 2. Sampel SEMUA final clips agar adegan terpotong terbaik juga ikut dinilai
+    for idx, clip_path in enumerate(all_final_clips or []):
         if not os.path.exists(clip_path):
             continue
         cap = cv2.VideoCapture(clip_path)
         n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        if n_frames <= 0:
-            cap.release()
-            continue
-
-        # Sampel 4 titik per klip untuk mendapat kandidat lebih beragam
-        sample_indices = [
-            max(0, int(n_frames * 0.15)),
-            max(0, int(n_frames * 0.38)),
-            max(0, int(n_frames * 0.62)),
-            max(0, int(n_frames * 0.85)),
-        ]
-        for f_idx in sample_indices:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
-            ret, frame = cap.read()
-            if not ret or frame is None:
-                continue
-
-            sharp_score, _ = _score_frame_for_thumbnail(frame, clip_idx, detector)
-            if sharp_score is None:
-                continue  # wajah terdeteksi atau subscribe badge
-
-            vert_score = _estimate_vertical_phone_score(frame)
-
-            # Gabungan skor: 60% ketajaman + 40% vertikal
-            combined = (sharp_score * 0.60) + (vert_score * 10000 * 0.40)
-            candidate_frames.append((combined, vert_score, frame.copy()))
-
+        if n_frames > 0:
+            for frac in (0.30, 0.72):
+                cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, int(n_frames * frac)))
+                ret, frm = cap.read()
+                if ret and frm is not None:
+                    _try_add_candidate(frm, "clip", clip_path, frac, 1.15 if idx < 5 else 1.0)
         cap.release()
+        if len(raw_pool) >= 36:
+            break
 
-    if not candidate_frames:
-        # Fallback darurat: ambil frame pertama klip pertama
+    if not raw_pool:
         if all_final_clips and os.path.exists(all_final_clips[0]):
             cap = cv2.VideoCapture(all_final_clips[0])
             ret, fr = cap.read()
             cap.release()
             if ret and fr is not None:
-                return fr
-        return None
+                return _crop_9_16_centered(fr), 0.25, 0.78
+        return None, 0.25, 0.78
 
-    # Urutkan: skor gabungan terbaik dulu
-    candidate_frames.sort(key=lambda x: x[0], reverse=True)
+    # Batasi Pass 1 maksimal 36 kandidat paling beragam
+    pass1_pool = raw_pool[:36]
 
-    # Ambil top 9 untuk Gemini Vision
-    top_n = candidate_frames[:9]
-
-    # Jika ada API key, gunakan Gemini untuk memilih frame terbaik secara semantik
+    # 3. Gemini Vision 2-Pass Selection
     if api_key:
-        for _, _, frm in top_n:
-            # Encode ke JPEG base64 ukuran kecil (270x480) agar hemat kuota
-            small = cv2.resize(frm, (270, 480), interpolation=cv2.INTER_AREA)
-            _, buf = cv2.imencode(".jpg", small, [int(cv2.IMWRITE_JPEG_QUALITY), 72])
-            candidate_b64s.append(base64.b64encode(buf.tobytes()).decode("utf-8"))
+        picks = _vision_pass1_discover_back_phones(pass1_pool, api_key)
+        if picks:
+            print(f"      [Thumbnail] Pass 1 menemukan {len(picks)} zona kandidat belakang HP dari {len(pass1_pool)} adegan unik.", flush=True)
+            portrait_cands = []
+            cand_hists = []
+            cap_src = cv2.VideoCapture(video_path) if (video_path and os.path.exists(video_path)) else None
+            any_upright = any(upr for _, _, upr in picks)
 
-        gemini_pick = _pick_best_vertical_back_frame_with_gemini(candidate_b64s, api_key)
-        if gemini_pick is not None:
-            return top_n[gemini_pick][2]
+            for pool_idx, cx_norm, upright in picks:
+                it = pass1_pool[pool_idx]
+                if it["kind"] == "source" and cap_src is not None:
+                    for dt in (-1.2, -0.5, 0.0, 0.5, 1.2):
+                        t_q = max(1.0, it["t_sec"] + dt)
+                        cap_src.set(cv2.CAP_PROP_POS_MSEC, t_q * 1000.0)
+                        ret, raw = cap_src.read()
+                        if not ret or raw is None:
+                            continue
+                        cropped = _crop_9_16_centered(raw, cx_norm=cx_norm)
+                        if not _frame_is_clean_for_thumb(cropped, detector):
+                            continue
+                        h_c = _compute_frame_hist(cropped)
+                        if any(cv2.compareHist(h_c, ex, cv2.HISTCMP_CORREL) > 0.96 for ex in cand_hists):
+                            continue
+                        portrait_cands.append(cropped)
+                        cand_hists.append(h_c)
+                        if (not any_upright) and len(portrait_cands) < 8:
+                            rot90 = cv2.rotate(raw, cv2.ROTATE_90_CLOCKWISE)
+                            rot_crop = _crop_9_16_centered(rot90, cx_norm=0.5)
+                            if _frame_is_clean_for_thumb(rot_crop, detector):
+                                portrait_cands.append(rot_crop)
+                                cand_hists.append(_compute_frame_hist(rot_crop))
+                        if len(portrait_cands) >= 9:
+                            break
+                else:
+                    cap_c = cv2.VideoCapture(it["path"])
+                    nf = int(cap_c.get(cv2.CAP_PROP_FRAME_COUNT))
+                    if nf > 0:
+                        for f_frac in (0.25, 0.50, 0.78):
+                            cap_c.set(cv2.CAP_PROP_POS_FRAMES, max(0, int(nf * f_frac)))
+                            ret, raw = cap_c.read()
+                            if ret and raw is not None:
+                                cropped = _crop_9_16_centered(raw, cx_norm=cx_norm)
+                                if _frame_is_clean_for_thumb(cropped, detector):
+                                    portrait_cands.append(cropped)
+                                    if len(portrait_cands) >= 9:
+                                        break
+                    cap_c.release()
+                if len(portrait_cands) >= 9:
+                    break
 
-    # Fallback: frame dengan vert_score tertinggi di antara top candidates
-    top_n.sort(key=lambda x: x[1], reverse=True)
-    return top_n[0][2]
+            if cap_src is not None:
+                cap_src.release()
+
+            if portrait_cands:
+                res_p2 = _vision_pass2_pick_best_portrait(portrait_cands[:9], api_key)
+                if res_p2 is not None:
+                    b_idx, top_y, bot_y = res_p2
+                    print(f"      [Thumbnail] Pass 2 memilih portrait #{b_idx + 1} (span HP: {int(top_y*100)}%..{int(bot_y*100)}%).", flush=True)
+                    return portrait_cands[b_idx], top_y, bot_y
+                # Jika Pass 2 gagal, pakai heuristik di antara kandidat Pass 1!
+                best_cand = max(portrait_cands, key=lambda c: _heuristic_back_phone_score(c, 1.0))
+                return best_cand, 0.25, 0.78
+
+    # 4. Fallback heuristik penuh tanpa AI
+    best_item = max(pass1_pool, key=lambda x: x["score"])
+    if best_item["kind"] == "source" and video_path and os.path.exists(video_path):
+        cap_src = cv2.VideoCapture(video_path)
+        cap_src.set(cv2.CAP_PROP_POS_MSEC, best_item["t_sec"] * 1000.0)
+        ret, raw = cap_src.read()
+        cap_src.release()
+        if ret and raw is not None:
+            return _crop_9_16_centered(raw), 0.25, 0.78
+    return best_item["preview_916"], 0.25, 0.78
+
 
 def escape_ass_text(txt):
     return str(txt or "").replace("\\", "").replace("{", "(").replace("}", ")")
 
-def generate_dynamic_short_thumbnail(all_final_clips, plan, video_title, lang, out_thumb_path, out_dir, detector=None, api_key=None):
+
+def _rotated_rect_points(cx, cy, width, height, angle_deg):
+    """Menghitung sudut poligon persegi panjang terotasi (konvensi layar sebanding \\frz pada ASS)."""
+    rad = math.radians(angle_deg)
+    ca, sa = math.cos(rad), math.sin(rad)
+    hw, hh = width / 2.0, height / 2.0
+    corners = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
+    pts = []
+    for x, y in corners:
+        rx = x * ca + y * sa + cx
+        ry = -x * sa + y * ca + cy
+        pts.append([int(round(rx)), int(round(ry))])
+    return np.array(pts, dtype=np.int32)
+
+
+def _draw_red_ribbon(canvas, cx, cy, ribbon_w, ribbon_h, angle_deg, bg_bgr=(22, 12, 232), full_width=True):
+    """Menggambar pita/kotak merah tegas dengan drop-shadow lembut di belakang nama HP."""
+    w_span = 1360 if full_width else ribbon_w
+    pts = _rotated_rect_points(cx, cy, w_span, ribbon_h, angle_deg)
+    sh_pts = _rotated_rect_points(cx + 3, cy + 9, w_span, ribbon_h, angle_deg)
+    sh_layer = canvas.copy()
+    cv2.fillPoly(sh_layer, [sh_pts], (0, 0, 0), lineType=cv2.LINE_AA)
+    canvas[:] = cv2.addWeighted(sh_layer, 0.35, canvas, 0.65, 0)
+    cv2.fillPoly(canvas, [pts], bg_bgr, lineType=cv2.LINE_AA)
+
+
+def _estimate_text_width_px(text, fontsize, font_name):
+    if font_name == "Poppins":
+        narrow = set("iIlj1!|.,:;' ")
+        wide = set("WMGOQD@%")
+        total = sum(0.28 if c in narrow else (0.72 if c in wide else 0.52) for c in text)
+        return total * fontsize
+    narrow = set("I1!|.,:;' ")
+    wide = set("WMQORHGDB@%") if font_name == "Bangers" else set("WM@%")
+    base_f = 0.40 if font_name == "Bangers" else 0.38
+    wide_f = 0.54 if font_name == "Bangers" else 0.52
+    total = sum(0.24 if c in narrow else (wide_f if c in wide else base_f) for c in text)
+    return total * fontsize
+
+
+def _fit_fontsize(text, target_width_px, font_name, min_fs=72, max_fs=320):
+    base = 100.0
+    w_at_100 = max(1.0, _estimate_text_width_px(text, base, font_name))
+    fs = int(round(base * (target_width_px / w_at_100)))
+    return max(min_fs, min(max_fs, fs))
+
+
+def generate_dynamic_short_thumbnail(all_final_clips, plan, video_title, lang, out_thumb_path, out_dir,
+                                     detector=None, api_key=None, work_dir=None, video_path=None,
+                                     face_free_segs=None, chapters_with_scenes=None, total_dur=0.0):
     """
-    Merender Gambar Thumbnail Dinamis Video Short (1080x1920) sesuai bahasa (`id` / `en`):
-    1. Memilih frame B-Roll bagian BELAKANG HP secara VERTIKAL & UTUH via Gemini Vision.
-    2. Layout bervariasi (bottom_text / bold_impact / top_text) + 5 palet warna berbeda
-       sehingga setiap video menghasilkan tampilan thumbnail yang berbeda.
-    3. Efek grafis: cinematic vignette gradient, diagonal accent stripe, badge pill rounded,
-       glow line aksen, spec bar, dan double border frame.
-    4. Tipografi bertingkat (Badge + Headline 2 baris + Spec bar) via FFmpeg ASS.
+    Merender Thumbnail YouTube Shorts dinamis & non-monoton (1080x1920):
+    - Memilih foto full-bleed terbaik bagian belakang HP secara vertikal via 2-Pass Vision + cache bebas wajah.
+    - Tanpa vignette gelap, tanpa bingkai kaku/kotak sudut/blok spek penuh teks.
+    - Tipografi dinamis Bangers / Anton / Poppins Bold: Hook atas 2 warna miring,
+      pita/blok merah nama model HP rapi, dan verdict kuning mencolok di bawahnya.
     """
-    base_frame = select_best_thumbnail_frame(all_final_clips, detector=detector, api_key=api_key)
+    fonts_dir = ensure_thumbnail_fonts(work_dir)
+    base_frame, phone_top_y, phone_bot_y = select_best_thumbnail_frame(
+        all_final_clips,
+        video_path=video_path,
+        face_free_segs=face_free_segs,
+        chapters_with_scenes=chapters_with_scenes,
+        total_dur=total_dur,
+        detector=detector,
+        api_key=api_key,
+    )
     if base_frame is None:
         return None
 
@@ -2913,118 +3210,116 @@ def generate_dynamic_short_thumbnail(all_final_clips, plan, video_title, lang, o
         base_frame = cv2.resize(base_frame, (w, h), interpolation=cv2.INTER_LANCZOS4)
 
     meta = ensure_dynamic_thumbnail_copy(plan, video_title, lang=lang)
-    pal = meta["palette"]
-    lay = meta["layout"]
+    st = meta["style"]
 
-    # ── 1. Sharpness boost + vibrance ───────────────────────────────────────
-    blurred = cv2.GaussianBlur(base_frame, (0, 0), 2.4)
-    canvas = cv2.addWeighted(base_frame, 1.22, blurred, -0.22, 6)
+    # ── 1. Peningkatan ketajaman alami tanpa menggelapkan foto produk ───────
+    blurred = cv2.GaussianBlur(base_frame, (0, 0), 1.8)
+    canvas = cv2.addWeighted(base_frame, 1.14, blurred, -0.14, 3)
 
-    # ── 2. Cinematic vignette gradient (zona teks gelap, foto produk terang) ─
-    grad_mask = np.ones((h, 1), dtype=np.float32)
-    top_end   = lay["frame_y_vignette_top_end"]
-    bot_start = lay["frame_y_vignette_bot_start"]
-    for y in range(0, top_end):
-        t = 1.0 - (y / max(top_end, 1))
-        grad_mask[y, 0] = 1.0 - (0.72 * (t ** 1.3))
-    for y in range(bot_start, h):
-        t = (y - bot_start) / max(float(h - bot_start), 1)
-        grad_mask[y, 0] = 1.0 - (0.92 * (t ** 1.1))
-    grad_3c = np.repeat(grad_mask, w, axis=1)[:, :, np.newaxis]
-    canvas = np.clip(canvas.astype(np.float32) * grad_3c, 0, 255).astype(np.uint8)
+    # Penyesuaian dinamis posisi Y berdasarkan ruang kepala & posisi bawah HP
+    top_y_center = st["top_y_center"]
+    if phone_top_y < 0.21:
+        top_y_center = min(top_y_center, 205)
+    elif phone_top_y > 0.30:
+        top_y_center = max(top_y_center, 265)
 
-    # ── 3. Dekorasi grafis dinamis ──────────────────────────────────────────
-    overlay = canvas.copy()
-    ac = pal["accent_bgr"]
-    bg_dark = pal.get("gradient_bottom_bgr", (0, 0, 0))
+    rib_cy = max(1525, min(1590, int(round(phone_bot_y * h + 45)) if 0.72 <= phone_bot_y <= 0.82 else st["rib_cy"]))
 
-    # Diagonal stripe aksen (kiri ke kanan, 1/3 lebar, tipis) — memberi kesan energik
-    stripe_pts = np.array([
-        [0, h - 320], [220, h - 320],
-        [280, h - 260], [0, h - 260]
-    ], dtype=np.int32)
-    cv2.fillPoly(overlay, [stripe_pts], ac)
+    # ── 2. Pita / Blok Merah Nama Model HP ──────────────────────────────────
+    phone_name = meta["phone_name"]
+    ribbon_full = st["ribbon_full"]
+    target_rib_w = 740 if ribbon_full else 780
+    phone_fs = _fit_fontsize(phone_name, target_rib_w, "Poppins", min_fs=76, max_fs=128)
+    est_phone_w = int(_estimate_text_width_px(phone_name, phone_fs, "Poppins"))
+    rib_w = min(980, max(420, est_phone_w + 76))
+    rib_h = int(phone_fs * 1.30)
 
-    # Badge Pill
-    by0, by1 = lay["badge_y_range"]
-    badge_txt = meta["badge"]
-    badge_w = min(840, max(380, int(len(badge_txt) * 33 + 80)))
-    bx0 = (w - badge_w) // 2
-    # Isi solid + border putih
-    cv2.rectangle(overlay, (bx0, by0), (bx0 + badge_w, by1),
-                  pal["badge_bg_bgr"], -1, lineType=cv2.LINE_AA)
-    cv2.rectangle(overlay, (bx0, by0), (bx0 + badge_w, by1),
-                  pal["badge_border_bgr"], 3, lineType=cv2.LINE_AA)
-    # Glow line tipis di bawah badge
-    cv2.line(overlay, (bx0 + 20, by1 + 6), (bx0 + badge_w - 20, by1 + 6), ac, 4, lineType=cv2.LINE_AA)
+    ribbon_tilt = st["ribbon_tilt"]
+    _draw_red_ribbon(canvas, 540, rib_cy, rib_w, rib_h, ribbon_tilt, bg_bgr=st["red_bgr"], full_width=ribbon_full)
 
-    # Spec bar
-    sy0, sy1 = lay["specs_bar_y"]
-    sx0, sx1 = 60, w - 60
-    cv2.rectangle(overlay, (sx0, sy0), (sx1, sy1), bg_dark, -1, lineType=cv2.LINE_AA)
-    cv2.rectangle(overlay, (sx0, sy0), (sx1, sy1), ac, 3, lineType=cv2.LINE_AA)
-
-    # Double border frame tepi layar
-    cv2.rectangle(overlay, (18, 18), (w - 18, h - 18), ac, 5, lineType=cv2.LINE_AA)
-    cv2.rectangle(overlay, (28, 28), (w - 28, h - 28), (255, 255, 255), 1, lineType=cv2.LINE_AA)
-
-    # Corner accent squares di 4 sudut
-    cs = 32  # ukuran sudut
-    for cx, cy in [(18, 18), (w - 18 - cs, 18), (18, h - 18 - cs), (w - 18 - cs, h - 18 - cs)]:
-        cv2.rectangle(overlay, (cx, cy), (cx + cs, cy + cs), ac, -1, lineType=cv2.LINE_AA)
-
-    canvas = cv2.addWeighted(overlay, 0.90, canvas, 0.10, 0)
-
-    # ── 4. Render teks via FFmpeg ASS ───────────────────────────────────────
-    temp_bg_jpg = os.path.join(out_dir, f"_thumb_bg_{lang}.jpg")
-    temp_ass    = os.path.join(out_dir, f"_thumb_overlay_{lang}.ass")
+    # ── 3. Render Tipografi ASS + custom fontsdir via FFmpeg ────────────────
+    os.makedirs(out_dir, exist_ok=True)
+    temp_bg_jpg = os.path.abspath(os.path.join(out_dir, f"_thumb_bg_{lang}.jpg"))
+    ass_name = f"_thumb_overlay_{lang}.ass"
+    temp_ass = os.path.join(out_dir, ass_name)
+    abs_out_thumb = os.path.abspath(out_thumb_path)
     cv2.imwrite(temp_bg_jpg, canvas, [int(cv2.IMWRITE_JPEG_QUALITY), 96])
 
-    b_str  = escape_ass_text(meta["badge"])
-    l1_str = escape_ass_text(meta["line1"])
-    l2_str = escape_ass_text(meta["line2"])
-    sp_str = escape_ass_text(meta["specs"])
+    top_font = st["top_font"]
+    bot_font = st["bot_font"]
+    tilt_deg = st["tilt_deg"]
+    c1 = "&H0000E6FF&" if st["color_order"] == "yellow_white" else "&H00FFFFFF&"
+    c2 = "&H00FFFFFF&" if st["color_order"] == "yellow_white" else "&H0000E6FF&"
+    slant_tag = "\\fax0.20" if top_font == "Anton" else "\\fax0.08"
 
-    l1_fs = lay["line1_fontsize"]
-    l2_fs = lay["line2_fontsize"]
-    l1_y  = lay["line1_y"]
-    l2_y  = lay["line2_y"]
-    sp_y  = lay["specs_y"]
-    b_y   = (lay["badge_y_range"][0] + lay["badge_y_range"][1]) // 2
+    top_lines = [escape_ass_text(x) for x in meta["top_lines"]]
+    top_dialogues = []
+    scale_cap = 0.88 if phone_top_y < 0.21 else 1.0
+    if len(top_lines) >= 2:
+        fs1 = int(_fit_fontsize(top_lines[0], 770, top_font, min_fs=105, max_fs=215) * scale_cap)
+        fs2 = int(_fit_fontsize(top_lines[1], 760, top_font, min_fs=105, max_fs=225) * scale_cap)
+        if fs2 > fs1 * 1.20:
+            fs2 = int(fs1 * 1.16)
+        y1 = max(int(fs1 * 0.56) + 36, top_y_center - int(fs2 * 0.35))
+        y2 = max(y1 + int((fs1 + fs2) * 0.39), top_y_center + int(fs1 * 0.38))
+        top_dialogues.append(
+            f"Dialogue: 3,0:00:00.00,0:00:05.00,HookTop,,0,0,0,,{{\\q2\\pos(540,{y1}){slant_tag}\\frz{tilt_deg:.1f}\\fs{fs1}\\bord20\\shad8\\1c{c1}}}{top_lines[0]}"
+        )
+        top_dialogues.append(
+            f"Dialogue: 3,0:00:00.00,0:00:05.00,HookTop,,0,0,0,,{{\\q2\\pos(540,{y2}){slant_tag}\\frz{tilt_deg:.1f}\\fs{fs2}\\bord20\\shad8\\1c{c2}}}{top_lines[1]}"
+        )
+    else:
+        line = top_lines[0]
+        fs = int(_fit_fontsize(line, 800, top_font, min_fs=120, max_fs=260) * scale_cap)
+        top_y_safe = max(int(fs * 0.56) + 36, top_y_center)
+        if " " in line:
+            parts = line.split(" ", 1)
+            tagged = f"{{\\q2{slant_tag}\\frz{tilt_deg:.1f}\\fs{fs}\\bord22\\shad9\\1c{c1}}}{parts[0]} {{\\1c{c2}}}{parts[1]}"
+        else:
+            tagged = f"{{\\q2{slant_tag}\\frz{tilt_deg:.1f}\\fs{fs}\\bord22\\shad9\\1c{c1}}}{line}"
+        top_dialogues.append(
+            f"Dialogue: 3,0:00:00.00,0:00:05.00,HookTop,,0,0,0,,{{\\pos(540,{top_y_safe})}}{tagged}"
+        )
+
+    bot_str = escape_ass_text(meta["bottom_text"])
+    bot_fs = _fit_fontsize(bot_str, 810, bot_font, min_fs=88, max_fs=185)
+    bot_slant = "\\fax0.18" if bot_font == "Anton" else "\\fax0.06"
+    bot_y = min(1805, rib_cy + int(rib_h * 0.50) + int(bot_fs * 0.54) + 12)
+    phone_esc = escape_ass_text(phone_name)
 
     ass_content = f"""[Script Info]
 ScriptType: v4.00+
+WrapStyle: 2
 PlayResX: 1080
 PlayResY: 1920
 ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: ThumbBadge,Sans,44,{pal['ass_badge_primary']},&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,2,0,1,3,0,5,40,40,10,1
-Style: ThumbLine1,Sans,{l1_fs},{pal['ass_line1_primary']},&H00000000,&H00000000,&H90000000,-1,0,0,0,100,100,1,0,1,10,5,5,40,40,10,1
-Style: ThumbLine2,Sans,{l2_fs},{pal['ass_line2_primary']},&H00000000,&H00000000,&H90000000,-1,0,0,0,100,100,1,0,1,11,6,5,40,40,10,1
-Style: ThumbSpecs,Sans,36,{pal['ass_spec_primary']},&H00000000,&H00000000,&H00000000,-1,0,0,0,100,100,1,0,1,2,0,5,40,40,10,1
+Style: HookTop,{top_font},200,&H0000E6FF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,2,0,1,20,8,5,10,10,10,1
+Style: PhoneRib,Poppins,{phone_fs},&H00FFFFFF,&H000000FF,&H00000060,&H38000000,-1,0,0,0,100,100,0,0,1,0.6,2.5,5,10,10,10,1
+Style: HookBot,{bot_font},{bot_fs},&H0000E6FF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,2,0,1,17,7,5,10,10,10,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 2,0:00:00.00,0:00:05.00,ThumbBadge,,0,0,0,,{{\\pos(540,{b_y})}}{b_str}
-Dialogue: 3,0:00:00.00,0:00:05.00,ThumbLine1,,0,0,0,,{{\\pos(540,{l1_y})}}{l1_str}
-Dialogue: 3,0:00:00.00,0:00:05.00,ThumbLine2,,0,0,0,,{{\\pos(540,{l2_y})}}{l2_str}
-Dialogue: 2,0:00:00.00,0:00:05.00,ThumbSpecs,,0,0,0,,{{\\pos(540,{sp_y})}}{sp_str}
+""" + "\n".join(top_dialogues) + f"""
+Dialogue: 4,0:00:00.00,0:00:05.00,PhoneRib,,0,0,0,,{{\\q2\\pos(540,{rib_cy})\\frz{ribbon_tilt:.1f}}}{phone_esc}
+Dialogue: 4,0:00:00.00,0:00:05.00,HookBot,,0,0,0,,{{\\q2\\pos(540,{bot_y}){bot_slant}\\frz{ribbon_tilt:.1f}}}{bot_str}
 """
     with open(temp_ass, "w", encoding="utf-8") as f:
         f.write(ass_content)
 
+    esc_fonts = fonts_dir.replace("\\", "/").replace(":", "\\:")
     try:
         subprocess.run([
-            "ffmpeg", "-nostdin", "-y", "-loglevel", "fatal",
+            "ffmpeg", "-nostdin", "-y", "-loglevel", "error",
             "-i", temp_bg_jpg,
-            "-vf", f"ass={temp_ass}",
+            "-vf", f"ass='{ass_name}':fontsdir='{esc_fonts}'",
             "-frames:v", "1", "-q:v", "2",
-            out_thumb_path
-        ], check=True)
+            abs_out_thumb
+        ], cwd=out_dir, check=True)
     except Exception:
-        shutil.copy(temp_bg_jpg, out_thumb_path)
+        shutil.copy(temp_bg_jpg, abs_out_thumb)
 
     for tmp_f in (temp_bg_jpg, temp_ass):
         if os.path.exists(tmp_f):
@@ -3316,12 +3611,17 @@ def main():
     print(f"\n[*] Membuat Gambar Thumbnail Dinamis Video Short ({args.lang.upper()})...", flush=True)
     thumb_res = generate_dynamic_short_thumbnail(
         all_final_clips, plan, video_title, args.lang, thumb_output, out_dir,
-        detector=clip_detector, api_key=args.api_key
+        detector=clip_detector, api_key=args.api_key,
+        work_dir=work_dir, video_path=video_path,
+        face_free_segs=face_free_segs, chapters_with_scenes=chapters_with_scenes,
+        total_dur=total_dur
     )
     if thumb_res and os.path.exists(thumb_output):
         _, thumb_meta = thumb_res
+        top_str = " / ".join(thumb_meta.get("top_lines", []))
+        st_name = thumb_meta.get("style", {}).get("name", "dynamic")
         print(
-            f"🖼️ Thumbnail Siap: [{thumb_meta['badge']}] {thumb_meta['line1']} / {thumb_meta['line2']} ({thumb_meta['specs']})",
+            f"🖼️ Thumbnail Siap ({st_name}): {top_str} | [{thumb_meta['phone_name']}] | {thumb_meta['bottom_text']}",
             flush=True
         )
 

@@ -2326,56 +2326,56 @@ THUMBNAIL_STYLES = [
         "ribbon_full": False,
         "red_bgr": (24, 16, 234),
         "color_order": "yellow_white",
-        "top_y_center": 255,
-        "rib_cy": 1565,
+        "top_y_center": 270,
+        "rib_cy": 1545,
     },
     {
         "name": "bold_full_ribbon_slant",
         "top_font": "Anton",
         "bot_font": "Anton",
         "tilt_deg": 4.8,
-        "ribbon_tilt": 2.6,
+        "ribbon_tilt": 2.5,
         "ribbon_full": True,
         "red_bgr": (22, 12, 232),
         "color_order": "yellow_white",
-        "top_y_center": 240,
-        "rib_cy": 1555,
+        "top_y_center": 260,
+        "rib_cy": 1535,
     },
     {
-        "name": "counter_slant_snug_box",
+        "name": "right_slant_snug_box",
         "top_font": "Anton",
         "bot_font": "Bangers",
-        "tilt_deg": -3.8,
+        "tilt_deg": 3.8,
         "ribbon_tilt": 1.8,
         "ribbon_full": False,
         "red_bgr": (20, 15, 224),
         "color_order": "white_yellow",
-        "top_y_center": 250,
-        "rib_cy": 1560,
+        "top_y_center": 268,
+        "rib_cy": 1540,
     },
     {
-        "name": "comic_ribbon_left_tilt",
+        "name": "comic_ribbon_right_tilt",
         "top_font": "Bangers",
         "bot_font": "Anton",
-        "tilt_deg": -4.2,
-        "ribbon_tilt": -2.2,
+        "tilt_deg": 4.5,
+        "ribbon_tilt": 2.2,
         "ribbon_full": True,
         "red_bgr": (28, 12, 236),
         "color_order": "yellow_white",
-        "top_y_center": 245,
-        "rib_cy": 1555,
+        "top_y_center": 265,
+        "rib_cy": 1535,
     },
     {
         "name": "angled_comic_white_first",
         "top_font": "Bangers",
         "bot_font": "Bangers",
-        "tilt_deg": 3.5,
-        "ribbon_tilt": -2.4,
+        "tilt_deg": 3.6,
+        "ribbon_tilt": 1.5,
         "ribbon_full": False,
         "red_bgr": (20, 10, 228),
         "color_order": "white_yellow",
-        "top_y_center": 248,
-        "rib_cy": 1565,
+        "top_y_center": 268,
+        "rib_cy": 1545,
     },
 ]
 
@@ -3165,17 +3165,17 @@ def _estimate_text_width_px(text, fontsize, font_name):
     if font_name == "Poppins":
         narrow = set("iIlj1!|.,:;' ")
         wide = set("WMGOQD@%")
-        total = sum(0.28 if c in narrow else (0.72 if c in wide else 0.52) for c in text)
+        total = sum(0.18 if c in narrow else (0.48 if c in wide else 0.35) for c in text)
         return total * fontsize
     narrow = set("I1!|.,:;' ")
     wide = set("WMQORHGDB@%") if font_name == "Bangers" else set("WM@%")
-    base_f = 0.40 if font_name == "Bangers" else 0.38
-    wide_f = 0.54 if font_name == "Bangers" else 0.52
-    total = sum(0.24 if c in narrow else (wide_f if c in wide else base_f) for c in text)
+    base_f = 0.26 if font_name == "Bangers" else 0.25
+    wide_f = 0.34 if font_name == "Bangers" else 0.33
+    total = sum(0.15 if c in narrow else (wide_f if c in wide else base_f) for c in text)
     return total * fontsize
 
 
-def _fit_fontsize(text, target_width_px, font_name, min_fs=72, max_fs=320):
+def _fit_fontsize(text, target_width_px, font_name, min_fs=72, max_fs=400):
     base = 100.0
     w_at_100 = max(1.0, _estimate_text_width_px(text, base, font_name))
     fs = int(round(base * (target_width_px / w_at_100)))
@@ -3219,20 +3219,20 @@ def generate_dynamic_short_thumbnail(all_final_clips, plan, video_title, lang, o
     # Penyesuaian dinamis posisi Y berdasarkan ruang kepala & posisi bawah HP
     top_y_center = st["top_y_center"]
     if phone_top_y < 0.21:
-        top_y_center = min(top_y_center, 205)
+        top_y_center = min(top_y_center, 225)
     elif phone_top_y > 0.30:
-        top_y_center = max(top_y_center, 265)
+        top_y_center = max(top_y_center, 280)
 
-    rib_cy = max(1525, min(1590, int(round(phone_bot_y * h + 45)) if 0.72 <= phone_bot_y <= 0.82 else st["rib_cy"]))
+    rib_cy = max(1510, min(1570, int(round(phone_bot_y * h + 35)) if 0.72 <= phone_bot_y <= 0.82 else st["rib_cy"]))
 
-    # ── 2. Pita / Blok Merah Nama Model HP ──────────────────────────────────
+    # ── 2. Pita / Blok Merah Nama Model HP (Diperbesar 1 tingkat) ───────────
     phone_name = meta["phone_name"]
     ribbon_full = st["ribbon_full"]
-    target_rib_w = 740 if ribbon_full else 780
-    phone_fs = _fit_fontsize(phone_name, target_rib_w, "Poppins", min_fs=76, max_fs=128)
+    target_rib_w = 780 if ribbon_full else 820
+    phone_fs = _fit_fontsize(phone_name, target_rib_w, "Poppins", min_fs=115, max_fs=190)
     est_phone_w = int(_estimate_text_width_px(phone_name, phone_fs, "Poppins"))
-    rib_w = min(980, max(420, est_phone_w + 76))
-    rib_h = int(phone_fs * 1.30)
+    rib_w = min(1020, max(520, est_phone_w + 76))
+    rib_h = int(phone_fs * 0.96)
 
     ribbon_tilt = st["ribbon_tilt"]
     _draw_red_ribbon(canvas, 540, rib_cy, rib_w, rib_h, ribbon_tilt, bg_bgr=st["red_bgr"], full_width=ribbon_full)
@@ -3250,42 +3250,45 @@ def generate_dynamic_short_thumbnail(all_final_clips, plan, video_title, lang, o
     tilt_deg = st["tilt_deg"]
     c1 = "&H0000E6FF&" if st["color_order"] == "yellow_white" else "&H00FFFFFF&"
     c2 = "&H00FFFFFF&" if st["color_order"] == "yellow_white" else "&H0000E6FF&"
-    slant_tag = "\\fax0.20" if top_font == "Anton" else "\\fax0.08"
+    # Nilai negatif \fax pada ASS membuat huruf miring ke KANAN (italic forward slant '/')
+    slant_tag = "\\fax-0.18" if top_font == "Anton" else "\\fax-0.12"
 
     top_lines = [escape_ass_text(x) for x in meta["top_lines"]]
     top_dialogues = []
-    scale_cap = 0.88 if phone_top_y < 0.21 else 1.0
+    scale_cap = 0.90 if phone_top_y < 0.21 else 1.0
     if len(top_lines) >= 2:
-        fs1 = int(_fit_fontsize(top_lines[0], 770, top_font, min_fs=105, max_fs=215) * scale_cap)
-        fs2 = int(_fit_fontsize(top_lines[1], 760, top_font, min_fs=105, max_fs=225) * scale_cap)
-        if fs2 > fs1 * 1.20:
-            fs2 = int(fs1 * 1.16)
-        y1 = max(int(fs1 * 0.56) + 36, top_y_center - int(fs2 * 0.35))
-        y2 = max(y1 + int((fs1 + fs2) * 0.39), top_y_center + int(fs1 * 0.38))
+        fs1 = int(_fit_fontsize(top_lines[0], 880, top_font, min_fs=170, max_fs=350) * scale_cap)
+        fs2 = int(_fit_fontsize(top_lines[1], 850, top_font, min_fs=170, max_fs=360) * scale_cap)
+        if fs2 > fs1 * 1.18:
+            fs2 = int(fs1 * 1.14)
+        gap = int((fs1 + fs2) * 0.30)
+        y1 = max(int(fs1 * 0.42) + 36, top_y_center - gap // 2)
+        y2 = y1 + gap
         top_dialogues.append(
-            f"Dialogue: 3,0:00:00.00,0:00:05.00,HookTop,,0,0,0,,{{\\q2\\pos(540,{y1}){slant_tag}\\frz{tilt_deg:.1f}\\fs{fs1}\\bord20\\shad8\\1c{c1}}}{top_lines[0]}"
+            f"Dialogue: 3,0:00:00.00,0:00:05.00,HookTop,,0,0,0,,{{\\q2\\pos(540,{y1}){slant_tag}\\frz{tilt_deg:.1f}\\fs{fs1}\\bord24\\shad10\\1c{c1}}}{top_lines[0]}"
         )
         top_dialogues.append(
-            f"Dialogue: 3,0:00:00.00,0:00:05.00,HookTop,,0,0,0,,{{\\q2\\pos(540,{y2}){slant_tag}\\frz{tilt_deg:.1f}\\fs{fs2}\\bord20\\shad8\\1c{c2}}}{top_lines[1]}"
+            f"Dialogue: 3,0:00:00.00,0:00:05.00,HookTop,,0,0,0,,{{\\q2\\pos(540,{y2}){slant_tag}\\frz{tilt_deg:.1f}\\fs{fs2}\\bord24\\shad10\\1c{c2}}}{top_lines[1]}"
         )
     else:
         line = top_lines[0]
-        fs = int(_fit_fontsize(line, 800, top_font, min_fs=120, max_fs=260) * scale_cap)
-        top_y_safe = max(int(fs * 0.56) + 36, top_y_center)
+        fs = int(_fit_fontsize(line, 900, top_font, min_fs=190, max_fs=390) * scale_cap)
+        top_y_safe = max(int(fs * 0.44) + 38, top_y_center)
         if " " in line:
             parts = line.split(" ", 1)
-            tagged = f"{{\\q2{slant_tag}\\frz{tilt_deg:.1f}\\fs{fs}\\bord22\\shad9\\1c{c1}}}{parts[0]} {{\\1c{c2}}}{parts[1]}"
+            tagged = f"{{\\q2{slant_tag}\\frz{tilt_deg:.1f}\\fs{fs}\\bord26\\shad11\\1c{c1}}}{parts[0]} {{\\1c{c2}}}{parts[1]}"
         else:
-            tagged = f"{{\\q2{slant_tag}\\frz{tilt_deg:.1f}\\fs{fs}\\bord22\\shad9\\1c{c1}}}{line}"
+            tagged = f"{{\\q2{slant_tag}\\frz{tilt_deg:.1f}\\fs{fs}\\bord26\\shad11\\1c{c1}}}{line}"
         top_dialogues.append(
             f"Dialogue: 3,0:00:00.00,0:00:05.00,HookTop,,0,0,0,,{{\\pos(540,{top_y_safe})}}{tagged}"
         )
 
     bot_str = escape_ass_text(meta["bottom_text"])
-    bot_fs = _fit_fontsize(bot_str, 810, bot_font, min_fs=88, max_fs=185)
-    bot_slant = "\\fax0.18" if bot_font == "Anton" else "\\fax0.06"
-    bot_y = min(1805, rib_cy + int(rib_h * 0.50) + int(bot_fs * 0.54) + 12)
+    bot_fs = _fit_fontsize(bot_str, 900, bot_font, min_fs=135, max_fs=275)
+    bot_slant = "\\fax-0.16" if bot_font == "Anton" else "\\fax-0.10"
+    bot_y = min(1820, rib_cy + int(rib_h * 0.50) + int(bot_fs * 0.38) + 16)
     phone_esc = escape_ass_text(phone_name)
+    phone_slant = "\\fax-0.08"
 
     ass_content = f"""[Script Info]
 ScriptType: v4.00+
@@ -3296,14 +3299,14 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: HookTop,{top_font},200,&H0000E6FF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,2,0,1,20,8,5,10,10,10,1
+Style: HookTop,{top_font},200,&H0000E6FF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,2,0,1,22,9,5,10,10,10,1
 Style: PhoneRib,Poppins,{phone_fs},&H00FFFFFF,&H000000FF,&H00000060,&H38000000,-1,0,0,0,100,100,0,0,1,0.6,2.5,5,10,10,10,1
-Style: HookBot,{bot_font},{bot_fs},&H0000E6FF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,2,0,1,17,7,5,10,10,10,1
+Style: HookBot,{bot_font},{bot_fs},&H0000E6FF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,2,0,1,19,8,5,10,10,10,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """ + "\n".join(top_dialogues) + f"""
-Dialogue: 4,0:00:00.00,0:00:05.00,PhoneRib,,0,0,0,,{{\\q2\\pos(540,{rib_cy})\\frz{ribbon_tilt:.1f}}}{phone_esc}
+Dialogue: 4,0:00:00.00,0:00:05.00,PhoneRib,,0,0,0,,{{\\q2{phone_slant}\\pos(540,{rib_cy})\\frz{ribbon_tilt:.1f}}}{phone_esc}
 Dialogue: 4,0:00:00.00,0:00:05.00,HookBot,,0,0,0,,{{\\q2\\pos(540,{bot_y}){bot_slant}\\frz{ribbon_tilt:.1f}}}{bot_str}
 """
     with open(temp_ass, "w", encoding="utf-8") as f:

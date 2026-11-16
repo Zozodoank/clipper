@@ -634,6 +634,7 @@ def extract_json_object(raw_txt):
         heo = bool(re.search(r'"?has_editor_overlay"?\s*:\s*true', txt, re.IGNORECASE))
         hsp = bool(re.search(r'"?has_subscribe_popup"?\s*:\s*true', txt, re.IGNORECASE))
         isi = bool(re.search(r'"?is_static_image"?\s*:\s*true', txt, re.IGNORECASE))
+        hmp = bool(re.search(r'"?has_multiple_phones"?\s*:\s*true', txt, re.IGNORECASE))
         rs_m = re.search(r'"?reason"?\s*:\s*"([^"]*)"', txt, re.IGNORECASE)
         return {
             "is_product_broll": ipb,
@@ -641,6 +642,7 @@ def extract_json_object(raw_txt):
             "has_editor_overlay": heo or hsp,
             "has_subscribe_popup": hsp,
             "is_static_image": isi,
+            "has_multiple_phones": hmp,
             "reason": rs_m.group(1) if rs_m else "Parsed via regex fallback"
         }
 
@@ -1322,7 +1324,7 @@ def is_pcm_tail_cut_off(pcm_bytes, sr=24000):
     tail_rms = float(np.mean(rms[-8:]))
     return (tail_rms > thresh * 1.35) or (dur >= 60.5 and float(np.max(rms[-15:])) > thresh)
 
-def stitch_clean_cta_onto_body(body_and_cta_pcm, cta_pcm, chapter_scripts, sr=24000):
+def stitch_clean_cta_onto_body(body_and_cta_pcm, cta_pcm, chapter_scripts, sr=24000, lang="id"):
     """
     Memotong bagian CTA yang terpotong di ujung `body_and_cta_pcm` tepat pada jeda hening sebelum Bab 6 (CTA),
     lalu menyambungkan `cta_pcm` yang utuh + bantalan hening 0.45s di akhir.
@@ -1336,7 +1338,7 @@ def stitch_clean_cta_onto_body(body_and_cta_pcm, cta_pcm, chapter_scripts, sr=24
     thresh = max(90.0, np.percentile(rms, 10) + (np.percentile(rms, 95) - np.percentile(rms, 10)) * 0.075)
     is_sp = (rms > thresh).astype(np.int32)
 
-    weights = [estimate_spoken_weight(cs, ".") for cs in chapter_scripts]
+    weights = [estimate_spoken_weight(cs, ".", lang=lang) for cs in chapter_scripts]
     body_frac = sum(weights[:-1]) / max(1.0, sum(weights))
     approx_cut_s = (len(samples) / float(sr)) * body_frac
 
@@ -1381,7 +1383,7 @@ def stitch_clean_cta_onto_body(body_and_cta_pcm, cta_pcm, chapter_scripts, sr=24
     combined = np.concatenate([body_int16, pause_between, cta_int16, tail_pad])
     return combined.tobytes()
 
-def generate_single_gemini_tts_chapters(chapter_scripts, out_wav, api_key, voice_name="Despina", custom_model=None):
+def generate_single_gemini_tts_chapters(chapter_scripts, out_wav, api_key, voice_name="Despina", custom_model=None, lang="id"):
     models_to_try = [custom_model] if custom_model else list(TTS_MODELS)
     cleaned_chaps = []
     for s in chapter_scripts:
@@ -1401,7 +1403,7 @@ def generate_single_gemini_tts_chapters(chapter_scripts, out_wav, api_key, voice
         print("    [!] Terdeteksi ujung audio CTA terpotong batas buffer TTS -> Menambal audio Bab 6 (CTA) secara utuh...", flush=True)
         cta_pcm, _ = request_tts_pcm_bytes(cleaned_chaps[-1], api_key, voice_name, [used_model] + models_to_try)
         if cta_pcm:
-            pcm_bytes = stitch_clean_cta_onto_body(pcm_bytes, cta_pcm, cleaned_chaps, 24000)
+            pcm_bytes = stitch_clean_cta_onto_body(pcm_bytes, cta_pcm, cleaned_chaps, 24000, lang=lang)
 
     # Pastikan selalu ada bantalan hening minimal 0.40 detik di ujung akhir WAV agar kata terakhir tidak pernah terpenggal
     tail_silence = np.zeros(int(24000 * 0.40), dtype=np.int16).tobytes()
@@ -1415,13 +1417,13 @@ def generate_single_gemini_tts_chapters(chapter_scripts, out_wav, api_key, voice
     return True, used_model
 
 def expand_indo_tech_for_timing(text):
-    s = text.upper()
+    s = str(text or "").upper()
     repls = [
-        (r"\b1080P\b", "SERIBU DELAPAN PULUH PE"),
-        (r"\b720P\b", "TUJUH RATUS DUA PULUH PE"),
-        (r"\b4K\b", "EMPAT KA"),
-        (r"\b2K\b", "DUA KA"),
-        (r"\b8K\b", "DELAPAN KA"),
+        (r"(?:\b|(?<=\d))1080P\b", " SERIBU DELAPAN PULUH PE "),
+        (r"(?:\b|(?<=\d))720P\b", " TUJUH RATUS DUA PULUH PE "),
+        (r"(?:\b|(?<=\d))4K\b", " EMPAT KA "),
+        (r"(?:\b|(?<=\d))2K\b", " DUA KA "),
+        (r"(?:\b|(?<=\d))8K\b", " DELAPAN KA "),
         (r"\bLPDDR4X\b", "EL PE DE DE ER EMPAT EKS"),
         (r"\bLPDDR5X\b", "EL PE DE DE ER LIMA EKS"),
         (r"\bLPDDR5\b", "EL PE DE DE ER LIMA"),
@@ -1432,14 +1434,14 @@ def expand_indo_tech_for_timing(text):
         (r"\bOIS\b", "O I ES"),
         (r"\bEIS\b", "E I ES"),
         (r"\bNFC\b", "EN EF SI"),
-        (r"\bFPS\b", "EF PE ES"),
-        (r"\bMAH\b", "MILI AMPER"),
-        (r"\bGB\b", "GIGABAIT"),
-        (r"\bTB\b", "TERABAIT"),
-        (r"\bMPX\b", "MEGAPIKSEL"),
-        (r"\bMP\b", "MEGAPIKSEL"),
-        (r"\bHZ\b", "HERTZ"),
-        (r"\bW\b", "WATT"),
+        (r"(?:\b|(?<=\d))FPS\b", " EF PE ES "),
+        (r"(?:\b|(?<=\d))MAH\b", " MILI AMPER "),
+        (r"(?:\b|(?<=\d))GB\b", " GIGABAIT "),
+        (r"(?:\b|(?<=\d))TB\b", " TERABAIT "),
+        (r"(?:\b|(?<=\d))MPX\b", " MEGAPIKSEL "),
+        (r"(?:\b|(?<=\d))MP\b", " MEGAPIKSEL "),
+        (r"(?:\b|(?<=\d))HZ\b", " HERTZ "),
+        (r"(?:\b|(?<=\d))W\b", " WATT "),
         (r"\bIP68\b", "I PE ENAM DELAPAN"),
         (r"\bIP69\b", "I PE ENAM SEMBILAN"),
         (r"\bIP67\b", "I PE ENAM TUJUH"),
@@ -1478,6 +1480,7 @@ def expand_indo_tech_for_timing(text):
     ]
     for pat, rep in repls:
         s = re.sub(pat, rep, s)
+    s = re.sub(r"(\d)[,.](\d)", r"\1 KOMA \2", s)
     digit_map = {
         "0": " NOL ", "1": " SATU ", "2": " DUA ", "3": " TIGA ", "4": " EMPAT ",
         "5": " LIMA ", "6": " ENAM ", "7": " TUJUH ", "8": " DELAPAN ", "9": " SEMBILAN "
@@ -1486,22 +1489,147 @@ def expand_indo_tech_for_timing(text):
         s = s.replace(d, w)
     return s
 
-def estimate_spoken_weight(text_chunk, raw_punct=""):
-    s = text_chunk.upper()
+def _number_to_en_words(n_int):
+    """Mengonversi bilangan bulat ke pelafalan kata Bahasa Inggris agar bobot durasi TTS akurat."""
+    ones = [
+        "ZERO", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE",
+        "TEN", "ELEVEN", "TWELVE", "THIRTEEN", "FOURTEEN", "FIFTEEN", "SIXTEEN",
+        "SEVENTEEN", "EIGHTEEN", "NINETEEN"
+    ]
+    tens = ["", "", "TWENTY", "THIRTY", "FORTY", "FIFTY", "SIXTY", "SEVENTY", "EIGHTY", "NINETY"]
+    if n_int < 0:
+        return "MINUS " + _number_to_en_words(-n_int)
+    if n_int < 20:
+        return ones[n_int]
+    if n_int < 100:
+        t, r = divmod(n_int, 10)
+        return tens[t] + (" " + ones[r] if r else "")
+    if n_int < 1000:
+        h, r = divmod(n_int, 100)
+        return ones[h] + " HUNDRED" + (" " + _number_to_en_words(r) if r else "")
+    if n_int < 10000:
+        th, r = divmod(n_int, 1000)
+        if r % 100 == 0 and th > 0 and r > 0:
+            return _number_to_en_words(n_int // 100) + " HUNDRED"
+        if r == 0:
+            return ones[th] + " THOUSAND"
+        if r // 100 != 0:
+            hi, lo = divmod(n_int, 100)
+            return _number_to_en_words(hi) + " " + _number_to_en_words(lo)
+        return ones[th] + " THOUSAND " + _number_to_en_words(r)
+    return " ".join(ones[int(c)] for c in str(n_int))
+
+def expand_english_tech_for_timing(text):
+    """Mengekspansi angka, satuan, dan akronim teknologi ke pelafalan Bahasa Inggris asli TTS."""
+    s = str(text or "").upper()
+    repls = [
+        (r"(?:\b|(?<=\d))1080P\b", " TEN EIGHTY PEE "),
+        (r"(?:\b|(?<=\d))720P\b", " SEVEN TWENTY PEE "),
+        (r"(?:\b|(?<=\d))4K\b", " FOUR KAY "),
+        (r"(?:\b|(?<=\d))2K\b", " TWO KAY "),
+        (r"(?:\b|(?<=\d))8K\b", " EIGHT KAY "),
+        (r"(\d+(?:\.\d+)?)K\b", r" \1 KAY "),
+        (r"\bLPDDR4X\b", " EL PEE DEE DEE AR FOUR EX "),
+        (r"\bLPDDR5X\b", " EL PEE DEE DEE AR FIVE EX "),
+        (r"\bLPDDR5\b", " EL PEE DEE DEE AR FIVE "),
+        (r"\bLPDDR4\b", " EL PEE DEE DEE AR FOUR "),
+        (r"\bCOLOROS\b", " COLOR O ES "),
+        (r"\bHYPEROS\b", " HYPER O ES "),
+        (r"\bFUNTOUCHOS\b", " FUNTOUCH O ES "),
+        (r"\bONE\s*UI\b", " ONE U EYE "),
+        (r"\bIOS\b", " EYE O ES "),
+        (r"\bAMOLED\b", " A MO LED "),
+        (r"\bOLED\b", " O LED "),
+        (r"\bUFS\b", " YOU EF ES "),
+        (r"\bEMMC\b", " EE EM EM SEE "),
+        (r"\bNON-OIS\b", " NON O EYE ES "),
+        (r"\bOIS\b", " O EYE ES "),
+        (r"\bEIS\b", " EE EYE ES "),
+        (r"\bNFC\b", " EN EF SEE "),
+        (r"(?:\b|(?<=\d))FPS\b", " EF PEE ES "),
+        (r"(?:\b|(?<=\d))MAH\b", " MILLI AMP HOUR "),
+        (r"(?:\b|(?<=\d))GB\b", " GIGS "),
+        (r"(?:\b|(?<=\d))TB\b", " TERABYTES "),
+        (r"(?:\b|(?<=\d))MPX?\b", " MEGAPIXELS "),
+        (r"(?:\b|(?<=\d))HZ\b", " HERTZ "),
+        (r"(?:\b|(?<=\d))W\b", " WATT "),
+        (r"\bIP(\d{2})\b", lambda m: " EYE PEE " + " ".join(_number_to_en_words(int(c)) for c in m.group(1)) + " "),
+        (r"\bSD\s*CARD\b", " ES DEE CARD "),
+        (r"\bMICROSD\b", " MICRO ES DEE "),
+        (r"\bSUPERVOOC\b", " SUPER VOOK "),
+        (r"\bONEPLUS\b", " ONE PLUS "),
+    ]
+    for pat, rep in repls:
+        s = re.sub(pat, rep, s)
+    s = re.sub(
+        r"(\d+)\.(\d+)",
+        lambda m: _number_to_en_words(int(m.group(1))) + " POINT " + " ".join(_number_to_en_words(int(c)) for c in m.group(2)),
+        s
+    )
+    s = re.sub(r"\b(\d+)\b", lambda m: " " + _number_to_en_words(int(m.group(1))) + " ", s)
+    return " ".join(s.split())
+
+def count_english_syllables_word(word):
+    """Memperkirakan jumlah suku kata lisan Bahasa Inggris dengan membuang huruf e/-ed/-es senyap."""
+    w = re.sub(r"[^A-Z]", "", word.upper())
+    if not w:
+        return 0
+    if len(w) <= 2:
+        return max(1, len(re.findall(r"[AEIOUY]+", w)))
+    w_proc = w
+    if w_proc.endswith("ES") and len(w_proc) > 4 and not re.search(r"(SH|CH|S|X|Z|G|C)ES$", w_proc):
+        w_proc = w_proc[:-2]
+    elif w_proc.endswith("ED") and len(w_proc) > 4 and not re.search(r"[TD]ED$", w_proc):
+        w_proc = w_proc[:-2]
+    elif w_proc.endswith("E") and len(w_proc) > 3 and not re.search(r"[^AEIOUY]LE$", w_proc):
+        cand = w_proc[:-1]
+        if re.search(r"[AEIOUY]", cand):
+            w_proc = cand
+    groups = re.findall(r"[AEIOUY]+", w_proc)
+    hiatus = len(re.findall(r"(?:[AEIOU]A|EO|IA|IO|IU|UA|UI)", w_proc)) - len(re.findall(r"(?:TION|SION|CION|IOUS)", w_proc))
+    return max(1, len(groups) + max(0, hiatus))
+
+_EN_UNSTRESSED_WORDS = {
+    "A", "AN", "THE", "TO", "OF", "IN", "ON", "AT", "FOR", "AND", "OR", "BY", "WITH", "IT", "IS", "ITS"
+}
+
+def estimate_spoken_weight(text_chunk, raw_punct="", lang="id"):
+    s = str(text_chunk or "").upper()
+    if lang == "en":
+        expanded = expand_english_tech_for_timing(s)
+        words = expanded.split()
+        if not words:
+            return 2.0
+        total_syl = sum(count_english_syllables_word(w) for w in words)
+        stress_adj = sum(0.25 if w not in _EN_UNSTRESSED_WORDS else -0.15 for w in words)
+        char_len = sum(len(re.sub(r"[^A-Z]", "", w)) for w in words)
+        weight = max(2.2, total_syl * 1.95 + stress_adj + char_len * 0.12)
+        if raw_punct in ".!?":
+            weight += 1.2
+        elif raw_punct in ",;:":
+            weight += 0.5
+        return weight
+
     digits = len(re.findall(r"\d", s))
-    units_found = len(re.findall(r"\b(GB|TB|MAH|MP|MPX|W|HZ|FPS|OIS|4K|1080P|LPDDR4X|LPDDR5X)\b", s))
-    
+    units_found = len(re.findall(r"(?:\b|(?<=\d))(GB|TB|MAH|MP|MPX|W|HZ|FPS|OIS|4K|1080P|LPDDR4X|LPDDR5X)\b", s))
+
     spoken_expanded = expand_indo_tech_for_timing(text_chunk)
     vowels = len(re.findall(r"[AEIOU]", spoken_expanded))
     letters = len(re.sub(r"[^A-Z]", "", spoken_expanded))
-    
+
     weight = max(2.2, vowels * 1.55 + letters * 0.28 + (digits * 1.4) + (units_found * 1.8))
-    
+
     if raw_punct in ".!?":
         weight += 3.0
     elif raw_punct in ",;:":
         weight += 1.4
     return weight
+
+_UNIT_BOND_TOKENS = {
+    "W", "WATT", "WATTS", "INCH", "INCI", "HZ", "KHZ", "MHZ", "GHZ",
+    "FPS", "MAH", "GB", "TB", "MB", "MP", "MPX", "MEGAPIXEL", "MEGAPIXELS",
+    "MEGAPIKSEL", "NITS", "NIT", "MM", "GRAM", "GRAMS", "GEN"
+}
 
 def split_clause_into_2_3_words(clause_text):
     words = [w.strip() for w in clause_text.split() if w.strip()]
@@ -1521,7 +1649,11 @@ def split_clause_into_2_3_words(clause_text):
             break
         else:
             cand_3 = " ".join(words[idx:idx + 3])
-            if len(cand_3) <= 17 and not re.search(r"\d+.*?\d+", cand_3):
+            third_bare = re.sub(r"[^a-zA-Z0-9.,]", "", words[idx + 2])
+            fourth_bare = re.sub(r"[^a-zA-Z]", "", words[idx + 3]).upper() if (idx + 3) < n else ""
+            splits_num_unit = bool(re.match(r"^\d+(?:[.,]\d+)?$", third_bare)) and (fourth_bare in _UNIT_BOND_TOKENS)
+            # Pisahkan hanya jika ada >= 2 angka terpisah atau berisiko memutus angka + satuannya (mis. "120" | "watt")
+            if (not splits_num_unit) and len(cand_3) <= 17 and not re.search(r"\d+(?:[.,]\d+)?\s+\S*\d+", cand_3):
                 chunks.append(cand_3)
                 idx += 3
             else:
@@ -1551,14 +1683,143 @@ def format_srt_time(seconds):
     h, m = divmod(m, 60)
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
-def analyze_wav_scenes_and_build_subtitles(chapters_with_scenes, wav_path, ass_path, srt_backup_path, sync_json_path=None):
+def _dp_align_speech_boundaries(valleys, weights, start_s, end_s, cum_speech, total_speech_units, num_win, is_chapter_level=False):
+    """
+    Dynamic Programming global untuk menyelaraskan seluruh batas Bab / Sub-Adegan / Kalimat
+    ke lembah jeda hening paling akurat tanpa pergeseran kumulatif.
+    """
+    K = len(weights)
+    if K <= 1:
+        return [start_s, end_s]
+
+    def _u_at(sec):
+        idx = min(num_win - 1, max(0, int(round(sec / 0.01))))
+        return float(cum_speech[idx])
+
+    def _frac_to_t(f):
+        idx = int(np.searchsorted(cum_speech, np.clip(f, 0.0, 1.0) * total_speech_units))
+        return min(num_win - 1, max(0, idx)) * 0.01
+
+    f_start = _u_at(start_s) / total_speech_units
+    f_end = max(f_start + 1e-4, _u_at(end_s) / total_speech_units)
+    span_f = f_end - f_start
+    span_dur_speech = max(0.5, span_f * total_speech_units * 0.01)
+
+    tot_w = max(1.0, sum(weights))
+    target_cum_fracs, cw = [], 0.0
+    for k in range(K - 1):
+        cw += weights[k]
+        target_cum_fracs.append(cw / tot_w)
+    target_seg_fracs = [w / tot_w for w in weights]
+
+    wall_span = max(0.5, end_s - start_s)
+    base_min = 2.0 if is_chapter_level else 0.85
+    min_seg_s = min(base_min, max(0.35, wall_span / (K * 2.3)))
+
+    cand_points = [
+        (v["mid_s"], v["dur_s"])
+        for v in valleys
+        if (start_s + min_seg_s * 0.8) <= v["mid_s"] <= (end_s - min_seg_s * 0.8)
+    ]
+    for ef in target_cum_fracs:
+        es = _frac_to_t(f_start + ef * span_f)
+        if not any(abs(p[0] - es) < 0.35 for p in cand_points):
+            cand_points.append((es, 0.0))
+    cand_points.sort(key=lambda x: x[0])
+
+    pts = []
+    for t_s, v_dur in cand_points:
+        rel_f = ((_u_at(t_s) / total_speech_units) - f_start) / span_f
+        if is_chapter_level:
+            if v_dur >= 0.55:
+                p_bonus = 4.6 + min(1.5, (v_dur - 0.55) * 2.0)
+            elif v_dur >= 0.38:
+                p_bonus = 3.2 + (v_dur - 0.38) * 6.0
+            elif v_dur >= 0.22:
+                p_bonus = 1.6 + (v_dur - 0.22) * 5.0
+            elif v_dur >= 0.08:
+                p_bonus = 0.2 + (v_dur - 0.08) * 4.0
+            else:
+                p_bonus = -1.0
+        else:
+            if v_dur >= 0.28:
+                p_bonus = 2.4 + min(1.0, (v_dur - 0.28) * 2.5)
+            elif v_dur >= 0.14:
+                p_bonus = 1.4 + (v_dur - 0.14) * 4.0
+            elif v_dur >= 0.07:
+                p_bonus = 0.5 + (v_dur - 0.07) * 5.0
+            else:
+                p_bonus = -0.35
+        pts.append((t_s, rel_f, v_dur, p_bonus))
+
+    M = len(pts)
+    if M < K - 1:
+        return [start_s] + [_frac_to_t(f_start + ef * span_f) for ef in target_cum_fracs] + [end_s]
+
+    INF = 1e9
+    dp = [[INF] * M for _ in range(K - 1)]
+    parent = [[-1] * M for _ in range(K - 1)]
+    max_cum_dev = max(4.2, span_dur_speech * 0.35)
+
+    for i in range(M):
+        t_s, rel_f, _, p_bonus = pts[i]
+        if (t_s - start_s) < min_seg_s:
+            continue
+        cum_err = abs(rel_f - target_cum_fracs[0]) * span_dur_speech
+        seg_err = abs(rel_f - target_seg_fracs[0]) * span_dur_speech
+        if cum_err <= max_cum_dev:
+            dp[0][i] = (cum_err * 0.75 + seg_err * 1.25) - p_bonus
+
+    for b in range(1, K - 1):
+        for i in range(M):
+            t_s, rel_f, _, p_bonus = pts[i]
+            cum_err = abs(rel_f - target_cum_fracs[b]) * span_dur_speech
+            if cum_err > max_cum_dev:
+                continue
+            best_val, best_j = INF, -1
+            for j in range(i):
+                if dp[b - 1][j] >= INF or (t_s - pts[j][0]) < min_seg_s:
+                    continue
+                seg_frac = rel_f - pts[j][1]
+                if seg_frac <= 0.015:
+                    continue
+                seg_err = abs(seg_frac - target_seg_fracs[b]) * span_dur_speech
+                cost = dp[b - 1][j] + (cum_err * 0.75 + seg_err * 1.35) - p_bonus
+                if cost < best_val:
+                    best_val, best_j = cost, j
+            dp[b][i] = best_val
+            parent[b][i] = best_j
+
+    best_total, last_i = INF, -1
+    for i in range(M):
+        if dp[K - 2][i] >= INF:
+            continue
+        t_s, rel_f, _, _ = pts[i]
+        if (end_s - t_s) < min_seg_s:
+            continue
+        last_seg_err = abs((1.0 - rel_f) - target_seg_fracs[K - 1]) * span_dur_speech
+        tot_cost = dp[K - 2][i] + last_seg_err * 1.35
+        if tot_cost < best_total:
+            best_total, last_i = tot_cost, i
+
+    if last_i == -1:
+        return [start_s] + [_frac_to_t(f_start + ef * span_f) for ef in target_cum_fracs] + [end_s]
+
+    chosen_idx = [0] * (K - 1)
+    curr = last_i
+    for b in range(K - 2, -1, -1):
+        chosen_idx[b] = curr
+        curr = parent[b][curr]
+    return [start_s] + [pts[idx][0] for idx in chosen_idx] + [end_s]
+
+def analyze_wav_scenes_and_build_subtitles(chapters_with_scenes, wav_path, ass_path, srt_backup_path, sync_json_path=None, lang="id"):
     """
     Smart Acoustic Scene Aligner:
-    1. Mendeteksi Major Valleys (>= 80ms hening) untuk batas antar-Bab dan Micro Valleys (>= 30ms hening / lembah energi RMS lokal)
-       untuk batas antar Sub-Adegan di dalam Bab.
-    2. Menyusun chunk subtitle 2-3 kata di dalam setiap Sub-Adegan sehingga TIDAK ADA subtitle yang menyeberangi batas adegan.
-    3. Jika sebuah Sub-Adegan berdurasi > 3.15s, membaginya menjadi 2 cut visual yang titik potongnya DIKUNCI PERSIS
-       pada jeda di antara dua chunk subtitle 2-3 kata (tidak pernah memotong di tengah kata/subtitle).
+    1. Mendeteksi Major Valleys (>= 80ms hening) untuk batas antar-Bab dan Micro Valleys (>= 30ms hening)
+       untuk batas antar Sub-Adegan dan antar-kalimat dengan Dynamic Programming global (tanpa pergeseran kumulatif).
+    2. Menyusun chunk subtitle 2-3 kata di dalam setiap Sub-Adegan sesuai bobot pelafalan bahasa aktif (id/en)
+       serta mengunci transisi ke jeda mikro antar-kata agar 100% sinkron dengan Voice Over.
+    3. Membagi Sub-Adegan menjadi N cut visual yang terkunci persis pada batas selesai chunk subtitle.
     """
     with wave.open(wav_path, "rb") as wf:
         sr = wf.getframerate()
@@ -1580,8 +1841,6 @@ def analyze_wav_scenes_and_build_subtitles(chapters_with_scenes, wav_path, ass_p
     thresh = max(90.0, noise_floor + (peak_val - noise_floor) * 0.075)
     is_speech = (rms > thresh).astype(np.int32)
 
-    # Jembatani celah mikro <= 30ms agar plosif konsonan tidak salah dianggap jeda kalimat,
-    # tetapi biarkan jeda >= 40ms tetap terlihat untuk deteksi Micro Valley antar-klausa adegan
     last_on = -100
     for i in range(num_win):
         if is_speech[i] == 1:
@@ -1593,7 +1852,6 @@ def analyze_wav_scenes_and_build_subtitles(chapters_with_scenes, wav_path, ass_p
     first_speech_idx = int(speech_indices[0]) if len(speech_indices) > 0 else 0
     last_speech_idx = int(speech_indices[-1]) if len(speech_indices) > 0 else num_win - 1
 
-    # JANGAN PERNAH memotong durasi di bawah panjang audio asli (hapus batas min 59.5s agar CTA di akhir 100% utuh!)
     last_speech_sec = (last_speech_idx + 1) * 0.01
     target_final_dur = max(audio_dur + 0.55, last_speech_sec + 0.80)
 
@@ -1613,8 +1871,7 @@ def analyze_wav_scenes_and_build_subtitles(chapters_with_scenes, wav_path, ass_p
                     "start_s": sil_start * 0.01,
                     "end_s": i * 0.01,
                     "mid_s": ((sil_start + i) / 2.0) * 0.01,
-                    "dur_s": sil_len * 0.01,
-                    "used": False
+                    "dur_s": sil_len * 0.01
                 }
                 if sil_len >= 8:
                     major_valleys.append(v_obj)
@@ -1623,7 +1880,8 @@ def analyze_wav_scenes_and_build_subtitles(chapters_with_scenes, wav_path, ass_p
                     micro_valleys.append(v_obj)
                 in_sil = False
 
-    active_weights = np.where(is_speech == 1, 1.0, 0.10)
+    # Hitung murni frame vokal aktif agar jeda hening panjang di tengah kalimat tidak menggeser bobot kumulatif
+    active_weights = np.where(is_speech == 1, 1.0, 0.0)
     active_weights[:first_speech_idx] = 0.0
     if last_speech_idx + 1 < num_win:
         active_weights[last_speech_idx + 1:] = 0.0
@@ -1639,54 +1897,15 @@ def analyze_wav_scenes_and_build_subtitles(chapters_with_scenes, wav_path, ass_p
         idx = min(num_win - 1, max(0, int(round(sec / 0.01))))
         return float(cum_speech[idx]) / total_speech_units
 
-    def find_local_rms_dip(expected_s, min_s, max_s):
-        """Mencari titik energi suara terendah (lembah mikro antar-kata) jika pembicara menyambung klausa tanpa jeda panjang."""
-        lo = max(0, int(round(max(min_s, expected_s - 0.55) / 0.01)))
-        hi = min(num_win - 1, int(round(min(max_s, expected_s + 0.55) / 0.01)))
-        if hi <= lo + 2:
-            return max(min_s, min(max_s, expected_s))
-        window_rms = rms[lo:hi + 1]
-        norm_rms = window_rms / max(1.0, float(np.max(window_rms)))
-        idxs = np.arange(lo, hi + 1) * 0.01
-        dist_pen = np.abs(idxs - expected_s) * 0.55
-        best_local = int(np.argmin(norm_rms + dist_pen))
-        return (lo + best_local) * 0.01
-
-    # Tahap A: Kunci batas waktu eksak antar 6 Bab menggunakan Major Valleys
+    # Tahap A: Kunci batas waktu eksak antar 6 Bab secara global via DP
     chapter_scripts = [c["script"] for c in chapters_with_scenes]
-    chap_weights = [estimate_spoken_weight(cs, ".") for cs in chapter_scripts]
-    total_chap_w = max(1.0, sum(chap_weights))
+    chap_weights = [estimate_spoken_weight(cs, ".", lang=lang) for cs in chapter_scripts]
+    chap_boundaries = _dp_align_speech_boundaries(
+        major_valleys, chap_weights, 0.0, target_final_dur,
+        cum_speech, total_speech_units, num_win, is_chapter_level=True
+    )
 
-    chap_boundaries = [0.0]
-    cum_cw = 0.0
-    for b_idx in range(len(chapter_scripts) - 1):
-        cum_cw += chap_weights[b_idx]
-        exp_frac = cum_cw / total_chap_w
-        exp_sec = speech_fraction_to_time(exp_frac)
-        prev_bound = chap_boundaries[-1]
-
-        best_v = None
-        best_score = 999.0
-        for v in major_valleys:
-            if v["used"] or v["mid_s"] <= (prev_bound + 2.8):
-                continue
-            dist = abs(v["mid_s"] - exp_sec)
-            if dist <= 2.2:
-                score = dist - (v["dur_s"] * 1.6)
-                if score < best_score:
-                    best_score = score
-                    best_v = v
-
-        if best_v is not None:
-            best_v["used"] = True
-            chap_boundaries.append(best_v["mid_s"])
-        else:
-            dip_s = find_local_rms_dip(exp_sec, prev_bound + 2.8, target_final_dur - 2.5)
-            chap_boundaries.append(dip_s)
-
-    chap_boundaries.append(target_final_dur)
-
-    # Tahap B: Di dalam setiap Bab, kunci batas waktu eksak per Sub-Adegan dan bangun Subtitle + Visual Cuts yang terkunci
+    # Tahap B: Kunci batas waktu Sub-Adegan & bangun Subtitle + Visual Cuts terkunci
     timed_subtitles = []
     all_visual_cuts = []
     sync_report = []
@@ -1698,95 +1917,98 @@ def analyze_wav_scenes_and_build_subtitles(chapters_with_scenes, wav_path, ass_p
         if not scenes:
             continue
 
-        # Hitung batas waktu tiap Sub-Adegan di dalam Bab ini
         sc_weights = [
-            estimate_spoken_weight(sc["script"], sc["script"][-1] if sc["script"] and sc["script"][-1] in ".!?,;:" else ",")
+            estimate_spoken_weight(
+                sc["script"],
+                sc["script"][-1] if sc["script"] and sc["script"][-1] in ".!?,;:" else ",",
+                lang=lang
+            )
             for sc in scenes
         ]
-        tot_sc_w = max(1.0, sum(sc_weights))
-        chap_f0 = time_to_speech_fraction(c_win_start)
-        chap_f1 = max(chap_f0 + 0.001, time_to_speech_fraction(c_win_end))
+        scene_boundaries = _dp_align_speech_boundaries(
+            micro_valleys, sc_weights, c_win_start, c_win_end,
+            cum_speech, total_speech_units, num_win, is_chapter_level=False
+        )
 
-        scene_boundaries = [c_win_start]
-        cum_sw = 0.0
-        for s_idx in range(len(scenes) - 1):
-            cum_sw += sc_weights[s_idx]
-            exp_sf = chap_f0 + (chap_f1 - chap_f0) * (cum_sw / tot_sc_w)
-            exp_s_sec = speech_fraction_to_time(exp_sf)
-            prev_s_bound = scene_boundaries[-1]
-            min_allowed = prev_s_bound + 1.45
-            max_allowed = c_win_end - 1.35
-
-            best_sv = None
-            best_sscore = 999.0
-            for mv in micro_valleys:
-                if mv["used"] or mv["mid_s"] < min_allowed or mv["mid_s"] > max_allowed:
-                    continue
-                dist = abs(mv["mid_s"] - exp_s_sec)
-                if dist <= 1.15:
-                    score = dist - (mv["dur_s"] * 1.4)
-                    if score < best_sscore:
-                        best_sscore = score
-                        best_sv = mv
-
-            if best_sv is not None:
-                best_sv["used"] = True
-                scene_boundaries.append(best_sv["mid_s"])
-            else:
-                dip_sec = find_local_rms_dip(exp_s_sec, min_allowed, max_allowed)
-                scene_boundaries.append(dip_sec)
-
-        scene_boundaries.append(c_win_end)
-
-        # Tahap C: Untuk setiap Sub-Adegan, bangun chunk subtitle 2-3 kata dan tentukan titik potong visual (cut)
+        # Tahap C: Sub-Adegan -> Kalimat -> Chunk 2-3 kata + snap ke micro-valley antar-kata
         for s_idx, sc_obj in enumerate(scenes):
             sc_start = scene_boundaries[s_idx]
             sc_end = scene_boundaries[s_idx + 1]
             sc_dur = max(0.5, sc_end - sc_start)
 
-            i0 = max(0, int(round(sc_start / 0.01)))
-            i1 = min(num_win - 1, int(round(sc_end / 0.01)))
-            local_speech = np.where(is_speech[i0:i1 + 1] == 1)[0]
-            if len(local_speech) > 0:
-                sp_start = max(sc_start, (i0 + int(local_speech[0])) * 0.01)
-                sp_end = min(sc_end - 0.02, (i0 + int(local_speech[-1]) + 1) * 0.01)
-                if sp_end <= sp_start + 0.15:
-                    sp_start = sc_start + 0.03
-                    sp_end = max(sp_start + 0.25, sc_end - 0.03)
-            else:
-                sp_start = sc_start + 0.03
-                sp_end = max(sp_start + 0.25, sc_end - 0.03)
-
             clean_sc_text = sanitize_subtitle_text(sc_obj.get("script", ""))
-            punct = clean_sc_text[-1] if clean_sc_text and clean_sc_text[-1] in ".!?,;:" else ""
-            ch_list = split_clause_into_2_3_words(clean_sc_text)
-            if not ch_list:
-                ch_list = [clean_sc_text or chap_obj["title"]]
-            ch_weights = [
-                estimate_spoken_weight(ch, punct if j == len(ch_list) - 1 else "")
-                for j, ch in enumerate(ch_list)
-            ]
-
-            f_s = time_to_speech_fraction(sp_start)
-            f_e = max(f_s + 0.0005, time_to_speech_fraction(sp_end))
-            tot_w = max(1.0, sum(ch_weights))
-            loc_w = 0.0
+            sub_sents = [p.strip() for p in re.split(r"(?<=[.!?])\s+(?=[A-Z0-9])", clean_sc_text) if p.strip()]
+            if len(sub_sents) > 1:
+                sent_weights = [
+                    estimate_spoken_weight(p, p[-1] if p[-1] in ".!?,;:" else ".", lang=lang)
+                    for p in sub_sents
+                ]
+                sent_bounds = _dp_align_speech_boundaries(
+                    micro_valleys, sent_weights, sc_start, sc_end,
+                    cum_speech, total_speech_units, num_win, is_chapter_level=False
+                )
+            else:
+                sub_sents = [clean_sc_text or chap_obj["title"]]
+                sent_bounds = [sc_start, sc_end]
 
             scene_sub_items = []
-            for j_idx, (ch_str, cw) in enumerate(zip(ch_list, ch_weights)):
-                cf0 = f_s + (f_e - f_s) * (loc_w / tot_w)
-                loc_w += cw
-                cf1 = f_s + (f_e - f_s) * (loc_w / tot_w)
+            for sk, sent_txt in enumerate(sub_sents):
+                p_start = sent_bounds[sk]
+                p_end = sent_bounds[sk + 1]
+                i0 = max(0, int(round(p_start / 0.01)))
+                i1 = min(num_win - 1, int(round(p_end / 0.01)))
+                local_speech = np.where(is_speech[i0:i1 + 1] == 1)[0]
+                if len(local_speech) > 0:
+                    sp_start = max(p_start, (i0 + int(local_speech[0])) * 0.01)
+                    sp_end = min(p_end - 0.02, (i0 + int(local_speech[-1]) + 1) * 0.01)
+                    if sp_end <= sp_start + 0.15:
+                        sp_start = p_start + 0.03
+                        sp_end = max(sp_start + 0.25, p_end - 0.03)
+                else:
+                    sp_start = p_start + 0.03
+                    sp_end = max(sp_start + 0.25, p_end - 0.03)
 
-                t0 = sp_start if j_idx == 0 else speech_fraction_to_time(cf0)
-                t1 = sp_end if j_idx == len(ch_list) - 1 else speech_fraction_to_time(cf1)
-                t0 = max(sp_start, t0)
-                t1 = max(t0 + 0.13, min(sp_end, t1))
+                punct = sent_txt[-1] if sent_txt and sent_txt[-1] in ".!?,;:" else ""
+                ch_list = split_clause_into_2_3_words(sent_txt) or [sent_txt]
+                ch_weights = [
+                    estimate_spoken_weight(ch, punct if j == len(ch_list) - 1 else "", lang=lang)
+                    for j, ch in enumerate(ch_list)
+                ]
 
-                disp = re.sub(r"[.!?,;:]+$", "", ch_str).strip().upper()
-                if disp:
-                    scene_sub_items.append((t0, t1, disp))
-                    timed_subtitles.append((t0, t1, disp))
+                f_s = time_to_speech_fraction(sp_start)
+                f_e = max(f_s + 0.0005, time_to_speech_fraction(sp_end))
+                tot_w = max(1.0, sum(ch_weights))
+
+                chunk_bounds = [sp_start]
+                acc_w = 0.0
+                for j_idx in range(len(ch_list) - 1):
+                    acc_w += ch_weights[j_idx]
+                    pred_t = speech_fraction_to_time(f_s + (f_e - f_s) * (acc_w / tot_w))
+                    min_next = chunk_bounds[-1] + 0.15
+                    max_next = sp_end - 0.15 * (len(ch_list) - 1 - j_idx)
+                    snapped_t = pred_t
+                    best_snap = None
+                    for mv in micro_valleys:
+                        if mv["mid_s"] < min_next or mv["mid_s"] > max_next:
+                            continue
+                        d = abs(mv["mid_s"] - pred_t)
+                        if d <= 0.14:
+                            score = d - mv["dur_s"] * 0.5
+                            if best_snap is None or score < best_snap[0]:
+                                best_snap = (score, mv["mid_s"])
+                    if best_snap is not None:
+                        snapped_t = best_snap[1]
+                    snapped_t = max(min_next, min(max_next if max_next >= min_next else min_next, snapped_t))
+                    chunk_bounds.append(snapped_t)
+                chunk_bounds.append(max(chunk_bounds[-1] + 0.13, sp_end))
+
+                for j_idx, ch_str in enumerate(ch_list):
+                    t0 = chunk_bounds[j_idx]
+                    t1 = chunk_bounds[j_idx + 1]
+                    disp = re.sub(r"[.!?,;:]+$", "", ch_str).strip().upper()
+                    if disp:
+                        scene_sub_items.append((t0, t1, disp))
+                        timed_subtitles.append((t0, t1, disp))
 
             # Penentuan Cut Visual Cerdas di dalam Sub-Adegan:
             # Bagi Sub-Adegan menjadi N cut visual (target ~1.8s - 2.8s per cut) di mana setiap titik pergantian cut
@@ -2116,11 +2338,109 @@ def has_cropped_or_floating_static_text(frames_bgr):
 
     return False
 
+def has_side_by_side_dual_phones(frame_or_frames):
+    """
+    Mendeteksi frame perbandingan 2 handphone berdampingan secara ketat:
+    - Mengembalikan True hanya jika terdapat >= 2 siluet/layar HP persegi panjang besar
+      terpisah di kiri dan kanan frame dengan celah pemisah vertikal nyata, DAN tidak berada di dalam 1 kontur bodi tunggal.
+    """
+    frames = frame_or_frames if isinstance(frame_or_frames, (list, tuple)) else [frame_or_frames]
+    dual_hits = 0
+    valid_cnt = 0
+
+    for fr in frames:
+        if fr is None or getattr(fr, "size", 0) == 0:
+            continue
+        valid_cnt += 1
+        sm = cv2.resize(fr, (270, 480), interpolation=cv2.INTER_AREA)
+        h, w = sm.shape[:2]
+        roi = sm[int(h * 0.12):int(h * 0.88), :]
+        rh, rw = roi.shape[:2]
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        blur = cv2.GaussianBlur(gray, (5, 5), 0)
+
+        edges = cv2.Canny(blur, 45, 130)
+        k_close = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 9))
+        closed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, k_close)
+        edge_contours, _ = cv2.findContours(closed_edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Catat kontur pembungkus besar (1 HP tunggal lebar) agar tampilan split UI dalam 1 layar tidak salah ditandai
+        outer_single_boxes = []
+        for oc in edge_contours:
+            ox, oy, ow, oh = cv2.boundingRect(oc)
+            if ow >= int(rw * 0.50) and oh >= int(rh * 0.45):
+                outer_single_boxes.append((ox, oy, ox + ow, oy + oh))
+
+        _, bright_mask = cv2.threshold(blur, 155, 255, cv2.THRESH_BINARY)
+        _, dark_mask = cv2.threshold(blur, 75, 255, cv2.THRESH_BINARY_INV)
+        k_obj = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        cand_lists = [(edge_contours, False)]
+        for m in (bright_mask, dark_mask):
+            m_clean = cv2.morphologyEx(m, cv2.MORPH_OPEN, k_obj)
+            m_clean = cv2.morphologyEx(m_clean, cv2.MORPH_CLOSE, k_close)
+            cs, _ = cv2.findContours(m_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            cand_lists.append((cs, True))
+
+        found_dual = False
+        for cs, check_enclosing in cand_lists:
+            boxes = []
+            for cnt in cs:
+                x, y, bw, bh = cv2.boundingRect(cnt)
+                if bw < int(rw * 0.18) or bw > int(rw * 0.47) or bh < int(rh * 0.34):
+                    continue
+                aspect = bh / float(max(1, bw))
+                if not (1.25 <= aspect <= 3.6):
+                    continue
+                solidity = cv2.contourArea(cnt) / float(max(1, bw * bh))
+                if solidity < 0.65:
+                    continue
+                boxes.append((x, y, bw, bh, x + bw / 2.0))
+
+            for i in range(len(boxes)):
+                for j in range(i + 1, len(boxes)):
+                    x1, y1, w1, h1, cx1 = boxes[i]
+                    x2, y2, w2, h2, cx2 = boxes[j]
+                    if x1 > x2:
+                        x1, y1, w1, h1, cx1, x2, y2, w2, h2, cx2 = x2, y2, w2, h2, cx2, x1, y1, w1, h1, cx1
+                    if (x2 - (x1 + w1)) < int(rw * 0.025):
+                        continue
+                    if cx1 > rw * 0.47 or cx2 < rw * 0.53:
+                        continue
+                    y_ov = max(0, min(y1 + h1, y2 + h2) - max(y1, y2))
+                    if y_ov < 0.62 * min(h1, h2):
+                        continue
+                    if (min(h1, h2) / float(max(h1, h2))) < 0.68:
+                        continue
+                    if check_enclosing:
+                        uy0, uy1 = min(y1, y2), max(y1 + h1, y2 + h2)
+                        ux0, ux1 = x1, x2 + w2
+                        inside_one = any(
+                            ox0 <= ux0 + 4 and ox1 >= ux1 - 4 and oy0 <= uy0 + 6 and oy1 >= uy1 - 6
+                            for ox0, oy0, ox1, oy1 in outer_single_boxes
+                        )
+                        if inside_one:
+                            continue
+                    found_dual = True
+                    break
+                if found_dual:
+                    break
+            if found_dual:
+                break
+
+        if found_dual:
+            dual_hits += 1
+
+    if valid_cnt == 0:
+        return False
+    needed = 1 if valid_cnt == 1 else max(2, (valid_cnt + 1) // 2)
+    return dual_hits >= needed
+
 def verify_clip_100pct_face_free(clip_path, detector, step=3, is_camera_chap=False):
     """
     Memindai file klip MP4 yang sudah dipotong untuk menjamin:
     - 0% frame wajah (YuNet ONNX)
     - 0% animasi tombol Subscribe YouTube
+    - Bukan adegan perbandingan 2 handphone berdampingan dalam 1 frame
     - Bukan gambar statis / foto diam maupun potongan teks statis mengambang jika di luar Bab Kamera (`not is_camera_chap`)
     """
     if not os.path.exists(clip_path):
@@ -2146,6 +2466,8 @@ def verify_clip_100pct_face_free(clip_path, detector, step=3, is_camera_chap=Fal
         return False
     if sampled_small and has_animated_subscribe_badge(sampled_small):
         return False
+    if sampled_small and has_side_by_side_dual_phones(sampled_small):
+        return False
     if not is_camera_chap and len(sampled_small) >= 4:
         # Ambil 6 sampel merata dari seluruh durasi klip untuk cek gambar statis & potongan teks mengambang
         pick_idx = np.linspace(0, len(sampled_small) - 1, min(6, len(sampled_small)), dtype=int)
@@ -2160,7 +2482,7 @@ def verify_source_window_clean(video_path, seg_start, exact_dur, detector, sampl
     """
     Memverifikasi segmen kandidat langsung dari video sumber (sebelum dipotong 1080p)
     untuk memastikan 0% frame wajah (YuNet), 0% animasi tombol Subscribe YouTube,
-    dan bebas gambar statis / teks statis terpotong kiri-kanan (untuk bab selain Kamera).
+    bebas 2 handphone berdampingan, dan bebas gambar statis / teks statis terpotong kiri-kanan (untuk bab selain Kamera).
     """
     cap = cv2.VideoCapture(video_path)
     sampled_small = []
@@ -2186,6 +2508,8 @@ def verify_source_window_clean(video_path, seg_start, exact_dur, detector, sampl
     if not is_clean:
         return False
     if sampled_small and has_animated_subscribe_badge(sampled_small):
+        return False
+    if sampled_small and has_side_by_side_dual_phones(sampled_small):
         return False
     if not is_camera_chap and len(sampled_small) >= 4:
         if is_static_still_sequence(sampled_small):
@@ -2235,6 +2559,8 @@ def extract_storyboard_and_hist(video_path, start_s, end_s, detector=None, is_ca
         return None, None
     if has_animated_subscribe_badge(crops):
         return None, None
+    if has_side_by_side_dual_phones(crops):
+        return None, None
     # Tolak otomatis jika gambar statis / foto diam / teks statis terpotong kiri-kanan pada bab SELAIN Kamera!
     if not is_camera_chap:
         if is_static_still_sequence(crops):
@@ -2255,14 +2581,14 @@ def is_visually_duplicate(curr_hist, prev_hists, threshold=0.87):
 
 def check_clean_broll_segment(b64_img, raw_sub, chapter_title, is_camera_chap, api_key, visual_focus="", scene_vo=""):
     if is_camera_chap:
-        # ATURAN KHUSUS BAB KAMERA (JANGAN UBAH!): Wajib meloloskan sampel foto/video, aplikasi kamera, atau modul lensa!
-        cam_rule = "BAB KAMERA: Set is_product_broll = true JIKA gambar menampilkan modul kamera, antarmuka aplikasi kamera, ATAU hasil jepretan foto/video (pemandangan, bangunan, tanaman, objek luar). Jangan tolak pemandangan/objek luar karena itu adalah sampel kamera!"
+        # ATURAN KHUSUS BAB KAMERA: Meloloskan sampel foto/video, aplikasi kamera, atau modul lensa, TAPI tetap melarang 2+ HP perbandingan!
+        cam_rule = "BAB KAMERA: Set is_product_broll = true JIKA gambar menampilkan modul kamera dari SATU (1) HP, antarmuka kamera SATU HP, ATAU hasil jepretan foto/video (pemandangan, bangunan, objek). Jangan tolak pemandangan/objek luar karena itu sampel kamera, NAMUN tetap set has_multiple_phones = true jika membandingkan 2 HP!"
         overlay_rule = "5. has_editor_overlay = true JIKA ada teks besar editor, tabel spesifikasi layar penuh, screenshot marketplace, watermark besar, ATAU animasi tombol Subscribe/Like/Lonceng YouTube."
         static_rule = "6. is_static_image = false (khusus Bab Kamera, sampel foto statis/jepretan kamera DIPERBOLEHKAN penuh)."
     else:
         cam_rule = (
-            "WAJIB FISIK UNIT HP (NON-KAMERA): Set is_product_broll = true HANYA JIKA di kelima frame TERLIHAT JELAS "
-            "FISIK BINGKAI/BODI/LAYAR UNIT HANDPHONE (dipegang tangan, di atas meja, atau sedang dites fisiknya). "
+            "WAJIB FISIK 1 UNIT HP (NON-KAMERA): Set is_product_broll = true HANYA JIKA di kelima frame TERLIHAT JELAS "
+            "FISIK BINGKAI/BODI/LAYAR SATU (1) UNIT HANDPHONE saja (dipegang tangan, di atas meja, atau sedang dites fisiknya). "
             "Set is_product_broll = false JIKA berupa screen-recording/rekaman layar game/video penuh tanpa bingkai fisik HP, "
             "tangan kosong berbicara, meja/ruangan kosong, dus/kabel/charger/case saja tanpa HP, atau grafik benchmark penuh tanpa wujud HP!"
         )
@@ -2290,8 +2616,9 @@ def check_clean_broll_segment(b64_img, raw_sub, chapter_title, is_camera_chap, a
         "4. has_subscribe_popup = true JIKA di SALAH SATU dari 5 frame terdapat animasi tombol SUBSCRIBE YouTube (merah/putih/hitam), ikon lonceng notifikasi, animasi kursor/tangan mengklik tombol Subscribe/Like, pop-up nama channel YouTube, atau banner ajakan Subscribe/Like/Follow yang bergerak masuk.",
         overlay_rule,
         static_rule,
-        "7. reason = alasan singkat 1 kalimat.",
-        "Kembalikan HANYA format JSON murni dengan key: is_product_broll (boolean), has_face (boolean), has_subscribe_popup (boolean), has_editor_overlay (boolean), is_static_image (boolean), reason (string)."
+        "7. has_multiple_phones = true JIKA di SALAH SATU dari 5 frame terlihat 2 UNIT HANDPHONE ATAU LEBIH secara bersamaan (misalnya perbandingan 2 HP berdampingan/sejajar di meja atau tangan, perbandingan layar sebelah-menyebelah, HP lain muncul sebagian di tepi frame, atau kolase HP pembanding). Maksimal HANYA boleh 1 unit handphone (atau 0 HP khusus sampel foto kamera)!",
+        "8. reason = alasan singkat 1 kalimat.",
+        "Kembalikan HANYA format JSON murni dengan key: is_product_broll (boolean), has_face (boolean), has_subscribe_popup (boolean), has_editor_overlay (boolean), is_static_image (boolean), has_multiple_phones (boolean), reason (string)."
     ])
 
     payload = {
@@ -2309,11 +2636,16 @@ SUBSCRIBE_BLACKLIST_KEYWORDS = [
     "link pembelian", "di deskripsi", "cek deskripsi", "giveaway"
 ]
 
+COMPARISON_DEPRIORITIZE_KEYWORDS = [
+    " vs ", "versus", "side by side", "perbandingan", "dibanding", "compare", "kompetitor", "saingannya"
+]
+
 def collect_candidates_for_scene(scene_info, chap_cfg, chap_start_s, chap_end_s, face_free_segs, events, used_windows, total_dur=600.0):
     """
     Mengumpulkan kandidat segmen B-Roll bebas wajah yang paling relevan dengan Sub-Adegan spesifik:
     - Menolak segmen yang berada di zona rawan animasi Subscribe (awal video < 38s atau outro > total_dur - 25s)
       maupun segmen yang transkrip aslinya mengucapkan ajakan Subscribe/Like/Lonceng.
+    - Menurunkan prioritas segmen bertema perbandingan dua HP ('vs', 'perbandingan', 'side by side') ke akhir tiap tier.
     - Tier 1: Berada di zona detik sub-adegan DAN transkrip mengandung kata kunci spesifik sub-adegan.
     - Tier 2: Transkrip mengandung kata kunci sub-adegan ATAU berada di dalam zona detik sub-adegan.
     - Tier 3: Berada di zona detik bab induk atau kata kunci bab induk.
@@ -2354,22 +2686,27 @@ def collect_candidates_for_scene(scene_info, chap_cfg, chap_start_s, chap_end_s,
             in_chap_range = (chap_start_s - 15.0) <= mid_t <= (chap_end_s + 15.0)
             has_sc_kw = any(k in sub_txt for k in sc_kws)
             has_chap_kw = any(k in sub_txt for k in chap_kws)
+            is_cmp = any(ckw in f" {sub_context} " for ckw in COMPARISON_DEPRIORITIZE_KEYWORDS)
 
+            item = (curr, slice_end, is_cmp)
             if in_sc_range and has_sc_kw:
-                tier1_exact.append((curr, slice_end))
+                tier1_exact.append(item)
             elif has_sc_kw or in_sc_range:
-                tier2_scene.append((curr, slice_end))
+                tier2_scene.append(item)
             elif in_chap_range or has_chap_kw:
-                tier3_chap.append((curr, slice_end))
+                tier3_chap.append(item)
             else:
-                tier4_backup.append((curr, slice_end))
+                tier4_backup.append(item)
             curr += 2.3
 
     def downsample(lst, limit):
-        if len(lst) <= limit:
-            return lst
-        idx = np.linspace(0, len(lst) - 1, limit, dtype=int)
-        return [lst[i] for i in idx]
+        clean_first = [(s, e) for s, e, is_cmp in lst if not is_cmp]
+        cmp_last = [(s, e) for s, e, is_cmp in lst if is_cmp]
+        ordered = clean_first + cmp_last
+        if len(ordered) <= limit:
+            return ordered
+        idx = np.linspace(0, len(ordered) - 1, limit, dtype=int)
+        return [ordered[i] for i in idx]
 
     return (
         downsample(tier1_exact, 8)
@@ -2940,7 +3277,7 @@ def _crop_9_16_centered(frame, cx_norm=0.5):
 
 
 def _frame_is_clean_for_thumb(frame_9_16, detector):
-    """Menolak frame gelap, mengandung wajah, atau mengandung animasi subscribe/teks mengganggu."""
+    """Menolak frame gelap, mengandung wajah, animasi subscribe, atau perbandingan 2+ handphone."""
     sm = cv2.resize(frame_9_16, (270, 480), interpolation=cv2.INTER_AREA)
     gray_sm = cv2.cvtColor(sm, cv2.COLOR_BGR2GRAY)
     if float(np.mean(gray_sm)) < 36.0:
@@ -2950,6 +3287,8 @@ def _frame_is_clean_for_thumb(frame_9_16, detector):
         if faces is not None and len(faces) > 0:
             return False
     if has_animated_subscribe_badge([sm]):
+        return False
+    if has_side_by_side_dual_phones([sm]):
         return False
     return True
 
@@ -3106,20 +3445,24 @@ def _gather_source_sample_timestamps(face_free_segs, chapters_with_scenes, total
 
 
 def _vision_pass1_discover_back_phones(pool_items, api_key):
-    """Pass 1: mengirim 1 grid contact sheet seluruh video ke Gemini Vision untuk mencari tampak belakang HP terbaik."""
+    """Pass 1: mengirim 1 grid contact sheet seluruh video ke Gemini Vision untuk mencari tampak belakang 1 HP tunggal terbaik."""
+    if not pool_items:
+        return []
     tiles = [it["tile"] for it in pool_items]
     b64_sheet = _build_numbered_contact_sheet(tiles, cols=6, tile_w=220, tile_h=220, quality=80)
     prompt = (
         f"Look at this numbered contact sheet of {len(pool_items)} video frames from a smartphone review.\n"
-        "Select the TOP 3 frame numbers showing the CLEANEST, FULLEST, UNOBSTRUCTED **BACK SIDE** of the smartphone "
+        "Select UP TO 5 frame numbers showing the CLEANEST, FULLEST, UNOBSTRUCTED **BACK SIDE** of ONLY ONE (1) SINGLE SMARTPHONE "
         "(rear camera bump/lenses & rear panel clearly visible, preferably held upright/vertically in hand or studio table).\n"
-        "STRICTLY AVOID:\n"
+        "CRITICAL ZERO-TOLERANCE RULE:\n"
+        "- STRICTLY REJECT ANY frame showing 2 OR MORE smartphones in the same image (side-by-side comparison shots, stacked phones, another phone in the other hand, or a second phone visible anywhere in the background/foreground edge)! ONLY pick frames with phone_count == 1.\n"
+        "ALSO STRICTLY AVOID:\n"
         "- Front screens showing UI/apps/home screen/benchmarks\n"
         "- Frames showing only a retail box or heavy cardboard clutter\n"
         "- Frames with human faces, big overlaid channel logos, or 'SUBSCRIBE' banners\n"
         "- Extreme cropped close-ups where most of the phone body is cut off.\n\n"
         "Return ONLY valid JSON: "
-        '{"picks": [{"id": <int 1..N>, "cx": <int 0..1000 horizontal center of the phone inside that numbered tile>, "upright": <true|false>}]}.'
+        '{"picks": [{"id": <int 1..N>, "phone_count": 1, "cx": <int 0..1000 horizontal center of the SINGLE phone inside that numbered tile>, "upright": <true|false>}]}.'
     )
     payload = {
         "contents": [{
@@ -3128,7 +3471,7 @@ def _vision_pass1_discover_back_phones(pool_items, api_key):
                 {"inline_data": {"mime_type": "image/jpeg", "data": b64_sheet}}
             ]
         }],
-        "generationConfig": {"responseMimeType": "application/json"}
+        "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"}
     }
     parsed = call_gemini_json(payload, api_key)
     if not isinstance(parsed, dict) or not parsed.get("picks"):
@@ -3137,6 +3480,8 @@ def _vision_pass1_discover_back_phones(pool_items, api_key):
     for p in parsed["picks"]:
         try:
             idx = int(p["id"]) - 1
+            if int(p.get("phone_count", 1)) != 1:
+                continue
             if 0 <= idx < len(pool_items):
                 cx_tile = max(0.0, min(1.0, float(p.get("cx", 500)) / 1000.0))
                 it = pool_items[idx]
@@ -3147,24 +3492,27 @@ def _vision_pass1_discover_back_phones(pool_items, api_key):
                 valid.append((idx, src_cx, bool(p.get("upright", True))))
         except Exception:
             continue
-    return valid[:3]
+    return valid[:5]
 
 
 def _vision_pass2_pick_best_portrait(portrait_candidates, api_key):
-    """Pass 2: mengirim top-9 crop 9:16 portrait resolusi tajam untuk memilih frame final + koordinat batas atas/bawah HP."""
+    """Pass 2: memverifikasi top-9 crop 9:16 portrait resolusi tajam untuk memilih 1 HP tunggal tampak belakang paling bersih."""
     if not portrait_candidates:
         return None
     n = len(portrait_candidates)
     tiles = [cv2.resize(frm, (240, 426), interpolation=cv2.INTER_AREA) for frm in portrait_candidates]
     b64_sheet = _build_numbered_contact_sheet(tiles, cols=3, tile_w=240, tile_h=426, quality=86)
     prompt = (
-        f"These {n} vertical 9:16 portrait frames come from the candidate back-of-phone moments.\n"
-        "Pick the SINGLE BEST photo for a YouTube Shorts thumbnail that shows:\n"
-        "1) The crisp FULL BACK SIDE of the phone vertically/upright with camera lenses on top (NEVER the front screen)\n"
-        "2) Clean uncluttered top background above the phone (~top 25% of frame) so big hook text sits cleanly above the camera bump\n"
-        "3) No face, no ugly subscribe popup, crisp focus and good lighting.\n\n"
-        "Also measure the phone body vertical span inside the chosen frame in 0..1000 scale (0=very top edge, 1000=very bottom edge).\n"
-        'Return ONLY JSON: {"best": <int 1..N>, "phone_top_y": <int 150..500>, "phone_bot_y": <int 600..920>}.'
+        f"These {n} vertical 9:16 portrait frames come from candidate back-of-phone moments.\n"
+        "Inspect EVERY numbered tile carefully and reject ANY tile that contains 2 or more phones (even a partial second phone peeking in from left/right/bottom edge!).\n"
+        "Among tiles containing STRICTLY ONE (1) SINGLE PHONE ONLY, pick the SINGLE BEST photo for a YouTube Shorts thumbnail that shows:\n"
+        "1) EXACTLY ONE smartphone alone in the entire 9:16 frame (NEVER side-by-side comparison, NEVER a second phone anywhere in frame!)\n"
+        "2) The crisp FULL BACK SIDE of that single phone vertically/upright with camera lenses on top (NEVER the front screen)\n"
+        "3) Clean uncluttered top background above the phone (~top 25% of frame) so big hook text sits cleanly above the camera bump\n"
+        "4) No face, no ugly subscribe popup, crisp focus and good lighting.\n\n"
+        "If NO tile satisfies strictly-single-phone + clean back-of-phone, set \"best\": 0!\n"
+        "Also measure the single phone body vertical span inside the chosen frame in 0..1000 scale (0=very top edge, 1000=very bottom edge).\n"
+        'Return ONLY JSON: {"best": <int 0..N>, "rejected_multi_phone_ids": [<int>], "phone_top_y": <int 150..500>, "phone_bot_y": <int 600..920>}.'
     )
     payload = {
         "contents": [{
@@ -3173,17 +3521,26 @@ def _vision_pass2_pick_best_portrait(portrait_candidates, api_key):
                 {"inline_data": {"mime_type": "image/jpeg", "data": b64_sheet}}
             ]
         }],
-        "generationConfig": {"responseMimeType": "application/json"}
+        "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"}
     }
     parsed = call_gemini_json(payload, api_key)
     if not isinstance(parsed, dict) or "best" not in parsed:
         return None
     try:
-        best_idx = int(parsed["best"]) - 1
-        if 0 <= best_idx < n:
+        raw_best = int(parsed["best"])
+        rejected_set = {
+            int(x) - 1
+            for x in (parsed.get("rejected_multi_phone_ids") or [])
+            if str(x).isdigit() and 1 <= int(x) <= n
+        }
+        if raw_best == 0:
+            return -1, 0.25, 0.78, rejected_set
+        best_idx = raw_best - 1
+        if 0 <= best_idx < n and best_idx not in rejected_set:
             top_y = max(0.14, min(0.45, float(parsed.get("phone_top_y", 260)) / 1000.0))
             bot_y = max(0.62, min(0.90, float(parsed.get("phone_bot_y", 780)) / 1000.0))
-            return best_idx, top_y, bot_y
+            return best_idx, top_y, bot_y, rejected_set
+        return -1, 0.25, 0.78, rejected_set
     except Exception:
         pass
     return None
@@ -3193,12 +3550,13 @@ def select_best_thumbnail_frame(all_final_clips, video_path=None, face_free_segs
                                 chapters_with_scenes=None, total_dur=0.0,
                                 detector=None, api_key=None):
     """
-    Memilih frame 1080x1920 terbaik yang menampilkan BAGIAN BELAKANG HP secara VERTIKAL & UTUH:
-    1. Menyapu keseluruhan video sumber (via `face_scan_cache` / `face_free_segs` termasuk bab unboxing/body_ip/camera)
-       sekaligus SEMUA klip akhir (`all_final_clips`), dideduplikasi berdasarkan kemiripan histogram HSV.
-    2. Pass 1 Gemini Vision (6x6 whole-video sheet): menemukan momen back-of-phone terbaik + pusat X HP.
-    3. Pass 2 Gemini Vision (3x3 crop 9:16 HD terpusat di HP): memilih foto paling bersih + koordinat Y atas/bawah HP.
-    4. Fallback lokal: mengutamakan rasio kontur vertikal dan menekan layar UI putih yang menyilaukan.
+    Memilih frame 1080x1920 terbaik yang menampilkan SATU (1) BAGIAN BELAKANG HP secara VERTIKAL & UTUH (anti-perbandingan 2 HP):
+    1. Menyapu klip final terverifikasi Vision (`all_final_clips`) DAN momen bebas wajah di video sumber (`source_video.mp4`),
+       tersaring dari wajah, animasi subscribe, dan perbandingan 2+ HP berdampingan.
+    2. Pass 1 Gemini Vision (6x6 whole-video sheet): menemukan momen 1 HP tunggal terbaik (menolak 2+ HP perbandingan).
+    3. Pass 2 Gemini Vision (3x3 crop 9:16 HD): memverifikasi ulang phone_count == 1 di crop final + koordinat Y atas/bawah HP,
+       dengan 1 putaran rescue otomatis jika putaran pertama tertolak (mis. 2 HP terdeteksi pasca-crop).
+    4. Fallback lokal: memprioritaskan klip B-roll tunggal terverifikasi daripada segmen sumber mentah.
     Returns: (frame_1080x1920, phone_top_y_norm, phone_bot_y_norm)
     """
     raw_pool = []  # item: {kind, path, t_sec, prio, tile, x0, y0, disp_w, disp_h, hist, preview_916, score}
@@ -3219,30 +3577,7 @@ def select_best_thumbnail_frame(all_final_clips, video_path=None, face_free_segs
             "hist": hist, "preview_916": preview_916, "score": sc
         })
 
-    # 1. Sampel dari source_video.mp4 sepanjang face_free_segs (menangkap momen showcase belakangan/awal yang tak terpilih B-Roll)
-    if video_path and os.path.exists(video_path):
-        cap_src = cv2.VideoCapture(video_path)
-        if total_dur <= 0:
-            fps_src = cap_src.get(cv2.CAP_PROP_FPS) or 30.0
-            total_dur = (cap_src.get(cv2.CAP_PROP_FRAME_COUNT) / fps_src) if fps_src > 0 else 0.0
-        timestamps = _gather_source_sample_timestamps(face_free_segs, chapters_with_scenes, total_dur)
-        if not timestamps and total_dur > 40:
-            # Fallback sampling merata jika cache wajah belum ada
-            step_fb = max(6.0, (total_dur - 40.0) / 36.0)
-            t = 22.0
-            while t < total_dur - 15.0:
-                timestamps.append((round(t, 2), 1.0))
-                t += step_fb
-        for t_sec, prio in timestamps:
-            cap_src.set(cv2.CAP_PROP_POS_MSEC, t_sec * 1000.0)
-            ret, frm = cap_src.read()
-            if ret and frm is not None:
-                _try_add_candidate(frm, "source", video_path, t_sec, prio)
-            if len(raw_pool) >= 28:
-                break
-        cap_src.release()
-
-    # 2. Sampel SEMUA final clips agar adegan terpotong terbaik juga ikut dinilai
+    # 1. Sampel dari klip akhir terverifikasi Vision dulu (dijamin 1 HP tunggal bebas perbandingan!) lalu video sumber
     for idx, clip_path in enumerate(all_final_clips or []):
         if not os.path.exists(clip_path):
             continue
@@ -3253,10 +3588,31 @@ def select_best_thumbnail_frame(all_final_clips, video_path=None, face_free_segs
                 cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, int(n_frames * frac)))
                 ret, frm = cap.read()
                 if ret and frm is not None:
-                    _try_add_candidate(frm, "clip", clip_path, frac, 1.15 if idx < 5 else 1.0)
+                    _try_add_candidate(frm, "clip", clip_path, frac, 1.35 if idx < 5 else 1.15)
         cap.release()
-        if len(raw_pool) >= 36:
+        if len(raw_pool) >= 16:
             break
+
+    if video_path and os.path.exists(video_path):
+        cap_src = cv2.VideoCapture(video_path)
+        if total_dur <= 0:
+            fps_src = cap_src.get(cv2.CAP_PROP_FPS) or 30.0
+            total_dur = (cap_src.get(cv2.CAP_PROP_FRAME_COUNT) / fps_src) if fps_src > 0 else 0.0
+        timestamps = _gather_source_sample_timestamps(face_free_segs, chapters_with_scenes, total_dur)
+        if not timestamps and total_dur > 40:
+            step_fb = max(6.0, (total_dur - 40.0) / 36.0)
+            t = 22.0
+            while t < total_dur - 15.0:
+                timestamps.append((round(t, 2), 1.0))
+                t += step_fb
+        for t_sec, prio in timestamps:
+            cap_src.set(cv2.CAP_PROP_POS_MSEC, t_sec * 1000.0)
+            ret, frm = cap_src.read()
+            if ret and frm is not None:
+                _try_add_candidate(frm, "source", video_path, t_sec, prio)
+            if len(raw_pool) >= 48:
+                break
+        cap_src.release()
 
     if not raw_pool:
         if all_final_clips and os.path.exists(all_final_clips[0]):
@@ -3267,83 +3623,101 @@ def select_best_thumbnail_frame(all_final_clips, video_path=None, face_free_segs
                 return _crop_9_16_centered(fr), 0.25, 0.78
         return None, 0.25, 0.78
 
-    # Batasi Pass 1 maksimal 36 kandidat paling beragam
+    def _collect_portraits(sub_pool, picks):
+        cands = []
+        cand_hists = []
+        cap_src = cv2.VideoCapture(video_path) if (video_path and os.path.exists(video_path)) else None
+        any_upright = any(upr for _, _, upr in picks)
+        for pool_idx, cx_norm, upright in picks:
+            it = sub_pool[pool_idx]
+            if it["kind"] == "source" and cap_src is not None:
+                for dt in (-1.2, -0.5, 0.0, 0.5, 1.2):
+                    t_q = max(1.0, it["t_sec"] + dt)
+                    cap_src.set(cv2.CAP_PROP_POS_MSEC, t_q * 1000.0)
+                    ret, raw = cap_src.read()
+                    if not ret or raw is None:
+                        continue
+                    cropped = _crop_9_16_centered(raw, cx_norm=cx_norm)
+                    if not _frame_is_clean_for_thumb(cropped, detector):
+                        continue
+                    h_c = _compute_frame_hist(cropped)
+                    if any(cv2.compareHist(h_c, ex, cv2.HISTCMP_CORREL) > 0.96 for ex in cand_hists):
+                        continue
+                    cands.append(cropped)
+                    cand_hists.append(h_c)
+                    if (not any_upright) and len(cands) < 8:
+                        rot90 = cv2.rotate(raw, cv2.ROTATE_90_CLOCKWISE)
+                        rot_crop = _crop_9_16_centered(rot90, cx_norm=0.5)
+                        if _frame_is_clean_for_thumb(rot_crop, detector):
+                            cands.append(rot_crop)
+                            cand_hists.append(_compute_frame_hist(rot_crop))
+                    if len(cands) >= 9:
+                        break
+            else:
+                cap_c = cv2.VideoCapture(it["path"])
+                nf = int(cap_c.get(cv2.CAP_PROP_FRAME_COUNT))
+                if nf > 0:
+                    for f_frac in (0.25, 0.50, 0.78):
+                        cap_c.set(cv2.CAP_PROP_POS_FRAMES, max(0, int(nf * f_frac)))
+                        ret, raw = cap_c.read()
+                        if ret and raw is not None:
+                            cropped = _crop_9_16_centered(raw, cx_norm=cx_norm)
+                            if _frame_is_clean_for_thumb(cropped, detector):
+                                cands.append(cropped)
+                                if len(cands) >= 9:
+                                    break
+                cap_c.release()
+            if len(cands) >= 9:
+                break
+        if cap_src is not None:
+            cap_src.release()
+        return cands
+
+    # 3. Gemini Vision 2-Pass Selection (+ 1 rescue round jika putaran 1 ditolak karena 2+ HP / layar depan)
     pass1_pool = raw_pool[:36]
-
-    # 3. Gemini Vision 2-Pass Selection
     if api_key:
-        picks = _vision_pass1_discover_back_phones(pass1_pool, api_key)
-        if picks:
-            print(f"      [Thumbnail] Pass 1 menemukan {len(picks)} zona kandidat belakang HP dari {len(pass1_pool)} adegan unik.", flush=True)
-            portrait_cands = []
-            cand_hists = []
-            cap_src = cv2.VideoCapture(video_path) if (video_path and os.path.exists(video_path)) else None
-            any_upright = any(upr for _, _, upr in picks)
-
-            for pool_idx, cx_norm, upright in picks:
-                it = pass1_pool[pool_idx]
-                if it["kind"] == "source" and cap_src is not None:
-                    for dt in (-1.2, -0.5, 0.0, 0.5, 1.2):
-                        t_q = max(1.0, it["t_sec"] + dt)
-                        cap_src.set(cv2.CAP_PROP_POS_MSEC, t_q * 1000.0)
-                        ret, raw = cap_src.read()
-                        if not ret or raw is None:
-                            continue
-                        cropped = _crop_9_16_centered(raw, cx_norm=cx_norm)
-                        if not _frame_is_clean_for_thumb(cropped, detector):
-                            continue
-                        h_c = _compute_frame_hist(cropped)
-                        if any(cv2.compareHist(h_c, ex, cv2.HISTCMP_CORREL) > 0.96 for ex in cand_hists):
-                            continue
-                        portrait_cands.append(cropped)
-                        cand_hists.append(h_c)
-                        if (not any_upright) and len(portrait_cands) < 8:
-                            rot90 = cv2.rotate(raw, cv2.ROTATE_90_CLOCKWISE)
-                            rot_crop = _crop_9_16_centered(rot90, cx_norm=0.5)
-                            if _frame_is_clean_for_thumb(rot_crop, detector):
-                                portrait_cands.append(rot_crop)
-                                cand_hists.append(_compute_frame_hist(rot_crop))
-                        if len(portrait_cands) >= 9:
-                            break
-                else:
-                    cap_c = cv2.VideoCapture(it["path"])
-                    nf = int(cap_c.get(cv2.CAP_PROP_FRAME_COUNT))
-                    if nf > 0:
-                        for f_frac in (0.25, 0.50, 0.78):
-                            cap_c.set(cv2.CAP_PROP_POS_FRAMES, max(0, int(nf * f_frac)))
-                            ret, raw = cap_c.read()
-                            if ret and raw is not None:
-                                cropped = _crop_9_16_centered(raw, cx_norm=cx_norm)
-                                if _frame_is_clean_for_thumb(cropped, detector):
-                                    portrait_cands.append(cropped)
-                                    if len(portrait_cands) >= 9:
-                                        break
-                    cap_c.release()
-                if len(portrait_cands) >= 9:
-                    break
-
-            if cap_src is not None:
-                cap_src.release()
-
-            if portrait_cands:
-                res_p2 = _vision_pass2_pick_best_portrait(portrait_cands[:9], api_key)
-                if res_p2 is not None:
-                    b_idx, top_y, bot_y = res_p2
+        rejected_pool_idxs = set()
+        for attempt_round in range(2):
+            active_idxs = [i for i in range(len(raw_pool)) if i not in rejected_pool_idxs][:36]
+            if not active_idxs:
+                break
+            sub_pool = [raw_pool[i] for i in active_idxs]
+            picks = _vision_pass1_discover_back_phones(sub_pool, api_key)
+            if not picks:
+                break
+            print(f"      [Thumbnail] Pass 1 (putaran {attempt_round + 1}) menemukan {len(picks)} zona kandidat 1-HP belakang dari {len(sub_pool)} adegan unik.", flush=True)
+            portrait_cands = _collect_portraits(sub_pool, picks)
+            if not portrait_cands:
+                rejected_pool_idxs.update(active_idxs[p[0]] for p in picks)
+                continue
+            res_p2 = _vision_pass2_pick_best_portrait(portrait_cands[:9], api_key)
+            if res_p2 is not None:
+                b_idx, top_y, bot_y, rejected_local = res_p2
+                if 0 <= b_idx < len(portrait_cands):
                     print(f"      [Thumbnail] Pass 2 memilih portrait #{b_idx + 1} (span HP: {int(top_y*100)}%..{int(bot_y*100)}%).", flush=True)
                     return portrait_cands[b_idx], top_y, bot_y
-                # Jika Pass 2 gagal, pakai heuristik di antara kandidat Pass 1!
-                best_cand = max(portrait_cands, key=lambda c: _heuristic_back_phone_score(c, 1.0))
+                # Jika semua ditolak Pass 2 (mis. ada 2 HP terdeteksi pasca-crop), kecualikan zona ini dan coba putaran rescue
+                print("      [!] Pass 2 menolak kandidat (terdeteksi 2+ HP / bukan belakang HP tunggal) -> Mencari zona alternatif...", flush=True)
+                rejected_pool_idxs.update(active_idxs[p[0]] for p in picks)
+                continue
+            valid_cands = [c for ci, c in enumerate(portrait_cands[:9])]
+            if valid_cands:
+                best_cand = max(valid_cands, key=lambda c: _heuristic_back_phone_score(c, 1.0))
                 return best_cand, 0.25, 0.78
 
-    # 4. Fallback heuristik penuh tanpa AI
-    best_item = max(pass1_pool, key=lambda x: x["score"])
+    # 4. Fallback heuristik penuh tanpa AI (prioritaskan klip B-roll tunggal terverifikasi)
+    verified_clips = [x for x in raw_pool if x["kind"] == "clip"]
+    fallback_pool = verified_clips if verified_clips else pass1_pool
+    best_item = max(fallback_pool, key=lambda x: x["score"])
     if best_item["kind"] == "source" and video_path and os.path.exists(video_path):
         cap_src = cv2.VideoCapture(video_path)
         cap_src.set(cv2.CAP_PROP_POS_MSEC, best_item["t_sec"] * 1000.0)
         ret, raw = cap_src.read()
         cap_src.release()
         if ret and raw is not None:
-            return _crop_9_16_centered(raw), 0.25, 0.78
+            cand_916 = _crop_9_16_centered(raw)
+            if _frame_is_clean_for_thumb(cand_916, detector):
+                return cand_916, 0.25, 0.78
     return best_item["preview_916"], 0.25, 0.78
 
 
@@ -3665,7 +4039,7 @@ def main():
     print("\n[*] Tahap 2/4: Memanggil Gemini TTS (1x Panggilan) & Memisahkan Batas Suara Eksak Tiap Adegan...", flush=True)
     full_wav_path = os.path.join(out_dir, f"full_vo_{args.lang}.wav")
     ok_tts, used_model = generate_single_gemini_tts_chapters(
-        chapter_scripts, full_wav_path, args.api_key, args.voice, args.tts_model
+        chapter_scripts, full_wav_path, args.api_key, args.voice, args.tts_model, lang=args.lang
     )
     if not ok_tts:
         print("[ERROR] Gagal membuat audio TTS.", flush=True)
@@ -3675,7 +4049,7 @@ def main():
     srt_path = os.path.join(out_dir, f"final_subtitles_{args.lang}.srt")
     sync_json_path = os.path.join(out_dir, f"scene_vo_sync_{args.lang}.json")
     chapter_durations, target_final_dur, all_visual_cuts = analyze_wav_scenes_and_build_subtitles(
-        chapters_with_scenes, full_wav_path, ass_path, srt_path, sync_json_path
+        chapters_with_scenes, full_wav_path, ass_path, srt_path, sync_json_path, lang=args.lang
     )
     print(f"🎙️ Sukses TTS ({used_model}) | Total Durasi: {target_final_dur:.2f}s | {len(all_visual_cuts)} Cut Adegan Terkunci Subtitle!", flush=True)
     for cut_item in all_visual_cuts:
@@ -3723,6 +4097,7 @@ def main():
             and res.get("has_face") is False
             and res.get("has_editor_overlay") is False
             and res.get("has_subscribe_popup", False) is False
+            and res.get("has_multiple_phones", False) is False
             and (is_cam_chap or res.get("is_static_image", False) is False)
         )
         status = "LOLOS" if is_clean else "DITOLAK"
@@ -3732,7 +4107,7 @@ def main():
         test_start = cand_s + 0.08
         cut_exact_broll_clip_1080p(video_path, test_start, exact_dur, clip_out)
         if not verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
-            print(f"      [!] Klip [{test_start:.1f}s] gagal cek akhir lokal (wajah/subscribe/statis/teks tepi) -> Cari kandidat berikutnya...", flush=True)
+            print(f"      [!] Klip [{test_start:.1f}s] gagal cek akhir lokal (wajah/subscribe/2-hp/statis/teks tepi) -> Cari kandidat berikutnya...", flush=True)
             return None
         accepted_hists.append(mid_hist)
         used_mid_times.append((cand_s + actual_end) / 2.0)

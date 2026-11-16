@@ -774,10 +774,75 @@ ENGLISH_CTA_FALLBACK_TEMPLATES = [
     "Before you scroll to the next video, hit that like button and subscribe for more fast tech verdicts!"
 ]
 
+def _video_rng(video_title=""):
+    """Membuat generator random unik berbasis waktu & hash judul video agar tiap eksekusi segar."""
+    seed_val = int(time.time() * 1000) ^ int(hashlib.md5(str(video_title or "").encode("utf-8", errors="ignore")).hexdigest()[:8], 16)
+    return random.Random(seed_val)
+
+ENGLISH_OPENING_HOOK_VARIATIONS = [
+    (
+        "Bold Disbelief",
+        "Open with genuine shock at what this phone packs for its tier (e.g., 'How on earth does [Phone] pack flagship hardware like this?')",
+        "How does {phone} pack this much power at its price?!"
+    ),
+    (
+        "Stop-Scrolling Warning",
+        "Open with a buyer pause tension hook naming the phone (e.g., 'Wait before buying anything else—[Phone] just rewrote the rules!')",
+        "Wait before buying anything else, {phone} just changed the game!"
+    ),
+    (
+        "Direct Rival Punch",
+        "Open by contrasting how expensive rivals look weak next to this phone (e.g., 'Rival flagships look seriously overpriced next to [Phone]!')",
+        "Expensive rivals look outdated the moment {phone} hits your hand!"
+    ),
+    (
+        "Hidden Gem Reveal",
+        "Open like uncovering an underrated winner viewers almost missed (e.g., 'Almost nobody noticed [Phone], and ignoring it would be a huge mistake!')",
+        "Almost nobody saw {phone} coming, and it breaks every expectation!"
+    ),
+    (
+        "Build & Toughness Flex",
+        "Open led by striking physical design, slim profile, or rugged toughness (e.g., '[Phone] feels razor-slim yet takes real-world hits like a tank!')",
+        "{phone} stays impossibly sleek while handling real-world drops and water!"
+    ),
+    (
+        "Unfiltered Reality Check",
+        "Open cutting straight through marketing buzz (e.g., 'Forget spec-sheet hype—here is what actually makes [Phone] hit different!')",
+        "Forget marketing buzz—{phone} proves its worth right out of the box!"
+    ),
+    (
+        "Provocative Challenge",
+        "Open with a sharp high-retention question naming the phone (e.g., 'Can [Phone] seriously embarrass phones costing twice as much?')",
+        "Can {phone} really embarrass flagships costing twice as much?!"
+    ),
+    (
+        "Generational Leap",
+        "Open emphasizing an unexpected leap from last year's model (e.g., 'Nobody expected [Phone] to level up hardware this dramatically!')",
+        "Nobody expected {phone} to leap ahead this hard in one release!"
+    ),
+]
+
+ENGLISH_THUMB_STYLE_ANGLES = [
+    ("Urgent Warning", "WAIT BEFORE BUYING! / DON'T BLINK! / THINK TWICE?! / CHECK THIS FIRST!"),
+    ("Price-Shock Disbelief", "HOW IS THIS LEGAL?! / TOO CHEAP TO BE REAL?! / INSANE FOR THE PRICE!"),
+    ("Rival Knockout", "RIVALS IN TROUBLE! / RIP EXPENSIVE PHONES! / OVERPOWERED?!"),
+    ("Spec Highlight Shock", "UNREAL HARDWARE! / BATTERY MONSTER! / FLAGSHIP IN DISGUISE?!"),
+    ("Hands-On Truth", "THE REAL CATCH?! / UNFILTERED VERDICT! / SERIOUSLY THIS GOOD?!"),
+]
+
+def pick_english_opening_hook_style(video_title=""):
+    """Memilih arketipe hook pembuka Bahasa Inggris secara bervariasi agar kalimat pertama body_ip selalu dinamis."""
+    rng = _video_rng(video_title + "_hook")
+    return rng.choice(ENGLISH_OPENING_HOOK_VARIATIONS)
+
+def pick_english_thumbnail_angle(video_title=""):
+    """Memilih sudut copywriting thumbnail Bahasa Inggris agar tidak mengulang klise yang sama."""
+    rng = _video_rng(video_title + "_thumb")
+    return rng.choice(ENGLISH_THUMB_STYLE_ANGLES)
+
 def pick_english_cta_style_and_fallback(video_title=""):
     """Memilih gaya variasi CTA Bahasa Inggris (Like & Subscribe) yang selalu berbeda di setiap video/eksekusi."""
-    seed_val = int(time.time() * 1000) ^ int(hashlib.md5(video_title.encode("utf-8", errors="ignore")).hexdigest()[:8], 16)
-    rng = random.Random(seed_val)
+    rng = _video_rng(video_title)
     idx = rng.randrange(len(ENGLISH_CTA_VARIATIONS))
     return idx, ENGLISH_CTA_VARIATIONS[idx], ENGLISH_CTA_FALLBACK_TEMPLATES[idx]
 
@@ -900,6 +965,9 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
 
     var_idx, en_cta_style, en_cta_fallback = pick_english_cta_style_and_fallback(video_title)
     id_idx, id_cta_style, id_cta_fallback = pick_indonesian_cta_style_and_fallback(video_title)
+    hook_style_name, hook_style_desc, _ = pick_english_opening_hook_style(video_title)
+    thumb_angle_name, thumb_angle_examples = pick_english_thumbnail_angle(video_title)
+
     if lang == "en":
         cta_instruction = (
             "6. `cta`: Kesimpulan super singkat keunggulan HP (4-5 kata) + AJAKAN WAJIB untuk LIKE dan SUBSCRIBE "
@@ -909,6 +977,11 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
         cta_simple_hint = (
             "Khusus key `cta`, WAJIB berisi kesimpulan singkat + ajakan kreatif untuk LIKE dan SUBSCRIBE dalam Bahasa Inggris "
             f"(contoh gaya: {en_cta_fallback})."
+        )
+        body_hook_instruction = (
+            f"1. `body_ip`: WAJIB diawali hook Bahasa Inggris 1 kalimat pendek super dinamis bergaya [{hook_style_name}] -> {hook_style_desc} "
+            "(langsung sebut nama HP; DILARANG memakai klise basi 'This beast just changed...', 'Meet the...', '[Phone] features...', 'Hello', atau sapaan datar) "
+            "+ desain bodi/ketebalan/bobot (Adegan 1) DAN sertifikasi ketahanan air/debu IP rating asli (Adegan 2) (total 16-20 kata)."
         )
     else:
         cta_instruction = (
@@ -920,13 +993,18 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
             "Khusus key `cta`, gunakan kesimpulan singkat + CTA afiliasi standar soft selling (contoh: "
             f"{id_cta_fallback}). Jangan gunakan tanda kutip di dalam nilai string dan jangan mengarang istilah seperti 'kuliah sore'."
         )
+        body_hook_instruction = (
+            "1. `body_ip`: WAJIB diawali hook 1 kalimat singkat yang menggebrak dan langsung menyebut nama seri HP "
+            "(contoh: 'Ini dia si jagoan baru yang bikin flagship lain ketar-ketir!') + desain bodi/ketebalan/bobot (Adegan 1) "
+            "DAN sertifikasi ketahanan air/debu IP rating asli (Adegan 2) (total 15-17 kata)."
+        )
 
     if lang == "en":
         thumb_lang_rules = [
             "- `thumbnail_hook`, `thumbnail_phone`, `thumbnail_verdict`, `thumbnail_badge`, and `thumbnail_headline` MUST BE 100% IN ENGLISH! DO NOT use any Indonesian words (such as 'LAYAR', 'BATERAI', 'KAMERA', 'HARGA', 'LAYAK', 'TAHAN AIR', 'KENCANG', 'STABIL', 'INDONESIA', 'JUJUR').",
-            "- `thumbnail_hook`: 2-4 punchy uppercase ENGLISH hook words for the TOP of the thumbnail WITHOUT repeating the phone name (e.g. \"WORTH IT?!\", \"DON'T BUY YET!?!\", \"THE NEW KING?!\", \"WORTH THE HYPE?!\", \"NEW BUDGET KING?!\").",
+            f"- `thumbnail_hook`: 2-4 punchy high-CTR uppercase ENGLISH words for the TOP of the thumbnail WITHOUT repeating the phone name. Channel this style angle [{thumb_angle_name}] (inspiration: {thumb_angle_examples}) — craft a FRESH, sharp hook tailored to THIS phone instead of repeating generic 'WORTH IT?!'.",
             "- `thumbnail_phone`: clean mixed-case phone brand and model ONLY, 2-4 words max (e.g. \"Nubia Neo 5 GT\", \"Redmi A7 Pro\", \"Poco X8\", \"Samsung S25 FE\").",
-            "- `thumbnail_verdict`: 2-3 punchy uppercase ENGLISH words for the BOTTOM beneath the red banner (e.g. \"HONEST REVIEW!\", \"BEST BUDGET PHONE?!\", \"144HZ BEAST!\", \"REAL VERDICT!\").",
+            "- `thumbnail_verdict`: 2-3 bold spec-specific or verdict-driven uppercase ENGLISH words for the BOTTOM beneath the red banner using a standout feature from THIS phone (e.g. \"8050MAH MONSTER!\", \"144HZ AMOLED BEAST!\", \"IP69 WATERPROOF?!\", \"RIVAL CRUSHER!\"). Avoid lazy 'HONEST REVIEW!' every time.",
             "- Also keep `thumbnail_badge` (= `thumbnail_verdict`) and `thumbnail_headline` (= `thumbnail_hook`) consistent in ENGLISH.",
             "- GLOBAL ENGLISH AUDIENCE: `script`, `caption`, and `hashtags` MUST NOT mention 'Indonesia', 'Indonesian', or local currency 'rupiah/IDR'. Keep everything 100% natural for an international English tech audience."
         ]
@@ -948,7 +1026,7 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
         "",
         "TUGAS ANALISIS VOICEOVER BAWAAN & PENYUSUNAN 6 BAB + SUB-ADEGAN VISUAL PRO-CLIPPER:",
         f"Analisa transkrip asli di atas, lalu petakan rentang waktu detik (`start_sec` dan `end_sec`) di video sumber serta tulis naskah voiceover **{lang_label}** untuk 6 BAB berikut beserta pemecahan sub-adegan (`scenes`) di dalamnya:",
-        "1. `body_ip`: WAJIB diawali hook 1 kalimat singkat yang menggebrak dan langsung menyebut nama seri HP (contoh hook Bahasa Indonesia: 'Ini dia si jagoan baru yang bikin flagship lain ketar-ketir!' / contoh hook Bahasa Inggris: 'This beast just changed the game for mid-range phones!') + nama HP + desain bodi/ketebalan/bobot (Adegan 1) DAN sertifikasi ketahanan air/debu IP rating asli (Adegan 2) (total 15-17 kata).",
+        body_hook_instruction,
         "2. `screen_os`: Spesifikasi asli panel layar, ukuran inci, refresh rate (Hz), kecerahan (Adegan 1) DAN versi OS/UI bawaan (Adegan 2) (total 14-16 kata).",
         "3. `perf_mem`: Seri chipset asli & performa (Adegan 1) DAN kapasitas & jenis RAM (LPDDR), memori internal (UFS/eMMC), serta slot microSD (Adegan 2) (total 16-18 kata).",
         "4. `bat_feat`: Kapasitas baterai (mAh) & kecepatan charging (Watt) (Adegan 1) DAN fitur NFC, speaker stereo, serta sensor sidik jari (Adegan 2) (total 14-16 kata).",
@@ -981,7 +1059,7 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
-            "temperature": 0.35 if lang == "en" else 0.2,
+            "temperature": 0.45 if lang == "en" else 0.2,
             "responseMimeType": "application/json"
         }
     }
@@ -1000,14 +1078,14 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
             "",
             "Susun JSON murni dengan key persis: body_ip, screen_os, perf_mem, bat_feat, camera, cta, caption, hashtags, thumbnail_hook, thumbnail_phone, thumbnail_verdict.",
             f"Setiap key bab (body_ip s/d cta) berisi objek: {{\"start_sec\": angka, \"end_sec\": angka, \"script\": \"narasi {lang_label} 15-20 kata sesuai spesifikasi asli di transkrip\"}}.",
-            "HOOK WAJIB: script bab body_ip HARUS diawali hook 1 kalimat menggebrak yang langsung menyebut nama HP — DILARANG memulai dengan Halo/Hai/Yuk/Oke/Jadi.",
+            (f"HOOK WAJIB EN [{hook_style_name}]: {hook_style_desc} Hindari pembuka klise seperti 'This beast just...' atau 'Hello'." if lang == "en" else "HOOK WAJIB: script bab body_ip HARUS diawali hook 1 kalimat menggebrak yang langsung menyebut nama HP — DILARANG memulai dengan Halo/Hai/Yuk/Oke/Jadi."),
             "CTA ANTI-DUPLIKASI: Tidak boleh ada pengulangan kata berurutan di kalimat CTA.",
-            ("GLOBAL EN: caption and hashtags must be 100% English without mentioning Indonesia or rupiah." if lang == "en" else ""),
+            (f"GLOBAL & DYNAMIC THUMB EN: caption/hashtags/thumbnail 100% English without Indonesia/rupiah; make thumbnail_hook ({thumb_angle_name}) and spec-driven thumbnail_verdict super punchy & avoid generic clichés." if lang == "en" else ""),
             cta_simple_hint
         ])
         simple_payload = {
             "contents": [{"parts": [{"text": simple_prompt}]}],
-            "generationConfig": {"temperature": 0.25 if lang == "en" else 0.15, "responseMimeType": "application/json"}
+            "generationConfig": {"temperature": 0.35 if lang == "en" else 0.15, "responseMimeType": "application/json"}
         }
         res = call_gemini_json(simple_payload, api_key)
         res = normalize_parsed_json_to_dict(res) if res else None
@@ -1962,12 +2040,88 @@ def is_static_still_sequence(frames_bgr, min_motion_mad=1.85):
         return True
     return False
 
+def has_cropped_or_floating_static_text(frames_bgr):
+    """
+    Mendeteksi potongan teks/grafis mengambang statis yang masuk dari sisi kiri/kanan frame 9:16
+    maupun banner teks mengambang statis di zona atas/bawah akibat crop dari video sumber 16:9.
+    Mengembalikan True jika terdeteksi teks statis terpotong/mengambang di luar area Bab Kamera.
+    """
+    if not frames_bgr or len(frames_bgr) < 3:
+        return False
+
+    grays_u8 = []
+    for fr in frames_bgr:
+        if fr is None or fr.size == 0:
+            continue
+        sm = cv2.resize(fr, (270, 480), interpolation=cv2.INTER_AREA)
+        grays_u8.append(cv2.cvtColor(sm, cv2.COLOR_BGR2GRAY))
+
+    if len(grays_u8) < 3:
+        return False
+
+    stack_f32 = np.stack([g.astype(np.float32) for g in grays_u8], axis=0)
+    temp_std = np.std(stack_f32, axis=0)
+    med_gray = np.median(stack_f32, axis=0).astype(np.uint8)
+
+    # Ekstrak goresan teks tipis kontras tinggi yang posisinya diam/statis antar-frame
+    k_text = cv2.getStructuringElement(cv2.MORPH_RECT, (13, 5))
+    tophat = cv2.morphologyEx(med_gray, cv2.MORPH_TOPHAT, k_text)
+    blackhat = cv2.morphologyEx(med_gray, cv2.MORPH_BLACKHAT, k_text)
+    stroke_resp = np.maximum(tophat, blackhat)
+    edges = cv2.Canny(med_gray, 70, 175)
+
+    static_stroke = ((stroke_resp > 42) & (edges > 0) & (temp_std < 3.6)).astype(np.uint8) * 255
+    k_close = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 3))
+    grouped = cv2.morphologyEx(static_stroke, cv2.MORPH_CLOSE, k_close)
+    contours, _ = cv2.findContours(grouped, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    h, w = med_gray.shape[:2]
+    edge_hits = 0
+    for cnt in contours:
+        x, y, bw, bh = cv2.boundingRect(cnt)
+        # Abaikan area ekstrem statusbar paling atas / bilah navigasi paling bawah
+        if y < int(h * 0.05) or (y + bh) > int(h * 0.94):
+            continue
+        if bh < 6 or bh > 56 or bw < 10:
+            continue
+
+        patch_static = static_stroke[y:y + bh, x:x + bw]
+        fill_density = float(np.count_nonzero(patch_static)) / float(max(1, bw * bh))
+        if fill_density < 0.14:
+            continue
+
+        # Hitung transisi goresan horizontal maks agar garis meja/sudut dinding lurus (1 transisi) tidak salah ditandai
+        row_trans = np.sum(np.abs(np.diff((patch_static > 0).astype(np.int8), axis=1)), axis=1)
+        max_transitions = int(np.max(row_trans)) if row_trans.size > 0 else 0
+
+        touches_left_edge = (x <= 6)
+        touches_right_edge = (x + bw >= w - 6)
+        in_side_margin = (x <= int(w * 0.18)) or (x + bw >= int(w * 0.82))
+
+        # 1. Teks statis terpotong tepat di tepi kiri/kanan layar
+        if (touches_left_edge or touches_right_edge) and bw >= 14 and max_transitions >= 3:
+            return True
+
+        # 2. Sekumpulan fragmen huruf statis di margin kiri/kanan
+        if in_side_margin and bw >= 16 and max_transitions >= 4:
+            edge_hits += 1
+            if edge_hits >= 2:
+                return True
+
+        # 3. Banner teks mengambang statis di zona overlay atas/bawah layar
+        in_float_band = (int(h * 0.06) <= y <= int(h * 0.24)) or (int(h * 0.74) <= (y + bh) <= int(h * 0.92))
+        aspect = bw / float(max(1, bh))
+        if in_float_band and bw >= 36 and aspect >= 2.0 and max_transitions >= 6:
+            return True
+
+    return False
+
 def verify_clip_100pct_face_free(clip_path, detector, step=3, is_camera_chap=False):
     """
     Memindai file klip MP4 yang sudah dipotong untuk menjamin:
     - 0% frame wajah (YuNet ONNX)
     - 0% animasi tombol Subscribe YouTube
-    - Bukan gambar statis / foto diam jika berada di luar Bab Kamera (`not is_camera_chap`)
+    - Bukan gambar statis / foto diam maupun potongan teks statis mengambang jika di luar Bab Kamera (`not is_camera_chap`)
     """
     if not os.path.exists(clip_path):
         return True
@@ -1993,10 +2147,12 @@ def verify_clip_100pct_face_free(clip_path, detector, step=3, is_camera_chap=Fal
     if sampled_small and has_animated_subscribe_badge(sampled_small):
         return False
     if not is_camera_chap and len(sampled_small) >= 4:
-        # Ambil 6 sampel merata dari seluruh durasi klip untuk cek gambar statis
+        # Ambil 6 sampel merata dari seluruh durasi klip untuk cek gambar statis & potongan teks mengambang
         pick_idx = np.linspace(0, len(sampled_small) - 1, min(6, len(sampled_small)), dtype=int)
         motion_samples = [sampled_small[i] for i in pick_idx]
         if is_static_still_sequence(motion_samples):
+            return False
+        if has_cropped_or_floating_static_text(motion_samples):
             return False
     return True
 
@@ -2004,7 +2160,7 @@ def verify_source_window_clean(video_path, seg_start, exact_dur, detector, sampl
     """
     Memverifikasi segmen kandidat langsung dari video sumber (sebelum dipotong 1080p)
     untuk memastikan 0% frame wajah (YuNet), 0% animasi tombol Subscribe YouTube,
-    dan bukan gambar statis (untuk bab selain Kamera).
+    dan bebas gambar statis / teks statis terpotong kiri-kanan (untuk bab selain Kamera).
     """
     cap = cv2.VideoCapture(video_path)
     sampled_small = []
@@ -2031,8 +2187,11 @@ def verify_source_window_clean(video_path, seg_start, exact_dur, detector, sampl
         return False
     if sampled_small and has_animated_subscribe_badge(sampled_small):
         return False
-    if not is_camera_chap and len(sampled_small) >= 4 and is_static_still_sequence(sampled_small):
-        return False
+    if not is_camera_chap and len(sampled_small) >= 4:
+        if is_static_still_sequence(sampled_small):
+            return False
+        if has_cropped_or_floating_static_text(sampled_small):
+            return False
     return True
 
 def extract_storyboard_and_hist(video_path, start_s, end_s, detector=None, is_camera_chap=False):
@@ -2076,9 +2235,12 @@ def extract_storyboard_and_hist(video_path, start_s, end_s, detector=None, is_ca
         return None, None
     if has_animated_subscribe_badge(crops):
         return None, None
-    # Tolak otomatis jika gambar statis / foto diam / screenshot pada bab SELAIN Kamera!
-    if not is_camera_chap and is_static_still_sequence(crops):
-        return None, None
+    # Tolak otomatis jika gambar statis / foto diam / teks statis terpotong kiri-kanan pada bab SELAIN Kamera!
+    if not is_camera_chap:
+        if is_static_still_sequence(crops):
+            return None, None
+        if has_cropped_or_floating_static_text(crops):
+            return None, None
     _, buf = cv2.imencode(".jpg", np.hstack(crops), [int(cv2.IMWRITE_JPEG_QUALITY), 80])
     return base64.b64encode(buf).decode("utf-8"), mid_hist
 
@@ -2095,16 +2257,27 @@ def check_clean_broll_segment(b64_img, raw_sub, chapter_title, is_camera_chap, a
     if is_camera_chap:
         # ATURAN KHUSUS BAB KAMERA (JANGAN UBAH!): Wajib meloloskan sampel foto/video, aplikasi kamera, atau modul lensa!
         cam_rule = "BAB KAMERA: Set is_product_broll = true JIKA gambar menampilkan modul kamera, antarmuka aplikasi kamera, ATAU hasil jepretan foto/video (pemandangan, bangunan, tanaman, objek luar). Jangan tolak pemandangan/objek luar karena itu adalah sampel kamera!"
+        overlay_rule = "5. has_editor_overlay = true JIKA ada teks besar editor, tabel spesifikasi layar penuh, screenshot marketplace, watermark besar, ATAU animasi tombol Subscribe/Like/Lonceng YouTube."
         static_rule = "6. is_static_image = false (khusus Bab Kamera, sampel foto statis/jepretan kamera DIPERBOLEHKAN penuh)."
     else:
-        cam_rule = "Set is_product_broll = true HANYA JIKA merupakan REKAMAN VIDEO BERGERAK NYATA yang menampilkan fisik unit handphone (bodi, layar menyala sedang disentuh/digerakkan, atau tes ketahanan fisik HP) dan BUKAN dus/kotak."
+        cam_rule = (
+            "WAJIB FISIK UNIT HP (NON-KAMERA): Set is_product_broll = true HANYA JIKA di kelima frame TERLIHAT JELAS "
+            "FISIK BINGKAI/BODI/LAYAR UNIT HANDPHONE (dipegang tangan, di atas meja, atau sedang dites fisiknya). "
+            "Set is_product_broll = false JIKA berupa screen-recording/rekaman layar game/video penuh tanpa bingkai fisik HP, "
+            "tangan kosong berbicara, meja/ruangan kosong, dus/kabel/charger/case saja tanpa HP, atau grafik benchmark penuh tanpa wujud HP!"
+        )
+        overlay_rule = (
+            "5. has_editor_overlay = true JIKA di SALAH SATU frame terdapat teks mengambang statis, poin spesifikasi editor, label harga/fitur, "
+            "subtitle permanen video asli, watermark teks besar, screenshot marketplace, animasi tombol Subscribe/Like/Lonceng, "
+            "ATAU POTONGAN HURUF/KATA YANG TERPOTONG MASUK DARI TEPI KIRI ATAU KANAN FRAME akibat crop vertikal 9:16."
+        )
         static_rule = "6. is_static_image = true JIKA kelima frame menampilkan GAMBAR STATIS / FOTO DIAM / SLIDE PRESENTASI / SCREENSHOT / SKOR ANTUTU DIAM / TABEL SPESIFIKASI tanpa pergerakan video nyata (atau hanya efek zoom/pan lambat pada foto diam). Untuk bab selain Kamera, gambar statis WAJIB DITOLAK!"
 
     focus_line = f"Fokus Visual Sub-Adegan: {visual_focus}" if visual_focus else f"Target Bab Visual: {chapter_title}"
     vo_line = f"Kalimat Voiceover Adegan Ini: \"{scene_vo}\"" if scene_vo else ""
 
     prompt = "\n".join([
-        "Gambar ini adalah gabungan 5 frame berurutan (kiri ke kanan) dari sebuah potongan video.",
+        "Gambar ini adalah gabungan 5 frame berurutan (kiri ke kanan) dari sebuah potongan video 9:16.",
         f"Target Bab Visual: {chapter_title}",
         focus_line,
         vo_line,
@@ -2112,10 +2285,10 @@ def check_clean_broll_segment(b64_img, raw_sub, chapter_title, is_camera_chap, a
         "",
         "ATURAN VALIDASI KETAT (PERIKSA KELIMA FRAME DARI KIRI KE KANAN):",
         f"1. {cam_rule}",
-        "2. Set is_product_broll = false JIKA gambar adalah dus/kotak HP, monitor PC, toko online, atau foto diam di luar bab kamera.",
+        "2. Set is_product_broll = false JIKA gambar adalah dus/kotak HP saja, monitor PC, toko online, rekaman layar tanpa bodi HP, atau latar tanpa unit handphone.",
         "3. has_face = true JIKA ada wajah manusia (wajah reviewer/orang) di SALAH SATU dari 5 frame. WAJIB TOLAK jika ada wajah.",
         "4. has_subscribe_popup = true JIKA di SALAH SATU dari 5 frame terdapat animasi tombol SUBSCRIBE YouTube (merah/putih/hitam), ikon lonceng notifikasi, animasi kursor/tangan mengklik tombol Subscribe/Like, pop-up nama channel YouTube, atau banner ajakan Subscribe/Like/Follow yang bergerak masuk.",
-        "5. has_editor_overlay = true JIKA ada teks besar editor, tabel spesifikasi layar penuh, screenshot marketplace, watermark besar, ATAU animasi tombol Subscribe/Like/Lonceng YouTube.",
+        overlay_rule,
         static_rule,
         "7. reason = alasan singkat 1 kalimat.",
         "Kembalikan HANYA format JSON murni dengan key: is_product_broll (boolean), has_face (boolean), has_subscribe_popup (boolean), has_editor_overlay (boolean), is_static_image (boolean), reason (string)."
@@ -2613,34 +2786,71 @@ def split_hook_lines(hook_str):
     return [" ".join(words[:best_idx]), " ".join(words[best_idx:])]
 
 
+def extract_english_verdict_from_plan(plan, rng=None):
+    """Mengekstrak 1 verdict thumbnail super singkat & spesifik dari spek nyata HP pada plan (mis. '144HZ BEAST!', '8050MAH MONSTER!')."""
+    if not isinstance(plan, dict):
+        return ""
+    joined = " ".join(
+        str(plan.get(k, {}).get("script", ""))
+        for k in ("body_ip", "screen_os", "perf_mem", "bat_feat", "camera")
+        if isinstance(plan.get(k), dict)
+    )
+    options = []
+    hz_m = re.search(r"\b(120|144|165)\s*(?:hz|hertz)\b", joined, re.I)
+    if hz_m:
+        options.append(f"{hz_m.group(1)}HZ BEAST!")
+    bat_m = re.search(r"\b([5-9]\d00|\d{4,5})\s*mah\b", joined, re.I)
+    if bat_m:
+        options.append(f"{bat_m.group(1)}MAH MONSTER!")
+    watt_m = re.search(r"\b(\d{2,3})\s*(?:w|watt)\b", joined, re.I)
+    if watt_m and int(watt_m.group(1)) >= 33:
+        options.append(f"{watt_m.group(1)}W HYPER CHARGE!")
+    ip_m = re.search(r"\b(ip6[45789])\b", joined, re.I)
+    if ip_m:
+        options.append(f"{ip_m.group(1).upper()} TANK PROOF!")
+    mp_m = re.search(r"\b(50|64|108|200)\s*(?:mp|megapixel)\b", joined, re.I)
+    if mp_m:
+        options.append(f"{mp_m.group(1)}MP PRO CAM!")
+    if not options:
+        return ""
+    return (rng or random).choice(options)
+
+
 def ensure_dynamic_thumbnail_copy(plan, video_title, lang="id"):
     """
     Menyiapkan copywriting & style preset Thumbnail Shorts bergaya tech-review modern:
     - `top_lines`: 1-2 baris hook besar miring dua warna (tanpa mengulang nama HP)
     - `phone_name`: nama seri HP mixed-case bersih untuk pita/kotak merah (mis. 'Nubia Neo 5 GT')
-    - `bottom_text`: verdict singkat mencolok di bawah pita merah (mis. 'HONEST REVIEW!')
+    - `bottom_text`: verdict singkat mencolok di bawah pita merah (mis. '144HZ BEAST!')
     - `style`: salah satu preset THUMBNAIL_STYLES agar tiap video tampil variatif & tidak kaku.
     """
     phone_name = extract_pretty_phone_name(video_title, plan)
-    seed_val = int(time.time() * 1000) ^ int(hashlib.md5(str(video_title).encode("utf-8", errors="ignore")).hexdigest()[:8], 16)
-    rng = random.Random(seed_val)
+    rng = _video_rng(video_title + "_copy")
 
     id_hooks = [
         "JANGAN BELI DULU?!", "RAJA BARU?!", "WORTH IT KAH?!", "SERIUS SEBAGUS INI?!",
         "SPEKNYA NGERI!", "MASIH LAYAK?!", "SAINGI FLAGSHIP?!"
     ]
     en_hooks = [
-        "DON'T BUY YET!?!", "WORTH IT?!", "THE NEW KING?!", "WORTH THE HYPE?!",
-        "BUY OR SKIP?!", "TOTAL BEAST?!", "GAME CHANGER?!"
+        "DON'T BUY YET!?!", "WAIT BEFORE BUYING!", "HOW IS THIS LEGAL?!",
+        "RIVALS IN TROUBLE!", "TOO GOOD TO BE TRUE?!", "FLAGSHIP IN DISGUISE?!",
+        "THINK TWICE FIRST!", "SKIP OR GRAB?!", "BIGGEST SURPRISE?!",
+        "SECRET WINNER?!", "RIP EXPENSIVE PHONES!", "STOP SCROLLING!",
+        "UNREAL FOR THE PRICE!", "DON'T MISS THIS!", "GAME CHANGER?!",
+        "THE NEW KING?!", "WORTH THE HYPE?!", "OVERPOWERED?!"
     ]
+    en_hook_cliches = {"WORTH IT?!", "WORTH THE HYPE?!", "TOTAL BEAST!", "GAME CHANGER?!"}
     id_verdicts = [
         "REVIEW JUJUR!", "HP GAMING TERBAIK?!", "BEST BUDGET?!",
         "RAJA HARGA MIRING!", "WAJIB TAHU!", "TES JUJUR!"
     ]
     en_verdicts = [
-        "HONEST REVIEW!", "BEST BUDGET PHONE?!", "REAL VERDICT!",
-        "VALUE KING?!", "MUST WATCH!", "FULL BREAKDOWN!"
+        "WATCH BEFORE BUYING!", "8050MAH POWERHOUSE!", "ZERO COMPROMISE?!",
+        "NO HYPE VERDICT!", "HANDS-ON TEST!", "BUILT LIKE A TANK!",
+        "VALUE MONSTER!", "REAL TEST RESULTS!", "RIVAL CRUSHER!",
+        "UNFILTERED VERDICT!", "BUDGET SHOCKER!", "MUST SEE SPECS!"
     ]
+    en_verdict_cliches = {"HONEST REVIEW!", "BEST BUDGET PHONE?!", "REAL VERDICT!"}
 
     raw_hook = sanitize_subtitle_text(plan.get("thumbnail_hook") or plan.get("thumbnail_headline", "")).upper()
     raw_verdict = sanitize_subtitle_text(plan.get("thumbnail_verdict") or plan.get("thumbnail_badge", "")).upper()
@@ -2668,14 +2878,19 @@ def ensure_dynamic_thumbnail_copy(plan, video_title, lang="id"):
             hook_str = " ".join(raw_hook.split()[:4])
             if hook_str[-1] not in "!?":
                 hook_str += "?!"
+            if hook_str in en_hook_cliches and rng.random() < 0.70:
+                hook_str = rng.choice([h for h in en_hooks if h not in en_hook_cliches])
 
         raw_verdict = translate_or_clean_english_thumb_text(raw_verdict)
+        spec_verdict = extract_english_verdict_from_plan(plan, rng=rng)
         if not raw_verdict or has_indonesian_words(raw_verdict) or len(raw_verdict) < 5:
-            verdict_str = rng.choice(en_verdicts)
+            verdict_str = spec_verdict if (spec_verdict and rng.random() < 0.65) else rng.choice(en_verdicts)
         else:
             verdict_str = " ".join(raw_verdict.split()[:3])
             if verdict_str[-1] not in "!?":
                 verdict_str += "!"
+            if verdict_str in en_verdict_cliches and rng.random() < 0.75:
+                verdict_str = spec_verdict if spec_verdict else rng.choice(en_verdicts)
     else:
         if not raw_hook or len(raw_hook) < 5:
             hook_str = rng.choice(id_hooks)
@@ -3395,14 +3610,16 @@ def main():
         short_title = re.sub(r"[^a-zA-Z0-9\s\-]", "", video_title).strip()[:38] or ("this flagship phone" if args.lang == "en" else "HP Flagship ini")
         if args.lang == "en":
             _, _, en_cta_fb = pick_english_cta_style_and_fallback(video_title)
+            _, _, en_hook_tpl = pick_english_opening_hook_style(video_title)
+            en_open_hook = en_hook_tpl.format(phone=short_title)
             plan = {
-                "body_ip": {"start_sec": 45.0, "end_sec": 120.0, "script": f"{short_title} features a sleek flagship body design, durable build quality, and official water resistance rating."},
+                "body_ip": {"start_sec": 45.0, "end_sec": 120.0, "script": f"{en_open_hook} It pairs a sleek build with certified water resistance."},
                 "screen_os": {"start_sec": 120.0, "end_sec": 210.0, "script": "Its vibrant display panel delivers a smooth one hundred twenty hertz refresh rate with a clean, responsive software interface."},
                 "perf_mem": {"start_sec": 210.0, "end_sec": 320.0, "script": "Powered by a fast processor paired with generous RAM and high speed storage, it handles heavy multitasking and gaming effortlessly."},
-                "bat_feat": {"start_sec": 320.0, "end_sec": 430.0, "script": "The all day battery supports fast charging alongside complete connectivity features including NFC, stereo speakers, and an fingerprint sensor."},
+                "bat_feat": {"start_sec": 320.0, "end_sec": 430.0, "script": "The all day battery supports fast charging alongside complete connectivity features including NFC, stereo speakers, and a fast fingerprint sensor."},
                 "camera": {"start_sec": 430.0, "end_sec": 550.0, "script": "Its main and selfie cameras capture sharp photos and stable high resolution video across various lighting conditions."},
                 "cta": {"start_sec": 550.0, "end_sec": max(580.0, total_dur - 30.0), "script": en_cta_fb},
-                "caption": f"Full Review of {short_title}!",
+                "caption": f"Quick Verdict on {short_title}!",
                 "hashtags": "#SmartphoneReview #TechShorts #GadgetReview #Shorts"
             }
         else:
@@ -3479,8 +3696,49 @@ def main():
         score_threshold=0.36, nms_threshold=0.3, top_k=5000
     )
 
+    recent_cut_starts = []
     chap_cfg_map = {cfg["id"]: cfg for cfg in CHAPTER_CONFIG}
     chap_plan_map = {c["id"]: c for c in chapters_with_scenes}
+
+    def _try_vision_candidate(cand_s, cand_e):
+        """Helper bersama memverifikasi segmen kandidat melalui storyboard lokal + Gemini Vision."""
+        actual_end = cand_s + 0.08 + exact_dur
+        if actual_end > (cand_e + 0.15):
+            return None
+        b64, mid_hist = extract_storyboard_and_hist(
+            video_path, cand_s + 0.08, actual_end, detector=clip_detector, is_camera_chap=is_cam_chap
+        )
+        if not b64 or is_visually_duplicate(mid_hist, accepted_hists):
+            return None
+        raw_sub = get_transcript_slice(events, cand_s, actual_end)
+        res = check_clean_broll_segment(
+            b64, raw_sub, c_title, is_cam_chap, args.api_key,
+            visual_focus=cut_item["visual_focus"],
+            scene_vo=cut_item["scene_vo_script"]
+        )
+        if not res:
+            return None
+        is_clean = (
+            res.get("is_product_broll") is True
+            and res.get("has_face") is False
+            and res.get("has_editor_overlay") is False
+            and res.get("has_subscribe_popup", False) is False
+            and (is_cam_chap or res.get("is_static_image", False) is False)
+        )
+        status = "LOLOS" if is_clean else "DITOLAK"
+        print(f"      [{cand_s:.1f}s] {status} | {res.get('reason')}", flush=True)
+        if not is_clean:
+            return None
+        test_start = cand_s + 0.08
+        cut_exact_broll_clip_1080p(video_path, test_start, exact_dur, clip_out)
+        if not verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
+            print(f"      [!] Klip [{test_start:.1f}s] gagal cek akhir lokal (wajah/subscribe/statis/teks tepi) -> Cari kandidat berikutnya...", flush=True)
+            return None
+        accepted_hists.append(mid_hist)
+        used_mid_times.append((cand_s + actual_end) / 2.0)
+        if not is_cam_chap:
+            global_approved_pool.append(test_start)
+        return test_start
 
     for cut_idx, cut_item in enumerate(all_visual_cuts, 1):
         cid = cut_item["chapter_id"]
@@ -3508,49 +3766,53 @@ def main():
             f"chap_{cut_item['chap_idx']:02d}_scene_{cut_item['scene_idx']:02d}_cut_{cut_item['cut_in_scene_idx']:02d}.mp4"
         )
 
+        # Tier 1: Kandidat utama terverifikasi Gemini Vision
         chosen_start = None
         for cand_s, cand_e in candidates:
-            actual_end = cand_s + 0.08 + exact_dur
-            if actual_end > (cand_e + 0.15):
-                continue
-            b64, mid_hist = extract_storyboard_and_hist(
-                video_path, cand_s + 0.08, actual_end, detector=clip_detector, is_camera_chap=is_cam_chap
-            )
-            if not b64 or is_visually_duplicate(mid_hist, accepted_hists):
-                continue
-
-            raw_sub = get_transcript_slice(events, cand_s, actual_end)
-            res = check_clean_broll_segment(
-                b64, raw_sub, c_title, is_cam_chap, args.api_key,
-                visual_focus=cut_item["visual_focus"],
-                scene_vo=cut_item["scene_vo_script"]
-            )
-            if not res:
-                continue
-
-            is_clean = (
-                res.get("is_product_broll") is True
-                and res.get("has_face") is False
-                and res.get("has_editor_overlay") is False
-                and res.get("has_subscribe_popup", False) is False
-                and (is_cam_chap or res.get("is_static_image", False) is False)
-            )
-            status = "LOLOS" if is_clean else "DITOLAK"
-            print(f"      [{cand_s:.1f}s] {status} | {res.get('reason')}", flush=True)
-
-            if is_clean:
-                test_start = cand_s + 0.08
-                cut_exact_broll_clip_1080p(video_path, test_start, exact_dur, clip_out)
-                if not verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
-                    print(f"      [!] Klip [{test_start:.1f}s] terdeteksi ada frame wajah / animasi Subscribe / gambar statis -> Cari kandidat berikutnya...", flush=True)
-                    continue
-                chosen_start = test_start
-                accepted_hists.append(mid_hist)
-                used_mid_times.append((cand_s + actual_end) / 2.0)
-                if not is_cam_chap:
-                    global_approved_pool.append(chosen_start)
+            chosen_start = _try_vision_candidate(cand_s, cand_e)
+            if chosen_start is not None:
                 break
 
+        # Tier 2: Vision Rescue Scan di segmen bebas-wajah global sebelum mengulang klip atau tanpa AI
+        if chosen_start is None and (not is_cam_chap) and args.api_key:
+            tried_set = {(round(cs, 1), round(ce, 1)) for cs, ce in candidates}
+            safe_min = 38.0 if total_dur > 140.0 else 15.0
+            safe_max = max(safe_min + 30.0, total_dur - 25.0) if total_dur > 140.0 else total_dur - 5.0
+            rescue_cands = []
+            for fs_s, fs_e in face_free_segs:
+                curr = max(float(fs_s), safe_min)
+                limit = min(float(fs_e), safe_max)
+                while (limit - curr) >= (exact_dur + 0.2):
+                    r_end = min(limit, curr + exact_dur + 0.2)
+                    key_r = (round(curr, 1), round(r_end, 1))
+                    mid_r = (curr + r_end) / 2.0
+                    if key_r not in tried_set and not any(abs(mid_r - u) < 1.8 for u in used_mid_times):
+                        sub_ctx = get_transcript_slice(events, max(0.0, curr - 4.0), r_end + 4.0).lower()
+                        if not any(bad_kw in sub_ctx for bad_kw in SUBSCRIBE_BLACKLIST_KEYWORDS):
+                            rescue_cands.append((curr, r_end))
+                    curr += max(3.5, exact_dur + 0.8)
+                    if len(rescue_cands) >= 18:
+                        break
+                if len(rescue_cands) >= 18:
+                    break
+            step_idx = np.linspace(0, len(rescue_cands) - 1, min(6, len(rescue_cands)), dtype=int) if rescue_cands else []
+            for ri in step_idx:
+                chosen_start = _try_vision_candidate(*rescue_cands[int(ri)])
+                if chosen_start is not None:
+                    break
+
+        # Tier 3 (Khusus Non-Kamera): Prioritaskan global_approved_pool (fisik HP 100% terverifikasi Vision & bebas teks terpotong, hindari pengulangan berurutan)
+        if chosen_start is None and (not is_cam_chap) and global_approved_pool:
+            ordered_pool = [s for s in reversed(global_approved_pool) if not any(abs(s - rs) < 1.5 for rs in recent_cut_starts[-2:])]
+            if not ordered_pool:
+                ordered_pool = list(reversed(global_approved_pool))
+            for fallback_s in ordered_pool:
+                cut_exact_broll_clip_1080p(video_path, fallback_s, exact_dur, clip_out)
+                if verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
+                    chosen_start = fallback_s
+                    break
+
+        # Tier 4 (Last Resort): Hanya bila belum ada klip Vision terverifikasi sama sekali
         if chosen_start is None:
             for cand_s, cand_e in candidates:
                 test_start = cand_s + 0.08
@@ -3560,12 +3822,6 @@ def main():
                         chosen_start = test_start
                         used_mid_times.append(test_start + exact_dur / 2.0)
                         break
-        if chosen_start is None:
-            for fallback_s in reversed(global_approved_pool):
-                cut_exact_broll_clip_1080p(video_path, fallback_s, exact_dur, clip_out)
-                if verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
-                    chosen_start = fallback_s
-                    break
             if chosen_start is None:
                 for fs_s, fs_e in face_free_segs:
                     if fs_s < 38.0 or fs_e > (total_dur - 25.0):
@@ -3574,11 +3830,14 @@ def main():
                         sub_ctx = get_transcript_slice(events, max(0.0, fs_s - 4.0), fs_s + exact_dur + 4.0).lower()
                         if any(bad_kw in sub_ctx for bad_kw in SUBSCRIBE_BLACKLIST_KEYWORDS):
                             continue
-                        cut_exact_broll_clip_1080p(video_path, fs_s + 0.1, exact_dur, clip_out)
-                        if verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
-                            chosen_start = fs_s + 0.1
-                            break
+                        if verify_source_window_clean(video_path, fs_s + 0.1, exact_dur, clip_detector, is_camera_chap=is_cam_chap):
+                            cut_exact_broll_clip_1080p(video_path, fs_s + 0.1, exact_dur, clip_out)
+                            if verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
+                                chosen_start = fs_s + 0.1
+                                break
 
+        if chosen_start is not None:
+            recent_cut_starts.append(chosen_start)
         all_final_clips.append(clip_out)
 
     list_file = os.path.join(out_dir, "concat_list.txt")

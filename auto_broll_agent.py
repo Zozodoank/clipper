@@ -91,7 +91,7 @@ SCENE_CATALOG = [
         "id": "benchmark_dapur_pacu",
         "title": "Benchmark & Dapur Pacu",
         "keywords": ["chipset", "prosesor", "snapdragon", "dimensity", "helio", "unisoc", "exynos", "ram", "lpddr", "ufs", "storage", "antutu", "geekbench", "gaming", "game", "pubg", "mlbb", "genshin", "fps", "performa", "thermal", "suhu"],
-        "visual_rule": "Bermain game (gameplay PUBG/MLBB/Genshin/balapan di layar HP fisik), aplikasi skor benchmark AnTuTu/Geekbench/3DMark/FPS meter pada unit HP, atau tes performa chipset/thermal.",
+        "visual_rule": "Bermain game (gameplay PUBG/MLBB/Genshin/balapan langsung pada layar 1 unit HP fisik di tangan/meja) atau aplikasi skor benchmark AnTuTu/Geekbench/3DMark/FPS meter pada 1 unit HP fisik (WAJIB terlihat bodi fisik HP nyata; BUKAN slide grafis 3D logo chipset/teks melayang tanpa unit HP).",
         "allow_phone_count_zero": False,
         "allow_static_local": False,
         "max_cuts": 3,
@@ -2587,81 +2587,123 @@ def is_static_still_sequence(frames_bgr, min_motion_mad=1.85):
         return True
     return False
 
-def has_cropped_or_floating_static_text(frames_bgr):
+def has_cropped_or_floating_static_text(frames_bgr, allow_natural_scene=False):
     """
-    Mendeteksi potongan teks/grafis mengambang statis yang masuk dari sisi kiri/kanan frame 9:16
-    maupun banner teks mengambang statis di zona atas/bawah akibat crop dari video sumber 16:9.
-    Mengembalikan True jika terdeteksi teks statis terpotong/mengambang di luar area Bab Kamera.
+    Mendeteksi potongan teks/huruf terpotong di tepi kiri/kanan/bawah frame 9:16 maupun
+    teks overlay/infografis mengambang secara pairwise multi-window (menangkap teks
+    yang muncul di awal/akhir klip maupun yang fade/slide perlahan dari video sumber 16:9).
     """
-    if not frames_bgr or len(frames_bgr) < 3:
+    if not frames_bgr or len(frames_bgr) < 2:
         return False
 
     grays_u8 = []
     for fr in frames_bgr:
-        if fr is None or fr.size == 0:
+        if fr is None or getattr(fr, "size", 0) == 0:
             continue
         sm = cv2.resize(fr, (270, 480), interpolation=cv2.INTER_AREA)
         grays_u8.append(cv2.cvtColor(sm, cv2.COLOR_BGR2GRAY))
 
-    if len(grays_u8) < 3:
+    if len(grays_u8) < 2:
         return False
 
-    stack_f32 = np.stack([g.astype(np.float32) for g in grays_u8], axis=0)
-    temp_std = np.std(stack_f32, axis=0)
-    med_gray = np.median(stack_f32, axis=0).astype(np.uint8)
-
-    # Ekstrak goresan teks tipis kontras tinggi yang posisinya diam/statis antar-frame
-    k_text = cv2.getStructuringElement(cv2.MORPH_RECT, (13, 5))
-    tophat = cv2.morphologyEx(med_gray, cv2.MORPH_TOPHAT, k_text)
-    blackhat = cv2.morphologyEx(med_gray, cv2.MORPH_BLACKHAT, k_text)
-    stroke_resp = np.maximum(tophat, blackhat)
-    edges = cv2.Canny(med_gray, 70, 175)
-
-    static_stroke = ((stroke_resp > 42) & (edges > 0) & (temp_std < 3.6)).astype(np.uint8) * 255
+    h, w = grays_u8[0].shape[:2]
+    k_small = cv2.getStructuringElement(cv2.MORPH_RECT, (13, 5))
+    k_large = cv2.getStructuringElement(cv2.MORPH_RECT, (21, 7))
     k_close = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 3))
-    grouped = cv2.morphologyEx(static_stroke, cv2.MORPH_CLOSE, k_close)
-    contours, _ = cv2.findContours(grouped, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    h, w = med_gray.shape[:2]
-    edge_hits = 0
-    for cnt in contours:
-        x, y, bw, bh = cv2.boundingRect(cnt)
-        # Abaikan area ekstrem statusbar paling atas / bilah navigasi paling bawah
-        if y < int(h * 0.05) or (y + bh) > int(h * 0.94):
-            continue
-        if bh < 6 or bh > 56 or bw < 10:
-            continue
+    border_hits = 0
+    banner_hits = 0
+    watermark_hits = 0
 
-        patch_static = static_stroke[y:y + bh, x:x + bw]
-        fill_density = float(np.count_nonzero(patch_static)) / float(max(1, bw * bh))
-        if fill_density < 0.14:
-            continue
+    for idx in range(len(grays_u8) - 1):
+        g0 = grays_u8[idx].astype(np.float32)
+        g1 = grays_u8[idx + 1].astype(np.float32)
+        pair_diff = np.abs(g0 - g1)
+        med_gray = ((g0 + g1) * 0.5).astype(np.uint8)
 
-        # Hitung transisi goresan horizontal maks agar garis meja/sudut dinding lurus (1 transisi) tidak salah ditandai
-        row_trans = np.sum(np.abs(np.diff((patch_static > 0).astype(np.int8), axis=1)), axis=1)
-        max_transitions = int(np.max(row_trans)) if row_trans.size > 0 else 0
+        sr1 = np.maximum(cv2.morphologyEx(med_gray, cv2.MORPH_TOPHAT, k_small), cv2.morphologyEx(med_gray, cv2.MORPH_BLACKHAT, k_small))
+        sr2 = np.maximum(cv2.morphologyEx(med_gray, cv2.MORPH_TOPHAT, k_large), cv2.morphologyEx(med_gray, cv2.MORPH_BLACKHAT, k_large))
+        stroke_resp = np.maximum(sr1, sr2)
+        edges = cv2.Canny(med_gray, 55, 160)
 
-        touches_left_edge = (x <= 6)
-        touches_right_edge = (x + bw >= w - 6)
-        in_side_margin = (x <= int(w * 0.18)) or (x + bw >= int(w * 0.82))
+        static_stroke = ((stroke_resp > 30) & (edges > 0) & (pair_diff < 12.0)).astype(np.uint8) * 255
+        grouped = cv2.morphologyEx(static_stroke, cv2.MORPH_CLOSE, k_close)
+        contours, _ = cv2.findContours(grouped, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        # 1. Teks statis terpotong tepat di tepi kiri/kanan layar
-        if (touches_left_edge or touches_right_edge) and bw >= 14 and max_transitions >= 3:
-            return True
+        pair_edge = False
+        pair_banner = False
+        pair_wm = False
+        side_fragments = 0
 
-        # 2. Sekumpulan fragmen huruf statis di margin kiri/kanan
-        if in_side_margin and bw >= 16 and max_transitions >= 4:
-            edge_hits += 1
-            if edge_hits >= 2:
-                return True
+        for cnt in contours:
+            x, y, bw, bh = cv2.boundingRect(cnt)
+            # Abaikan statusbar paling atas / bilah navigasi paling bawah ekstrem
+            if y < int(h * 0.04) or (y + bh) > int(h * 0.96):
+                continue
+            if bh < 6 or bh > 115 or bw < 12:
+                continue
 
-        # 3. Banner teks mengambang statis di zona overlay atas/bawah layar
-        in_float_band = (int(h * 0.06) <= y <= int(h * 0.24)) or (int(h * 0.74) <= (y + bh) <= int(h * 0.92))
-        aspect = bw / float(max(1, bh))
-        if in_float_band and bw >= 36 and aspect >= 2.0 and max_transitions >= 6:
-            return True
+            patch_static = static_stroke[y:y + bh, x:x + bw]
+            fill_density = float(np.count_nonzero(patch_static)) / float(max(1, bw * bh))
+            if fill_density < 0.14:
+                continue
 
-    return False
+            row_trans = np.sum(np.abs(np.diff((patch_static > 0).astype(np.int8), axis=1)), axis=1)
+            max_transitions = int(np.max(row_trans)) if row_trans.size > 0 else 0
+            row_cov = np.count_nonzero(patch_static, axis=1) / float(max(1, bw))
+            active_rows = float(np.count_nonzero(row_cov >= 0.12)) / float(max(1, bh))
+            aspect = bw / float(max(1, bh))
+
+            if bh < 8 and not (aspect >= 3.0 and fill_density >= 0.24 and max_transitions >= 14):
+                continue
+            if active_rows < 0.42:
+                continue
+
+            touches_left = (x <= 10)
+            touches_right = (x + bw >= w - 10)
+            in_side_margin = (x <= int(w * 0.18)) or (x + bw >= int(w * 0.82))
+
+            # 1. Potongan huruf/teks statis atau perlahan terpotong di tepi kiri/kanan frame
+            if (touches_left or touches_right) and bw >= 14:
+                if allow_natural_scene:
+                    if (max_transitions >= 10 and aspect >= 2.0 and fill_density >= 0.22) or (max_transitions >= 12 and bh >= 10 and fill_density >= 0.25):
+                        pair_edge = True
+                else:
+                    if max_transitions >= 8 or (bw >= 24 and max_transitions >= 3):
+                        pair_edge = True
+
+            # 2. Sekumpulan fragmen huruf di margin samping
+            if not allow_natural_scene and in_side_margin and bw >= 16 and max_transitions >= 5:
+                side_fragments += 1
+                if side_fragments >= 2:
+                    pair_edge = True
+
+            # 3. Watermark bawah atau banner teks mengambang di zona atas/bawah
+            in_top_bot_band = (int(h * 0.05) <= y <= int(h * 0.25)) or (int(h * 0.72) <= (y + bh) <= int(h * 0.96))
+            if in_top_bot_band and bw >= 36 and aspect >= 2.2 and max_transitions >= 10 and active_rows >= 0.50:
+                if allow_natural_scene:
+                    if (y + bh) >= int(h * 0.88) and fill_density >= 0.24 and max_transitions >= 15 and aspect >= 3.2:
+                        pair_wm = True
+                else:
+                    pair_banner = True
+
+            # 4. Banner teks lebar / infografis spek melayang di tengah layar (mis. Dimensity 6400)
+            if not allow_natural_scene and bw >= 150 and aspect >= 4.0 and max_transitions >= 35 and active_rows >= 0.55:
+                pair_banner = True
+
+        if pair_edge:
+            border_hits += 1
+        if pair_banner:
+            banner_hits += 1
+        if pair_wm:
+            watermark_hits += 1
+
+    n_pairs = len(grays_u8) - 1
+    if border_hits >= 1 or watermark_hits >= 1:
+        return True
+    if n_pairs <= 4:
+        return banner_hits >= 1
+    return banner_hits >= 2
 
 def has_side_by_side_dual_phones(frame_or_frames):
     """
@@ -2793,21 +2835,24 @@ def verify_clip_100pct_face_free(clip_path, detector, step=3, is_camera_chap=Fal
         return False
     if sampled_small and has_side_by_side_dual_phones(sampled_small):
         return False
-    if not is_camera_chap and len(sampled_small) >= 4:
-        # Ambil 6 sampel merata dari seluruh durasi klip untuk cek gambar statis & potongan teks mengambang
-        pick_idx = np.linspace(0, len(sampled_small) - 1, min(6, len(sampled_small)), dtype=int)
+    if len(sampled_small) >= 3:
+        # Cek still-image menggunakan 6 sampel renggang (~seluruh durasi klip) agar slow-fit halus tidak salah ditandai statis
+        if not is_camera_chap and len(sampled_small) >= 4:
+            still_idx = np.linspace(0, len(sampled_small) - 1, min(6, len(sampled_small)), dtype=int)
+            if is_static_still_sequence([sampled_small[i] for i in still_idx]):
+                return False
+        # Cek potongan huruf/overlay menggunakan hingga 12 sampel rapat agar teks singkat di awal/akhir tertangkap
+        pick_idx = np.linspace(0, len(sampled_small) - 1, min(12, len(sampled_small)), dtype=int)
         motion_samples = [sampled_small[i] for i in pick_idx]
-        if is_static_still_sequence(motion_samples):
-            return False
-        if has_cropped_or_floating_static_text(motion_samples):
+        if has_cropped_or_floating_static_text(motion_samples, allow_natural_scene=is_camera_chap):
             return False
     return True
 
-def verify_source_window_clean(video_path, seg_start, exact_dur, detector, samples=7, is_camera_chap=False):
+def verify_source_window_clean(video_path, seg_start, exact_dur, detector, samples=9, is_camera_chap=False):
     """
     Memverifikasi segmen kandidat langsung dari video sumber (sebelum dipotong 1080p)
     untuk memastikan 0% frame wajah (YuNet), 0% animasi tombol Subscribe YouTube,
-    bebas 2 handphone berdampingan, dan bebas gambar statis / teks statis terpotong kiri-kanan (untuk bab selain Kamera).
+    bebas 2 handphone berdampingan, bebas gambar statis (di luar Kamera), dan bebas teks terpotong kiri-kanan-bawah.
     """
     cap = cv2.VideoCapture(video_path)
     sampled_small = []
@@ -2836,10 +2881,10 @@ def verify_source_window_clean(video_path, seg_start, exact_dur, detector, sampl
         return False
     if sampled_small and has_side_by_side_dual_phones(sampled_small):
         return False
-    if not is_camera_chap and len(sampled_small) >= 4:
-        if is_static_still_sequence(sampled_small):
+    if len(sampled_small) >= 3:
+        if not is_camera_chap and len(sampled_small) >= 4 and is_static_still_sequence(sampled_small):
             return False
-        if has_cropped_or_floating_static_text(sampled_small):
+        if has_cropped_or_floating_static_text(sampled_small, allow_natural_scene=is_camera_chap):
             return False
     return True
 
@@ -2886,12 +2931,11 @@ def extract_storyboard_and_hist(video_path, start_s, end_s, detector=None, is_ca
         return None, None
     if has_side_by_side_dual_phones(crops):
         return None, None
-    # Tolak otomatis jika gambar statis / foto diam / teks statis terpotong kiri-kanan pada bab SELAIN Kamera!
-    if not is_camera_chap:
-        if is_static_still_sequence(crops):
-            return None, None
-        if has_cropped_or_floating_static_text(crops):
-            return None, None
+    # Tolak gambar statis (di luar Kamera) serta potongan huruf/watermark di semua bab
+    if not is_camera_chap and is_static_still_sequence(crops):
+        return None, None
+    if has_cropped_or_floating_static_text(crops, allow_natural_scene=is_camera_chap):
+        return None, None
     _, buf = cv2.imencode(".jpg", np.hstack(crops), [int(cv2.IMWRITE_JPEG_QUALITY), 80])
     return base64.b64encode(buf).decode("utf-8"), mid_hist
 
@@ -3044,7 +3088,7 @@ def cut_exact_broll_clip_1080p(video_path, seg_start, exact_dur, out_path, avail
     vf = "crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:1920:flags=lanczos"
     if avail_dur is not None and 0.8 <= float(avail_dur) < (exact_dur - 0.08):
         src_span = float(avail_dur)
-        pts_factor = min(1.65, exact_dur / max(0.8, src_span))
+        pts_factor = min(1.90, exact_dur / max(0.8, src_span))
         vf += f",setpts=(PTS-STARTPTS)*{pts_factor:.4f},fps=30,format=yuv420p"
     else:
         src_span = exact_dur
@@ -3161,10 +3205,10 @@ def segment_face_free_by_shots(video_path, face_free_segs, total_dur, max_subcli
                 cv2.normalize(cur_hist, cur_hist, 0, 1, cv2.NORM_MINMAX)
 
                 if prev_hist is not None and cv2.compareHist(prev_hist, cur_hist, cv2.HISTCMP_CORREL) < 0.72:
-                    cut_end = max(shot_start, t_q - 0.16)
+                    cut_end = max(shot_start, t_q - 0.22)
                     if (cut_end - shot_start) >= 1.55:
                         shot_spans.append((shot_start, cut_end))
-                    shot_start = t_q + 0.16
+                    shot_start = t_q + 0.22
                     prev_hist = None
                 else:
                     prev_hist = cur_hist
@@ -3216,7 +3260,7 @@ def _extract_local_clip_samples(video_path, candidate_windows, detector, events)
                 continue
 
             span = max(0.5, t_e - t_s)
-            ts_list = [t_s + span * f for f in (0.12, 0.32, 0.52, 0.72, 0.90)]
+            ts_list = [t_s + span * f for f in (0.08, 0.22, 0.36, 0.50, 0.64, 0.78, 0.92)]
             frames_270 = []
             has_face = False
             for _, frm in _sample_frames_sequential(cap, ts_list, fps=vid_fps, state=seq_state):
@@ -3239,7 +3283,8 @@ def _extract_local_clip_samples(video_path, candidate_windows, detector, events)
             mid_fr = frames_270[len(frames_270) // 2]
             mid_hist = _compute_frame_hist(mid_fr)
             is_static_loc = is_static_still_sequence(frames_270)
-            has_edge_loc = has_cropped_or_floating_static_text(frames_270)
+            has_edge_strict = has_cropped_or_floating_static_text(frames_270, allow_natural_scene=False)
+            has_edge_cam = has_cropped_or_floating_static_text(frames_270, allow_natural_scene=True)
 
             strip = [
                 cv2.resize(frames_270[0], (180, 320), interpolation=cv2.INTER_AREA),
@@ -3254,7 +3299,8 @@ def _extract_local_clip_samples(video_path, candidate_windows, detector, events)
                 "strip": strip,
                 "mid_hist": mid_hist,
                 "is_static_local": bool(is_static_loc),
-                "has_edge_text_local": bool(has_edge_loc),
+                "has_edge_text_local": bool(has_edge_strict),
+                "has_edge_text_cam_local": bool(has_edge_cam),
                 "transcript_slice": get_transcript_slice(events, t_s, t_e),
             })
     finally:
@@ -3319,12 +3365,20 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
     if os.path.exists(cache_path):
         try:
             cached = json.load(open(cache_path, "r", encoding="utf-8"))
-            if cached.get("vid_id") == vid_id and cached.get("version") == 1 and cached.get("items"):
+            if cached.get("vid_id") == vid_id and cached.get("version") == 2 and cached.get("items"):
                 raw_items = cached["items"]
                 cap = cv2.VideoCapture(video_path) if (video_path and os.path.exists(video_path)) else None
                 for it in raw_items:
                     cid = it.get("category")
-                    if cid not in pools:
+                    cfg_c = SCENE_CATALOG_MAP.get(cid)
+                    if not cfg_c:
+                        continue
+                    if it.get("has_overlay_text") is True:
+                        continue
+                    if cfg_c["allow_static_local"]:
+                        if it.get("has_edge_text_cam_local"):
+                            continue
+                    elif it.get("has_edge_text_local") or it.get("is_static_local"):
                         continue
                     mid_hist = None
                     if cap is not None:
@@ -3341,7 +3395,7 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                 deduped = _deduplicate_classified_pools(pools)
                 total_ok = sum(len(v) for v in deduped.values())
                 if total_ok >= 1:
-                    print(f"[+] Memuat {total_ok} klip terklasifikasi unik dari Cache Klasifikasi v1.", flush=True)
+                    print(f"[+] Memuat {total_ok} klip terklasifikasi unik dari Cache Klasifikasi v2.", flush=True)
                     return deduped
         except Exception:
             pass
@@ -3385,16 +3439,17 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                 "ATURAN KLASIFIKASI KETAT (UTAMAKAN APA YANG BENAR-BENAR TERLIHAT DI FRAME!):",
                 "- Klasifikasikan SETIAP baris tepat ke SALAH SATU kategori berikut, ATAU `REJECT`:",
                 cat_guide,
-                "- `REJECT`: Ada 2 atau lebih HP dalam 1 frame (perbandingan), ada wajah manusia, dus/kotak/kabel tanpa unit HP, screen-recording penuh tanpa bodi fisik HP, tabel spek/slide statis non-kamera, teks/watermark editor besar/huruf terpotong di tepi kiri-kanan, atau popup Subscribe.",
+                "- `REJECT`: Ada 2+ HP dalam 1 frame (perbandingan), wajah manusia, dus/kabel tanpa HP, screen-recording penuh tanpa bodi fisik HP, slide animasi/infografis logo chipset (mis. Dimensity/Snapdragon dengan teks besar melayang tanpa wujud fisik HP), tabel spek/slide statis non-kamera, popup Subscribe, ATAU terdapat potongan huruf/kata/teks/watermark editor yang melayang maupun terpotong di tepi kiri/kanan/bawah layar!",
                 "",
-                "ATURAN ANTI-SALAH-ADU:",
-                "- JANGAN terkecoh oleh posisi detik! Jika di segmen unboxing/body terselip adegan bermain game atau skor benchmark -> wajib klasifikasikan ke `benchmark_dapur_pacu`, BUKAN `body`!",
+                "ATURAN ANTI-SALAH-ADU & ANTI-TEKS:",
+                "- JANGAN terkecoh oleh posisi detik! Jika di segmen unboxing/body terselip adegan bermain game -> wajib klasifikasikan ke `benchmark_dapur_pacu`, BUKAN `body`!",
+                "- Set `has_overlay_text: true` jika ada potongan huruf di tepi frame, teks nama fitur/chipset melayang di luar layar HP, atau strip watermark putih kamera di bawah.",
                 "- Jika menampilkan air menyiram/merendam HP atau uji jatuh -> `ketahanan_fisik`.",
                 "- Jika menampilkan menu Settings/About/Control Center UI -> `os` (bukan `design_layar`).",
                 "- Hanya 1 unit HP yang diizinkan (`phone_count = 1`), kecuali foto/video hasil jepretan kamera pada kategori `kamera` (`phone_count = 0`).",
                 "",
                 "Kembalikan HANYA JSON murni berbentuk:",
-                '{"items": [{"id": <int 1..N>, "category": "<10_id_atau_REJECT>", "phone_count": <0|1|2>, "is_clean_broll": <true|false>, "is_back_of_phone": <true|false>, "confidence": <0.0..1.0>, "visual_note": "<deskripsi singkat visual nyata dlm 5-8 kata>"}]}'
+                '{"items": [{"id": <int 1..N>, "category": "<10_id_atau_REJECT>", "phone_count": <0|1|2>, "is_clean_broll": <true|false>, "has_overlay_text": <true|false>, "is_back_of_phone": <true|false>, "confidence": <0.0..1.0>, "visual_note": "<deskripsi singkat visual nyata dlm 5-8 kata>"}]}'
             ])
             payload = {
                 "contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": "image/jpeg", "data": b64_sheet}}]}],
@@ -3425,11 +3480,15 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                 except Exception:
                     p_cnt = 1
                 is_clean = r.get("is_clean_broll", True) is True
-                if not is_clean or p_cnt >= 2:
+                has_txt_ov = r.get("has_overlay_text", False) is True
+                if not is_clean or has_txt_ov or p_cnt >= 2:
                     continue
                 if p_cnt == 0 and not cfg["allow_phone_count_zero"]:
                     continue
-                if (smp["is_static_local"] or smp["has_edge_text_local"]) and not cfg["allow_static_local"]:
+                if smp["is_static_local"] and not cfg["allow_static_local"]:
+                    continue
+                edge_blocked = smp["has_edge_text_cam_local"] if cfg["allow_static_local"] else smp["has_edge_text_local"]
+                if edge_blocked:
                     continue
                 try:
                     conf = float(r.get("confidence", 0.75))
@@ -3443,12 +3502,14 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                     "category": cat_id,
                     "phone_count": p_cnt,
                     "is_clean_broll": True,
+                    "has_overlay_text": False,
                     "is_back_of_phone": bool(r.get("is_back_of_phone", False)),
                     "confidence": conf,
                     "visual_note": sanitize_subtitle_text(r.get("visual_note") or cfg["title"])[:90],
                     "transcript_slice": smp["transcript_slice"][:180],
                     "is_static_local": smp["is_static_local"],
                     "has_edge_text_local": smp["has_edge_text_local"],
+                    "has_edge_text_cam_local": smp["has_edge_text_cam_local"],
                     "mid_hist": smp["mid_hist"],
                 }
                 pools[cat_id].append(entry)
@@ -3475,12 +3536,14 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                     "category": matched_cid,
                     "phone_count": 1,
                     "is_clean_broll": True,
+                    "has_overlay_text": False,
                     "is_back_of_phone": False,
                     "confidence": 0.45,
                     "visual_note": SCENE_CATALOG_MAP[matched_cid]["title"],
                     "transcript_slice": smp["transcript_slice"][:180],
                     "is_static_local": smp["is_static_local"],
                     "has_edge_text_local": smp["has_edge_text_local"],
+                    "has_edge_text_cam_local": smp["has_edge_text_cam_local"],
                     "mid_hist": smp["mid_hist"],
                 }
                 pools[matched_cid].append(entry)
@@ -3494,7 +3557,7 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                 for cid_list in deduped.values() for it in cid_list
             ]
             with open(cache_path, "w", encoding="utf-8") as f:
-                json.dump({"vid_id": vid_id, "version": 1, "items": flat_deduped}, f, ensure_ascii=False, indent=2)
+                json.dump({"vid_id": vid_id, "version": 2, "items": flat_deduped}, f, ensure_ascii=False, indent=2)
         except Exception:
             pass
 
@@ -4829,8 +4892,27 @@ def _build_deterministic_active_plan(active_plan, video_title, total_dur, lang="
         plan[cid] = {"start_sec": s_t, "end_sec": e_t, "script": txt, "scenes": []}
     return plan
 
+def _window_in_same_shot(video_path, core_s, core_e, ext_s, ext_dur, min_corr=0.78):
+    """Memastikan perluasan jendela [ext_s, ext_s + ext_dur] masih berada pada satu shot visual yang sama dengan [core_s, core_e]."""
+    cap = cv2.VideoCapture(video_path)
+    try:
+        hists = []
+        for t_q in ((core_s + core_e) * 0.5, ext_s + 0.12, ext_s + max(0.25, ext_dur - 0.12)):
+            cap.set(cv2.CAP_PROP_POS_MSEC, float(t_q) * 1000.0)
+            ret, frm = cap.read()
+            if not ret or frm is None:
+                return False
+            hists.append(_compute_frame_hist(crop_center_9_16(frm)))
+        return (
+            cv2.compareHist(hists[0], hists[1], cv2.HISTCMP_CORREL) >= min_corr
+            and cv2.compareHist(hists[0], hists[2], cv2.HISTCMP_CORREL) >= min_corr
+        )
+    finally:
+        cap.release()
+
+
 def _cut_classified_clip_fit(video_path, clip_obj, exact_dur, clip_out, clip_detector, face_free_segs, is_cam_chap):
-    """Memotong tepat durasi VO dari klip terklasifikasi tanpa meluber keluar batas wajah/shot dan tanpa duplikasi."""
+    """Memotong tepat durasi VO dari klip terklasifikasi tanpa meluber keluar batas shot maupun wajah dan tanpa duplikasi."""
     c_start = float(clip_obj["start_s"])
     c_end = float(clip_obj["end_s"])
     avail = max(0.5, c_end - c_start)
@@ -4842,16 +4924,22 @@ def _cut_classified_clip_fit(video_path, clip_obj, exact_dur, clip_out, clip_det
             return True
         return False
 
-    # Coba perluas sedikit bila masih di dalam segmen bebas-wajah aman dan tetap lolos filter lokal
+    # Utamakan fit halus di dalam batas shot terverifikasi [c_start, c_end] agar tidak meluber ke shot berteks di sebelah!
+    if avail >= (exact_dur / 1.90):
+        cut_exact_broll_clip_1080p(video_path, c_start, exact_dur, clip_out, avail_dur=avail)
+        return verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap)
+
+    # Hanya perluas bila sangat pendek (< exact_dur / 1.90) DAN terbukti secara histogram masih satu shot yang sama!
     enclosing = next(((float(fs), float(fe)) for fs, fe in face_free_segs if float(fs) - 0.1 <= c_start and float(fe) + 0.1 >= c_end), None)
     if enclosing and (enclosing[1] - enclosing[0]) >= exact_dur:
         ext_s = max(enclosing[0], min(enclosing[1] - exact_dur, c_start - (exact_dur - avail) * 0.5))
-        if verify_source_window_clean(video_path, ext_s, exact_dur, clip_detector, is_camera_chap=is_cam_chap):
-            cut_exact_broll_clip_1080p(video_path, ext_s, exact_dur, clip_out)
-            if verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
-                return True
+        if _window_in_same_shot(video_path, c_start, c_end, ext_s, exact_dur):
+            if verify_source_window_clean(video_path, ext_s, exact_dur, clip_detector, is_camera_chap=is_cam_chap):
+                cut_exact_broll_clip_1080p(video_path, ext_s, exact_dur, clip_out)
+                if verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
+                    return True
 
-    # Fit halus ke durasi eksak menggunakan setpts pada klip terklasifikasi yang bersih (tanpa meluber ke adegan lain)
+    # Fit halus ke durasi eksak pada klip terklasifikasi bersih jika selisih masih wajar (tanpa meluber ke shot lain)
     cut_exact_broll_clip_1080p(video_path, c_start, exact_dur, clip_out, avail_dur=avail)
     return verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap)
 

@@ -11,6 +11,7 @@ import random
 import base64
 import shutil
 import hashlib
+import tempfile
 import argparse
 import subprocess
 import numpy as np
@@ -40,105 +41,100 @@ VISION_MODELS = [
     "gemini-flash-latest"
 ]
 
-CHAPTER_CONFIG = [
+SCENE_CATALOG = [
     {
-        "id": "body_ip",
-        "title": "Bodi, Dimensi & Ketahanan (IP Rating)",
-        "keywords": ["desain", "bodi", "body", "dimensi", "tipis", "tebal", "gram", "bobot", "ip5", "ip6", "tahan air", "debu", "warna", "backdoor", "frame", "fisik", "jatuh", "wastafel", "air", "tahan", "uji", "tes"],
-        "scene_templates": [
-            {
-                "scene_id": "body_ip_1",
-                "visual_focus": "Fisik bodi belakang, ketebalan frame, warna unit HP, dan genggaman tangan",
-                "keywords": ["desain", "bodi", "body", "dimensi", "tipis", "tebal", "gram", "bobot", "warna", "backdoor", "frame", "fisik", "stylish", "mewah"]
-            },
-            {
-                "scene_id": "body_ip_2",
-                "visual_focus": "Ketahanan fisik, sertifikasi IP Rating (IP64/IP68/IP69), uji siram/rendam air atau tahan banting",
-                "keywords": ["ip5", "ip6", "ip68", "ip69", "ip64", "ip54", "tahan air", "debu", "jatuh", "wastafel", "air", "tahan", "banting", "uji", "tes", "sertifikasi"]
-            }
-        ]
+        "id": "body",
+        "title": "Body & Desain",
+        "keywords": ["desain", "bodi", "body", "dimensi", "tipis", "tebal", "gram", "bobot", "warna", "backdoor", "frame", "fisik", "material", "ergonomis", "slim", "unboxing", "first look"],
+        "visual_rule": "Penampakan fisik 1 unit HP (bodi belakang/samping, ketebalan frame, material/warna, modul kamera luar, digenggam atau di atas meja; BUKAN gameplay game, BUKAN menu Settings).",
+        "allow_phone_count_zero": False,
+        "allow_static_local": False,
+        "max_cuts": 2,
     },
     {
-        "id": "screen_os",
-        "title": "Fitur Layar & Sistem Operasi (OS)",
-        "keywords": ["layar", "screen", "amoled", "ips", "oled", "inci", "inch", "hz", "refresh", "nits", "bezel", "android", "os", "ui", "hyperos", "oneui", "antarmuka"],
-        "scene_templates": [
-            {
-                "scene_id": "screen_os_1",
-                "visual_focus": "Tampilan panel layar depan menyala, bezel, ukuran inci, refresh rate (Hz), dan kecerahan",
-                "keywords": ["layar", "screen", "amoled", "ips", "oled", "inci", "inch", "hz", "refresh", "nits", "bezel", "terang", "panel", "visual"]
-            },
-            {
-                "scene_id": "screen_os_2",
-                "visual_focus": "Navigasi antarmuka sistem operasi (OS/UI), layar beranda, atau menu Tentang Ponsel",
-                "keywords": ["android", "os", "ui", "hyperos", "oneui", "funtouch", "coloros", "realme", "antarmuka", "sistem", "operasi", "fitur", "menu"]
-            }
-        ]
+        "id": "ketahanan_fisik",
+        "title": "Ketahanan Fisik",
+        "keywords": ["ip5", "ip6", "ip68", "ip69", "ip64", "ip54", "tahan air", "debu", "jatuh", "wastafel", "air", "siram", "rendam", "banting", "gores", "gorilla glass", "mil-std", "durability", "water", "drop"],
+        "visual_rule": "Uji ketahanan fisik pada 1 unit HP (disiram/direndam air, uji jatuh/banting/gores, frame kokoh, demonstrasi IP Rating).",
+        "allow_phone_count_zero": False,
+        "allow_static_local": False,
+        "max_cuts": 2,
     },
     {
-        "id": "perf_mem",
-        "title": "Dapur Pacu (Chipset) & Kapasitas Memori",
-        "keywords": ["chipset", "prosesor", "snapdragon", "dimensity", "helio", "unisoc", "exynos", "ram", "lpddr", "internal", "storage", "ufs", "emmc", "microsd", "sdcard", "slot", "antutu", "gaming", "performa"],
-        "scene_templates": [
-            {
-                "scene_id": "perf_mem_1",
-                "visual_focus": "Performa chipset/prosesor, skor benchmark AnTuTu, atau cuplikan tes gaming",
-                "keywords": ["chipset", "prosesor", "snapdragon", "dimensity", "helio", "unisoc", "exynos", "antutu", "gaming", "performa", "skor", "game", "lancarnya"]
-            },
-            {
-                "scene_id": "perf_mem_2",
-                "visual_focus": "Spesifikasi kapasitas RAM (LPDDR), memori internal (UFS/eMMC), atau slot SIM/microSD",
-                "keywords": ["ram", "lpddr", "internal", "storage", "ufs", "emmc", "microsd", "sdcard", "slot", "gb", "memori", "penyimpanan", "ekspansi"]
-            }
-        ]
+        "id": "design_layar",
+        "title": "Design Layar & Fiturnya",
+        "keywords": ["layar", "screen", "display", "amoled", "ips", "oled", "inci", "inch", "hz", "refresh", "nits", "bezel", "punch hole", "curved", "brightness", "hdr"],
+        "visual_rule": "Tampilan layar depan 1 unit HP menyala memperlihatkan bezel, kecerahan, ketajaman warna, visual video/scrolling layar (BUKAN bermain game penuh & BUKAN menu Settings).",
+        "allow_phone_count_zero": False,
+        "allow_static_local": False,
+        "max_cuts": 2,
     },
     {
-        "id": "bat_feat",
-        "title": "Baterai, Charging & Fitur Pendukung",
-        "keywords": ["baterai", "battery", "mah", "charging", "cas", "watt", "nfc", "speaker", "stereo", "fingerprint", "sidik jari", "gyro", "sensor", "audio", "jack"],
-        "scene_templates": [
-            {
-                "scene_id": "bat_feat_1",
-                "visual_focus": "Baterai berkapasitas besar (mAh) dan pengisian daya cepat (Watt / Flash Charge / kabel charger)",
-                "keywords": ["baterai", "battery", "mah", "charging", "cas", "watt", "flash", "charge", "supervooc", "daya", "awet", "pengisian"]
-            },
-            {
-                "scene_id": "bat_feat_2",
-                "visual_focus": "Fitur pendukung seperti NFC, speaker stereo, sensor sidik jari (fingerprint) di layar/samping",
-                "keywords": ["nfc", "speaker", "stereo", "fingerprint", "sidik jari", "gyro", "sensor", "audio", "jack", "lengkap", "fitur"]
-            }
-        ]
+        "id": "baterai_daya",
+        "title": "Daya & Pengisian Baterai",
+        "keywords": ["baterai", "battery", "mah", "charging", "cas", "watt", "flash charge", "supervooc", "adapter", "charger", "kabel", "persen", "daya"],
+        "visual_rule": "Pengisian daya atau uji baterai pada 1 unit HP (mencolok kabel charger ke port USB, indikator/animasi persen baterai mengisi cepat, atau kepala adaptor bersama HP).",
+        "allow_phone_count_zero": False,
+        "allow_static_local": False,
+        "max_cuts": 2,
     },
     {
-        "id": "camera",
-        "title": "Kamera Depan Belakang Lengkap & Rekaman Video",
-        "keywords": ["kamera", "camera", "megapixel", "mp", "mpx", "ois", "eis", "selfie", "depan", "belakang", "ultrawide", "telephoto", "perekaman", "rekam", "fps", "1080p", "4k", "foto", "video", "lensa"],
-        "scene_templates": [
-            {
-                "scene_id": "camera_1",
-                "visual_focus": "Modul lensa kamera belakang utama & kamera depan beserta hasil foto",
-                "keywords": ["kamera", "camera", "utama", "belakang", "megapixel", "mp", "mpx", "ois", "sony", "ultrawide", "depan", "selfie", "lensa", "foto"]
-            },
-            {
-                "scene_id": "camera_2",
-                "visual_focus": "Antarmuka perekaman video atau sampel hasil rekaman video depan & belakang (1080p/4K FPS)",
-                "keywords": ["perekaman", "rekam", "video", "fps", "1080p", "4k", "60fps", "30fps", "full hd", "eis", "stabil", "sampel"]
-            }
-        ]
+        "id": "os",
+        "title": "OS & Antarmuka",
+        "keywords": ["android", "os", "ui", "hyperos", "oneui", "coloros", "funtouch", "hios", "antarmuka", "settings", "pengaturan", "about phone", "tentang ponsel", "update", "ai feature", "menu"],
+        "visual_rule": "Navigasi sistem operasi/antarmuka UI di layar 1 unit HP (Control Center, laci aplikasi, menu Settings, About Phone, kustomisasi OS/UI).",
+        "allow_phone_count_zero": False,
+        "allow_static_local": False,
+        "max_cuts": 2,
+    },
+    {
+        "id": "benchmark_dapur_pacu",
+        "title": "Benchmark & Dapur Pacu",
+        "keywords": ["chipset", "prosesor", "snapdragon", "dimensity", "helio", "unisoc", "exynos", "ram", "lpddr", "ufs", "storage", "antutu", "geekbench", "gaming", "game", "pubg", "mlbb", "genshin", "fps", "performa", "thermal", "suhu"],
+        "visual_rule": "Bermain game (gameplay PUBG/MLBB/Genshin/balapan di layar HP fisik), aplikasi skor benchmark AnTuTu/Geekbench/3DMark/FPS meter pada unit HP, atau tes performa chipset/thermal.",
+        "allow_phone_count_zero": False,
+        "allow_static_local": False,
+        "max_cuts": 3,
+    },
+    {
+        "id": "speaker",
+        "title": "Speaker & Audio",
+        "keywords": ["speaker", "stereo", "audio", "suara", "volume", "dolby", "grille", "lubang speaker", "desibel", "sound"],
+        "visual_rule": "Close-up lubang/grille speaker atas atau bawah HP, atau pengujian suara/volume musik/audio test pada 1 unit HP.",
+        "allow_phone_count_zero": False,
+        "allow_static_local": False,
+        "max_cuts": 1,
+    },
+    {
+        "id": "fitur_unik",
+        "title": "Fitur Unik atau Unggulan",
+        "keywords": ["fitur", "unik", "unggulan", "nfc", "fingerprint", "sidik jari", "in-display", "ir blaster", "led", "glyph", "aura", "ai", "trigger", "tipis", "slim", "special", "signature"],
+        "visual_rule": "Demonstrasi fitur pembeda/unggulan khas HP tersebut (sidik jari di layar/samping, NFC tap kartu, lampu notifikasi/LED belakang, bodi ultra-tipis/melengkung ekstrem, stylus, tombol aksi, sensor khusus).",
+        "allow_phone_count_zero": False,
+        "allow_static_local": False,
+        "max_cuts": 2,
+    },
+    {
+        "id": "kamera",
+        "title": "Fitur Kamera Depan & Belakang",
+        "keywords": ["kamera", "camera", "megapixel", "mp", "ois", "eis", "selfie", "depan", "belakang", "ultrawide", "telephoto", "foto", "video", "1080p", "4k", "60fps", "lensa", "potret"],
+        "visual_rule": "Close-up modul lensa kamera HP, antarmuka viewfinder aplikasi kamera pada HP, ATAU sampel foto/video hasil jepretan kamera (pemandangan, objek, potret tanpa watermark/teks).",
+        "allow_phone_count_zero": True,
+        "allow_static_local": True,
+        "max_cuts": 3,
     },
     {
         "id": "cta",
-        "title": "Kesimpulan & CTA Soft Selling",
-        "keywords": ["kesimpulan", "harga", "worth", "beli", "tertarik", "rekomendasi", "pilihan", "kesimpulannya"],
-        "scene_templates": [
-            {
-                "scene_id": "cta_1",
-                "visual_focus": "Tampilan keseluruhan unit HP yang elegan sebagai kesimpulan & rekomendasi akhir",
-                "keywords": ["kesimpulan", "solusi", "solid", "harga", "worth", "beli", "tertarik", "rekomendasi", "pilihan", "kesimpulannya", "layak", "unggul"]
-            }
-        ]
-    }
+        "title": "CTA",
+        "keywords": ["kesimpulan", "harga", "worth", "beli", "verdict", "price", "rekomendasi", "pilihan", "summary"],
+        "visual_rule": "Hero shot tampilan keseluruhan 1 unit HP yang estetik & elegan (mis. tampak belakang penuh atau hands-on rapi) cocok untuk penutup/CTA.",
+        "allow_phone_count_zero": False,
+        "allow_static_local": False,
+        "max_cuts": 2,
+    },
 ]
+SCENE_CATALOG_MAP = {c["id"]: c for c in SCENE_CATALOG}
+CHAPTER_CONFIG = SCENE_CATALOG
 
 def discover_available_models(api_key):
     """
@@ -245,37 +241,162 @@ def ensure_1080p_h264(video_path):
         ], check=True)
         os.replace(temp_h264, video_path)
 
-def download_video_and_subs(url, work_dir, skip_download=False):
+def _find_existing_sub_file(work_dir):
+    """Mencari file transkrip lokal yang sudah terunduh (.json3 diprioritaskan, lalu .vtt / .srt)."""
+    exts = (".json3", ".vtt", ".srt")
+    found = []
+    for f in sorted(os.listdir(work_dir)):
+        low = f.lower()
+        if low.startswith("source_video") and low.endswith(exts) and not low.endswith(".part"):
+            prio = exts.index(next(e for e in exts if low.endswith(e)))
+            found.append((prio, os.path.join(work_dir, f)))
+    if not found:
+        return None
+    found.sort(key=lambda x: x[0])
+    return found[0][1]
+
+def extract_youtube_chapters(info_data):
+    """Mengekstrak daftar chapter YouTube dari metadata info.json menjadi list dict bersih."""
+    if not isinstance(info_data, dict):
+        return []
+    chapters = []
+    for ch in (info_data.get("chapters") or []):
+        if not isinstance(ch, dict):
+            continue
+        title = sanitize_subtitle_text(ch.get("title", ""))
+        try:
+            s_t = float(ch.get("start_time", 0.0))
+            e_t = float(ch.get("end_time", s_t))
+        except Exception:
+            continue
+        if title and e_t > s_t:
+            chapters.append({"start_sec": round(s_t, 2), "end_sec": round(e_t, 2), "title": title})
+    return chapters
+
+def _resolve_cookies_path(work_dir, cookies_arg=None):
+    if cookies_arg and os.path.exists(cookies_arg):
+        return cookies_arg
+    auto_ck = os.path.join(work_dir, "cookies.txt")
+    return auto_ck if os.path.exists(auto_ck) else None
+
+def _download_subtitles_resilient(url, work_dir, info_data, cookies_path=None):
+    """
+    Mengunduh subtitle YouTube secara bertahap agar terhindar dari HTTP 429:
+    - Memprioritaskan track manual (`subtitles`) atau bahasa asli video (`automatic_captions` tanpa tlang=),
+      karena permintaan multi-bahasa terjemahan otomatis dalam satu panggilan sering memicu 429.
+    """
+    sub_file = _find_existing_sub_file(work_dir)
+    if sub_file:
+        return sub_file
+
+    info_data = info_data if isinstance(info_data, dict) else {}
+    native_lang = str(info_data.get("language") or "").split("-")[0].strip().lower()
+    manual_keys = list((info_data.get("subtitles") or {}).keys())
+    auto_keys = list((info_data.get("automatic_captions") or {}).keys())
+
+    # Tentukan daftar strategi terurut yang paling aman dari 429
+    attempts = []
+    if manual_keys:
+        pref = [k for k in (native_lang, "id", "en") if k and k in manual_keys]
+        if not pref:
+            pref = [manual_keys[0]]
+        attempts.append((["--write-sub"], pref[0]))
+
+    # Cari bahasa asli video di automatic_captions (hindari memaksa id,en lewat endpoint tlang=)
+    orig_candidates = []
+    for k in (native_lang, "en", "id"):
+        if not k:
+            continue
+        matched = next((ak for ak in auto_keys if ak == k or ak.startswith(k + "-orig")), None)
+        if matched and matched not in orig_candidates:
+            orig_candidates.append(matched)
+    if orig_candidates:
+        attempts.append((["--write-auto-sub"], orig_candidates[0]))
+    elif not attempts:
+        # Jika info_data belum memiliki daftar track, coba bahasa asli atau id/en terpisah
+        attempts.append((["--write-auto-sub", "--write-sub"], native_lang or "id"))
+        if native_lang not in ("en",):
+            attempts.append((["--write-auto-sub"], "en"))
+
+    base_cmd = [
+        "yt-dlp", "--ignore-errors", "--skip-download",
+        "--js-runtimes", "node",
+        "--extractor-args", "youtube:player_client=android,web",
+        "--sleep-subtitles", "3", "--sleep-requests", "1.5",
+        "--sub-format", "json3/vtt/srt",
+        "-o", os.path.join(work_dir, "source_video.%(ext)s"),
+    ]
+    if cookies_path:
+        base_cmd += ["--cookies", cookies_path]
+
+    for idx, (flags, sub_lang) in enumerate(attempts[:2]):
+        if idx > 0:
+            time.sleep(2.5)
+        cmd = base_cmd + flags + ["--sub-lang", sub_lang, url]
+        subprocess.run(cmd, check=False)
+        sub_file = _find_existing_sub_file(work_dir)
+        if sub_file:
+            print(f"[+] Berhasil mengunduh subtitle YouTube ({os.path.basename(sub_file)}).", flush=True)
+            return sub_file
+    return None
+
+def download_video_and_subs(url, work_dir, skip_download=False, cookies_path=None):
     video_out = os.path.join(work_dir, "source_video.mp4")
     info_out = os.path.join(work_dir, "source_video.info.json")
     vid_id = extract_video_id(url)
+    ck_path = _resolve_cookies_path(work_dir, cookies_path)
 
-    sub_file = None
-    for f in os.listdir(work_dir):
-        if f.startswith("source_video") and f.endswith(".json3"):
-            sub_file = os.path.join(work_dir, f)
-            break
-
+    sub_file = _find_existing_sub_file(work_dir)
     video_title = "Smartphone Review"
     video_desc = ""
+    info_data = {}
     cached_id = None
-    if os.path.exists(info_out):
-        try:
-            with open(info_out, "r", encoding="utf-8") as f:
-                info_data = json.load(f)
-                video_title = info_data.get("title", video_title)
-                video_desc = info_data.get("description", "")[:5000]
-                cached_id = info_data.get("id")
-        except Exception:
-            pass
+
+    def _read_info():
+        nonlocal info_data, video_title, video_desc, cached_id
+        if os.path.exists(info_out):
+            try:
+                with open(info_out, "r", encoding="utf-8") as f:
+                    info_data = json.load(f)
+                    video_title = info_data.get("title", video_title)
+                    video_desc = info_data.get("description", "")[:5000]
+                    cached_id = info_data.get("id")
+            except Exception:
+                pass
+
+    _read_info()
+    youtube_chapters = extract_youtube_chapters(info_data)
 
     if os.path.exists(video_out) and (skip_download or cached_id == vid_id):
         _, height = check_video_info(video_out)
         print(f"\n[*] Menggunakan video lokal ({video_title} - {height}p)...", flush=True)
         ensure_1080p_h264(video_out)
-        return video_out, sub_file, video_title, video_desc, vid_id
+        if not sub_file:
+            gem_cache = os.path.join(work_dir, "source_video.gemini_subs.json")
+            has_valid_gem_cache = False
+            if os.path.exists(gem_cache):
+                try:
+                    gd = json.load(open(gem_cache, "r", encoding="utf-8"))
+                    has_valid_gem_cache = (gd.get("vid_id") == vid_id and bool(gd.get("events")))
+                except Exception:
+                    pass
+            if not has_valid_gem_cache:
+                sub_file = _download_subtitles_resilient(url, work_dir, info_data, ck_path)
+            elif not sub_file:
+                sub_file = gem_cache
+        return video_out, sub_file, video_title, video_desc, vid_id, youtube_chapters
 
-    print("\n[*] Mengunduh video 1080p H.264 dan transkrip dari YouTube...", flush=True)
+    # Jika pindah ke URL video baru, bersihkan subtitle & cache lama agar tidak tercampur
+    if cached_id and cached_id != vid_id:
+        for old_f in os.listdir(work_dir):
+            if old_f.startswith("source_video") and (old_f.endswith((".json3", ".vtt", ".srt")) or old_f == "source_video.gemini_subs.json"):
+                try:
+                    os.remove(os.path.join(work_dir, old_f))
+                except Exception:
+                    pass
+        sub_file = None
+
+    print("\n[*] Mengunduh video 1080p H.264 dan metadata dari YouTube...", flush=True)
     if os.path.exists(video_out):
         os.remove(video_out)
 
@@ -286,43 +407,91 @@ def download_video_and_subs(url, work_dir, skip_download=False):
         "--write-info-json",
         "-f", "bestvideo[height<=1080][vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]",
         "--merge-output-format", "mp4",
-        "--write-auto-sub", "--write-sub",
-        "--sub-lang", "id,en",
-        "--sub-format", "json3",
         "-o", os.path.join(work_dir, "source_video.%(ext)s"),
         url
     ]
+    if ck_path:
+        cmd[1:1] = ["--cookies", ck_path]
     subprocess.run(cmd, check=False)
 
     if not os.path.exists(video_out):
-        subprocess.run([
+        fb_cmd = [
             "yt-dlp", "--js-runtimes", "node", "--write-info-json",
             "-f", "bestvideo[height<=1080][vcodec^=avc1]+bestaudio[ext=m4a]/best[height<=1080]",
             "--merge-output-format", "mp4",
             "-o", video_out, url
-        ], check=True)
+        ]
+        if ck_path:
+            fb_cmd[1:1] = ["--cookies", ck_path]
+        subprocess.run(fb_cmd, check=True)
 
     ensure_1080p_h264(video_out)
+    _read_info()
+    youtube_chapters = extract_youtube_chapters(info_data)
+    sub_file = _download_subtitles_resilient(url, work_dir, info_data, ck_path)
 
-    for f in os.listdir(work_dir):
-        if f.startswith("source_video") and f.endswith(".json3"):
-            sub_file = os.path.join(work_dir, f)
-            break
+    return video_out, sub_file, video_title, video_desc, vid_id, youtube_chapters
 
-    if os.path.exists(info_out):
-        try:
-            with open(info_out, "r", encoding="utf-8") as f:
-                info_data = json.load(f)
-                video_title = info_data.get("title", video_title)
-                video_desc = info_data.get("description", "")[:5000]
-        except Exception:
-            pass
+def _parse_ts_to_seconds(ts_str):
+    parts = ts_str.strip().replace(",", ".").split(":")
+    try:
+        if len(parts) == 3:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+        if len(parts) == 2:
+            return int(parts[0]) * 60 + float(parts[1])
+    except Exception:
+        return 0.0
+    return 0.0
 
-    return video_out, sub_file, video_title, video_desc, vid_id
+def _parse_vtt_or_srt_events(sub_file):
+    """Membaca subtitle format .vtt atau .srt dan membuang tag HTML serta duplikasi rolling."""
+    try:
+        with open(sub_file, "r", encoding="utf-8", errors="ignore") as f:
+            lines = f.read().splitlines()
+    except Exception:
+        return []
+    ts_re = re.compile(r"((?:\d+:)?\d{1,2}:\d{2}[.,]\d{3})\s*-->\s*((?:\d+:)?\d{1,2}:\d{2}[.,]\d{3})")
+    parsed = []
+    i = 0
+    while i < len(lines):
+        m = ts_re.search(lines[i])
+        if not m:
+            i += 1
+            continue
+        s_t = _parse_ts_to_seconds(m.group(1))
+        e_t = max(s_t + 0.2, _parse_ts_to_seconds(m.group(2)))
+        i += 1
+        cue_lines = []
+        while i < len(lines) and lines[i].strip():
+            clean = re.sub(r"<[^>]+>", " ", lines[i]).strip()
+            clean = " ".join(clean.split())
+            if clean and not clean.startswith("NOTE"):
+                cue_lines.append(clean)
+            i += 1
+        text = " ".join(cue_lines).strip()
+        if text:
+            if parsed and parsed[-1][2] == text and (s_t - parsed[-1][1]) < 0.8:
+                parsed[-1] = (parsed[-1][0], max(parsed[-1][1], e_t), text)
+            else:
+                parsed.append((s_t, e_t, text))
+    return parsed
 
 def load_transcript_events(sub_file):
     if not sub_file or not os.path.exists(sub_file):
         return []
+    low = sub_file.lower()
+    if low.endswith(".gemini_subs.json"):
+        try:
+            data = json.load(open(sub_file, "r", encoding="utf-8"))
+            return [
+                (float(ev["start_s"]), float(ev["end_s"]), str(ev["text"]).strip())
+                for ev in (data.get("events") or [])
+                if str(ev.get("text", "")).strip()
+            ]
+        except Exception:
+            return []
+    if low.endswith((".vtt", ".srt")):
+        return _parse_vtt_or_srt_events(sub_file)
     try:
         with open(sub_file, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -339,15 +508,107 @@ def load_transcript_events(sub_file):
     except Exception:
         return []
 
-def build_timestamped_transcript_digest(events, max_chars=16000):
-    if not events:
-        return ""
+def transcribe_video_audio_with_gemini(video_path, vid_id, work_dir, total_dur, api_key, youtube_chapters=None):
+    """
+    Fallback tahan-429: Jika subtitle YouTube gagal diunduh (HTTP 429), ekstrak audio mono MP3
+    ringan (16kbps) langsung dari source_video.mp4 dan transkripsikan ber-timestamp memakai Gemini Multimodal,
+    lalu cache ke source_video.gemini_subs.json.
+    """
+    cache_path = os.path.join(work_dir, "source_video.gemini_subs.json")
+    if os.path.exists(cache_path):
+        try:
+            cached = json.load(open(cache_path, "r", encoding="utf-8"))
+            if cached.get("vid_id") == vid_id and cached.get("events"):
+                print(f"[+] Memuat {len(cached['events'])} segmen transkrip audio dari cache Gemini.", flush=True)
+                return [
+                    (float(ev["start_s"]), float(ev["end_s"]), str(ev["text"]).strip())
+                    for ev in cached["events"]
+                ]
+        except Exception:
+            pass
+
+    if not api_key or not video_path or not os.path.exists(video_path):
+        return []
+
+    print("[!] Subtitle YouTube gagal (429/tidak tersedia) -> Memulihkan transkrip ber-timestamp langsung dari audio video via Gemini...", flush=True)
+    chunk_len = 480.0
+    n_chunks = max(1, int(math.ceil(max(total_dur, 1.0) / chunk_len)))
+    all_events = []
+    chap_hint = ""
+    if youtube_chapters:
+        chap_hint = "YouTube Chapters: " + "; ".join(f"[{int(c['start_sec'])}s-{int(c['end_sec'])}s] {c['title']}" for c in youtube_chapters)
+
+    with tempfile.TemporaryDirectory() as tmp_aud_dir:
+        for ch_i in range(n_chunks):
+            off_s = ch_i * chunk_len
+            seg_dur = min(chunk_len, max(1.0, total_dur - off_s))
+            if seg_dur < 3.0:
+                continue
+            mp3_path = os.path.join(tmp_aud_dir, f"aud_{ch_i}.mp3")
+            cmd = [
+                "ffmpeg", "-nostdin", "-y", "-loglevel", "fatal",
+                "-ss", f"{off_s:.2f}", "-t", f"{seg_dur:.2f}", "-i", video_path,
+                "-vn", "-ac", "1", "-ar", "16000", "-b:a", "16k", "-f", "mp3", mp3_path
+            ]
+            res = subprocess.run(cmd, check=False)
+            if res.returncode != 0 or not os.path.exists(mp3_path) or os.path.getsize(mp3_path) < 1000:
+                continue
+            b64_aud = base64.b64encode(open(mp3_path, "rb").read()).decode("utf-8")
+            prompt = "\n".join([
+                f"Listen to this smartphone review audio segment (segment duration: {int(seg_dur)} seconds, video offset +{int(off_s)}s).",
+                chap_hint,
+                "Produce a timestamped transcript summary broken into ~12-20 second windows.",
+                "IMPORTANT: Translate Hindi/other speech cleanly into Indonesian/English technical phrasing and preserve EVERY real phone spec (chipset, RAM/storage, mAh, Watt, IP rating, display Hz/nits, camera MP/FPS, speaker/OS features, gaming/benchmark test).",
+                "Timestamps (`start_s`, `end_s`) MUST be relative to THIS audio clip (`0.0` to `{:.1f}`).".format(seg_dur),
+                'Return ONLY pure JSON: {"events": [{"start_s": 0.0, "end_s": 18.0, "text": "..."}]}'
+            ])
+            payload = {
+                "contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": "audio/mp3", "data": b64_aud}}]}],
+                "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"}
+            }
+            parsed = call_gemini_json(payload, api_key)
+            evs = parsed.get("events") if isinstance(parsed, dict) else None
+            if isinstance(evs, list):
+                for ev in evs:
+                    if not isinstance(ev, dict):
+                        continue
+                    txt = " ".join(str(ev.get("text", "")).split())
+                    if not txt:
+                        continue
+                    try:
+                        rs = max(0.0, min(seg_dur, float(ev.get("start_s", 0.0))))
+                        re_t = max(rs + 1.0, min(seg_dur, float(ev.get("end_s", rs + 15.0))))
+                    except Exception:
+                        continue
+                    all_events.append((round(off_s + rs, 2), round(off_s + re_t, 2), txt))
+
+    if all_events:
+        try:
+            with open(cache_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "vid_id": vid_id,
+                    "events": [{"start_s": s, "end_s": e, "text": t} for s, e, t in all_events]
+                }, f, ensure_ascii=False, indent=2)
+            print(f"[+] Berhasil memulihkan {len(all_events)} segmen transkrip audio ke cache lokal.", flush=True)
+        except Exception:
+            pass
+    return all_events
+
+def build_timestamped_transcript_digest(events, max_chars=16000, youtube_chapters=None):
     blocks = []
+    if youtube_chapters:
+        ch_lines = ["[YOUTUBE CHAPTERS]"] + [
+            f"[{int(c['start_sec'])}s-{int(c['end_sec'])}s] {c['title']}"
+            for c in youtube_chapters
+        ]
+        blocks.append("\n".join(ch_lines))
+        blocks.append("[TRANSCRIPT]")
+
     bucket_start = None
     bucket_end = None
     bucket_texts = []
 
-    for s, e, txt in events:
+    for s, e, txt in (events or []):
         if bucket_start is None:
             bucket_start = s
             bucket_end = e
@@ -365,6 +626,8 @@ def build_timestamped_transcript_digest(events, max_chars=16000):
     if bucket_texts and bucket_start is not None:
         blocks.append(f"[{int(bucket_start)}s-{int(bucket_end)}s] {' '.join(bucket_texts)}")
 
+    if not events and len(blocks) <= 1:
+        return "\n".join(blocks)[:max_chars] if blocks else ""
     full_str = "\n".join(blocks)
     return full_str[:max_chars]
 
@@ -519,21 +782,30 @@ def repair_json_string(s):
 def normalize_parsed_json_to_dict(parsed):
     """Menormalkan hasil parse JSON (baik list maupun nested wrapper dict) menjadi dict level atas yang diharapkan."""
     if isinstance(parsed, list):
+        if len(parsed) > 0 and all(isinstance(x, dict) for x in parsed):
+            if any("category" in x for x in parsed):
+                return {"items": parsed}
+            if any("start_s" in x or "start_sec" in x for x in parsed):
+                return {"events": parsed}
         if len(parsed) == 1 and isinstance(parsed[0], dict):
             parsed = parsed[0]
         elif len(parsed) > 0 and all(isinstance(x, dict) for x in parsed):
             merged = {}
             for item in parsed:
-                cid = item.get("id") or item.get("chapter_id") or item.get("key")
-                if cid:
-                    merged[str(cid)] = item
+                cid = item.get("chapter_id") or item.get("key") or item.get("id")
+                if cid and isinstance(cid, str):
+                    merged[cid] = item
                 else:
                     merged.update(item)
             if merged:
                 parsed = merged
     if isinstance(parsed, dict):
-        # Jika dibungkus dalam key tunggal seperti {"chapters": {...}} atau {"result": {...}} atau {"data": {...}}
-        expected = {"body_ip", "screen_os", "perf_mem", "bat_feat", "camera", "cta", "is_product_broll"}
+        expected = {
+            "body", "ketahanan_fisik", "design_layar", "baterai_daya", "os",
+            "benchmark_dapur_pacu", "speaker", "fitur_unik", "kamera", "cta",
+            "body_ip", "screen_os", "perf_mem", "bat_feat", "camera",
+            "is_product_broll", "items", "events", "picks", "best"
+        }
         if not (set(parsed.keys()) & expected):
             for v in parsed.values():
                 if isinstance(v, dict) and (set(v.keys()) & expected):
@@ -547,16 +819,24 @@ def normalize_parsed_json_to_dict(parsed):
 def salvage_chapters_by_regex(raw_txt, total_dur=600.0):
     """Penyelamat darurat berbasis regex jika struktur kurung kurawal JSON terpotong di tengah jalan."""
     alias_map = {
-        "body_ip": ["body_ip", "design", "body"],
-        "screen_os": ["screen_os", "screen", "display"],
-        "perf_mem": ["perf_mem", "performance", "chipset"],
-        "bat_feat": ["bat_feat", "battery"],
-        "camera": ["camera"],
+        "body": ["body", "desain_body"],
+        "ketahanan_fisik": ["ketahanan_fisik", "durability"],
+        "design_layar": ["design_layar", "layar", "display"],
+        "baterai_daya": ["baterai_daya", "baterai", "battery"],
+        "os": ["os"],
+        "benchmark_dapur_pacu": ["benchmark_dapur_pacu", "dapur_pacu", "gaming", "benchmark"],
+        "speaker": ["speaker", "audio"],
+        "fitur_unik": ["fitur_unik", "fitur_unggulan"],
+        "kamera": ["kamera", "camera"],
+        "body_ip": ["body_ip"],
+        "screen_os": ["screen_os"],
+        "perf_mem": ["perf_mem"],
+        "bat_feat": ["bat_feat"],
         "cta": ["cta", "conclusion"]
     }
     all_key_names = "|".join([a for sub in alias_map.values() for a in sub] + ["caption", "hashtags"])
     salvaged = {}
-    step = max(30.0, (total_dur - 45.0) / 6.0)
+    step = max(30.0, (total_dur - 45.0) / 8.0)
     for idx, (canon_k, aliases) in enumerate(alias_map.items()):
         def_s = 35.0 + idx * step
         def_e = min(total_dur - 10.0, def_s + step)
@@ -569,6 +849,12 @@ def salvage_chapters_by_regex(raw_txt, total_dur=600.0):
             s_m = re.search(r'"start_sec"\s*:\s*([0-9.]+)', blk)
             e_m = re.search(r'"end_sec"\s*:\s*([0-9.]+)', blk)
             sc_m = re.search(r'"script"\s*:\s*"([^"\n\r}]+)', blk)
+            if not sc_m:
+                # Mendukung nilai string langsung {"body": "..."}
+                str_m = re.search(rf'"{k}"\s*:\s*"([^"\n\r}}]+)"', raw_txt)
+                if str_m:
+                    salvaged[canon_k] = {"start_sec": def_s, "end_sec": def_e, "script": str_m.group(1).strip(), "scenes": []}
+                    break
             if sc_m:
                 salvaged[canon_k] = {
                     "start_sec": float(s_m.group(1)) if s_m else def_s,
@@ -960,8 +1246,55 @@ def ensure_indonesian_affiliate_soft_selling_cta(cta_script, fallback_template):
         return _remove_leading_word_repetition(combined)
     return _remove_leading_word_repetition(fallback_template)
 
-def analyze_native_transcript_and_build_chapters(video_title, video_desc, timestamped_transcript, total_dur, api_key, lang="id"):
-    short_transcript = timestamped_transcript[:15000] if timestamped_transcript else "(Transkrip tidak tersedia, gunakan spesifikasi asli HP pada judul)"
+def _build_scene_key_prompt_spec(scene_plan, hook_style_name, hook_style_desc, var_idx, en_cta_style, id_cta_style, lang="id"):
+    """Menyusun panduan penulisan VO khusus adegan aktif terklasifikasi agar 100% sinkron dengan visual klipnya."""
+    lines = []
+    for idx, sc in enumerate(scene_plan):
+        cid = sc["id"]
+        title = sc["title"]
+        t_words = int(sc.get("target_words", 10))
+        clip_notes = []
+        for c_i, cl in enumerate(sc.get("assigned_clips", []), 1):
+            note = cl.get("visual_note") or title
+            sub = cl.get("transcript_slice", "")
+            rng_s = f"{int(cl['start_s'])}s-{int(cl['end_s'])}s"
+            clip_notes.append(f"Klip {c_i} [{rng_s}]: {note}" + (f" (konteks ucapan: {sub[:90]})" if sub else ""))
+        vis_ctx = " | ".join(clip_notes) if clip_notes else sc.get("visual_rule", title)
+
+        if idx == 0:
+            if lang == "en":
+                rule = (
+                    f"1. `{cid}` ({title}, ~{t_words} words): START IMMEDIATELY with a sharp English hook [{hook_style_name}] -> {hook_style_desc} "
+                    "(name the phone immediately; FORBIDDEN clichés: 'This beast just changed...', 'Meet the...', '[Phone] features...', 'Hello') + describe the exact visuals/specs shown: "
+                    f"[{vis_ctx}]"
+                )
+            else:
+                rule = (
+                    f"1. `{cid}` ({title}, ~{t_words} kata): WAJIB diawali hook 1 kalimat singkat yang menggebrak dan langsung menyebut nama seri HP "
+                    "(DILARANG 'Halo/Hai/Yuk/Oke') + bahas fakta spesifikasi sesuai visual terpilih: "
+                    f"[{vis_ctx}]"
+                )
+        elif cid == "cta":
+            if lang == "en":
+                rule = (
+                    f"{idx + 1}. `cta` (~{t_words} words): 4-5 word sharp takeaway + mandatory creative LIKE & SUBSCRIBE CTA in English "
+                    f"inspired by style #{var_idx + 1}: {en_cta_style} | Visual penutup: [{vis_ctx}]"
+                )
+            else:
+                rule = (
+                    f"{idx + 1}. `cta` (~{t_words} kata): Kesimpulan singkat keunggulan nyata HP + ajakan afiliasi soft-selling standar "
+                    f"seperti gaya ini: {id_cta_style} (DILARANG istilah mengada-ada seperti 'kuliah sore'). Visual penutup: [{vis_ctx}]"
+                )
+        else:
+            unit_w = "words" if lang == "en" else "kata"
+            rule = f"{idx + 1}. `{cid}` ({title}, ~{t_words} {unit_w}): Jelaskan spesifikasi asli topik ini selaras persis dengan visual terpilih: [{vis_ctx}]"
+        lines.append(rule)
+    return lines
+
+def analyze_native_transcript_and_build_chapters(video_title, video_desc, timestamped_transcript, total_dur, api_key, lang="id", active_scenes_plan=None, youtube_chapters=None):
+    plan_list = active_scenes_plan if active_scenes_plan else SCENE_CATALOG
+    active_keys = [s["id"] for s in plan_list]
+    short_transcript = timestamped_transcript[:15000] if timestamped_transcript else "(Transkrip tidak tersedia, gunakan spesifikasi asli HP pada judul/deskripsi/chapter)"
     lang_label = "Bahasa Inggris (English)" if lang == "en" else "Bahasa Indonesia"
     inch_rule = "kata 'inch'" if lang == "en" else "kata 'inci'"
 
@@ -970,38 +1303,14 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
     hook_style_name, hook_style_desc, _ = pick_english_opening_hook_style(video_title)
     thumb_angle_name, thumb_angle_examples = pick_english_thumbnail_angle(video_title)
 
-    if lang == "en":
-        cta_instruction = (
-            "6. `cta`: Kesimpulan super singkat keunggulan HP (4-5 kata) + AJAKAN WAJIB untuk LIKE dan SUBSCRIBE "
-            f"dalam Bahasa Inggris dengan diksi yang unik dan segar (1 Adegan, 12-16 kata). Gunakan inspirasi gaya #{var_idx + 1} ini "
-            f"(parafrasekan dengan kreatif sesuai nama/keunggulan HP agar setiap video punya kalimat unik): {en_cta_style}"
-        )
-        cta_simple_hint = (
-            "Khusus key `cta`, WAJIB berisi kesimpulan singkat + ajakan kreatif untuk LIKE dan SUBSCRIBE dalam Bahasa Inggris "
-            f"(contoh gaya: {en_cta_fallback})."
-        )
-        body_hook_instruction = (
-            f"1. `body_ip`: WAJIB diawali hook Bahasa Inggris 1 kalimat pendek super dinamis bergaya [{hook_style_name}] -> {hook_style_desc} "
-            "(langsung sebut nama HP; DILARANG memakai klise basi 'This beast just changed...', 'Meet the...', '[Phone] features...', 'Hello', atau sapaan datar) "
-            "+ desain bodi/ketebalan/bobot (Adegan 1) DAN sertifikasi ketahanan air/debu IP rating asli (Adegan 2) (total 16-20 kata)."
-        )
-    else:
-        cta_instruction = (
-            "6. `cta`: Kesimpulan singkat keunggulan utama HP & ajakan CTA afiliasi standar soft selling di akhir "
-            f"(1 Adegan, 11-15 kata). Gunakan gaya soft selling standar ini: {id_cta_style} "
-            "DILARANG KERAS menambahkan istilah mengada-ada di luar spesifikasi HP seperti 'kuliah sore', 'anak kos', dsb."
-        )
-        cta_simple_hint = (
-            "Khusus key `cta`, gunakan kesimpulan singkat + CTA afiliasi standar soft selling (contoh: "
-            f"{id_cta_fallback}). Jangan gunakan tanda kutip di dalam nilai string dan jangan mengarang istilah seperti 'kuliah sore'."
-        )
-        body_hook_instruction = (
-            "1. `body_ip`: WAJIB diawali hook 1 kalimat singkat yang menggebrak dan langsung menyebut nama seri HP "
-            "(contoh: 'Ini dia si jagoan baru yang bikin flagship lain ketar-ketir!') + desain bodi/ketebalan/bobot (Adegan 1) "
-            "DAN sertifikasi ketahanan air/debu IP rating asli (Adegan 2) (total 15-17 kata)."
-        )
+    scene_rules = _build_scene_key_prompt_spec(plan_list, hook_style_name, hook_style_desc, var_idx, en_cta_style, id_cta_style, lang=lang)
+    total_word_goal = sum(int(s.get("target_words", 10)) for s in plan_list) if active_scenes_plan else 96
 
     if lang == "en":
+        cta_simple_hint = (
+            "Khusus key `cta` (jika ada di daftar aktif), WAJIB berisi kesimpulan singkat + ajakan kreatif untuk LIKE dan SUBSCRIBE dalam Bahasa Inggris "
+            f"(contoh gaya: {en_cta_fallback})."
+        )
         thumb_lang_rules = [
             "- `thumbnail_hook`, `thumbnail_phone`, `thumbnail_verdict`, `thumbnail_badge`, and `thumbnail_headline` MUST BE 100% IN ENGLISH! DO NOT use any Indonesian words (such as 'LAYAR', 'BATERAI', 'KAMERA', 'HARGA', 'LAYAK', 'TAHAN AIR', 'KENCANG', 'STABIL', 'INDONESIA', 'JUJUR').",
             f"- `thumbnail_hook`: 2-4 punchy high-CTR uppercase ENGLISH words for the TOP of the thumbnail WITHOUT repeating the phone name. Channel this style angle [{thumb_angle_name}] (inspiration: {thumb_angle_examples}) — craft a FRESH, sharp hook tailored to THIS phone instead of repeating generic 'WORTH IT?!'.",
@@ -1011,6 +1320,10 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
             "- GLOBAL ENGLISH AUDIENCE: `script`, `caption`, and `hashtags` MUST NOT mention 'Indonesia', 'Indonesian', or local currency 'rupiah/IDR'. Keep everything 100% natural for an international English tech audience."
         ]
     else:
+        cta_simple_hint = (
+            "Khusus key `cta` (jika ada di daftar aktif), gunakan kesimpulan singkat + CTA afiliasi standar soft selling (contoh: "
+            f"{id_cta_fallback}). Jangan gunakan tanda kutip di dalam nilai string dan jangan mengarang istilah seperti 'kuliah sore'."
+        )
         thumb_lang_rules = [
             "- Nilai `thumbnail_hook`: 2-4 kata hook huruf kapital super memikat untuk bagian ATAS thumbnail TANPA menyebut ulang nama HP (contoh: \"JANGAN BELI DULU?!\", \"RAJA BARU?!\", \"WORTH IT KAH?!\", \"SERIUS SEBAGUS INI?!\").",
             "- Nilai `thumbnail_phone`: nama merek dan seri HP yang rapi maksimal 2-4 kata (contoh: \"Nubia Neo 5 GT\", \"Redmi A7 Pro\", \"Samsung S25 FE\").",
@@ -1018,44 +1331,46 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
             "- Sertakan juga `thumbnail_badge` (= `thumbnail_verdict`) dan `thumbnail_headline` (= `thumbnail_hook`) dalam Bahasa Indonesia."
         ]
 
+    chap_summary = ""
+    if youtube_chapters:
+        chap_summary = "YouTube Chapters Asli:\n" + "\n".join(
+            f"- [{int(c['start_sec'])}s-{int(c['end_sec'])}s] {c['title']}" for c in youtube_chapters
+        ) + "\n"
+
+    keys_csv = ", ".join(active_keys + ["caption", "hashtags", "thumbnail_hook", "thumbnail_phone", "thumbnail_verdict", "thumbnail_badge", "thumbnail_headline"])
+    first_key = active_keys[0] if active_keys else "body"
+
     prompt = "\n".join([
         f"Judul Video Review: \"{video_title}\"",
         f"Durasi Total Video Sumber: {int(total_dur)} detik",
         f"Deskripsi Video: \"{video_desc[:2000]}\"",
-        "",
+        chap_summary,
         "Transkrip Voiceover Asli Video (dengan penanda detik):",
         short_transcript,
         "",
-        "TUGAS ANALISIS VOICEOVER BAWAAN & PENYUSUNAN 6 BAB + SUB-ADEGAN VISUAL PRO-CLIPPER:",
-        f"Analisa transkrip asli di atas, lalu petakan rentang waktu detik (`start_sec` dan `end_sec`) di video sumber serta tulis naskah voiceover **{lang_label}** untuk 6 BAB berikut beserta pemecahan sub-adegan (`scenes`) di dalamnya:",
-        body_hook_instruction,
-        "2. `screen_os`: Spesifikasi asli panel layar, ukuran inci, refresh rate (Hz), kecerahan (Adegan 1) DAN versi OS/UI bawaan (Adegan 2) (total 14-16 kata).",
-        "3. `perf_mem`: Seri chipset asli & performa (Adegan 1) DAN kapasitas & jenis RAM (LPDDR), memori internal (UFS/eMMC), serta slot microSD (Adegan 2) (total 16-18 kata).",
-        "4. `bat_feat`: Kapasitas baterai (mAh) & kecepatan charging (Watt) (Adegan 1) DAN fitur NFC, speaker stereo, serta sensor sidik jari (Adegan 2) (total 14-16 kata).",
-        "5. `camera`: Resolusi kamera belakang utama (OIS/non-OIS) & kamera depan/selfie (Adegan 1) DAN kemampuan perekaman video depan & belakang maksimal beserta FPS asli (Adegan 2) (total 20-23 kata).",
-        cta_instruction,
+        f"TUGAS PENYUSUNAN NASKAH VOICEOVER UNTUK {len(active_keys)} ADEGAN AKTIF TERKLASIFIKASI VISUAL:",
+        f"Hanya kategori di bawah ini yang memiliki klip visual terverifikasi. JANGAN menambah kategori lain di luar daftar!",
+        f"Tulis naskah voiceover **{lang_label}** untuk setiap kategori aktif berikut agar 100% cocok dengan visual yang tampil:",
+        *scene_rules,
         "",
         "ATURAN WAJIB:",
         f"- Seluruh teks `script`, `caption`, `hashtags`, `thumbnail_hook`, `thumbnail_verdict`, `thumbnail_badge`, dan `thumbnail_headline` WAJIB 100% ditulis dalam **{lang_label}**.",
-        "- Total gabungan kata dari seluruh `script` ke-6 bab WAJIB sekitar 90-100 kata agar seluruh kalimat hingga akhir CTA selesai diucapkan dengan utuh (< 55 detik).",
+        f"- Total gabungan kata dari seluruh `script` semua kategori aktif sekitar {max(40, total_word_goal - 8)}-{min(110, total_word_goal + 6)} kata agar selesai diucapkan dengan utuh (< 55 detik).",
+        f"- Patuhi jatah kata tiap adegan agar durasi suara cocok dengan jumlah klip visual kategori tersebut (adegan berdurasi 1 klip harus ringkas ~6-9 kata).",
         f"- Jangan gunakan tanda kutip ganda (\") di dalam isi kalimat `script` atau `visual_focus` (gunakan {inch_rule} untuk ukuran layar).",
         "- Semua angka spesifikasi & FPS rekaman video wajib 100% asli dari transkrip/deskripsi.",
-        "- JANGAN PERNAH menyalin candaan tidak relevan dari transkrip reviewer atau menambahkan kata seperti 'kuliah sore', 'anak kuliah', atau profesi spesifik yang tidak berhubungan dengan spesifikasi teknis HP.",
-        "- HOOK WAJIB KUAT: Kalimat PERTAMA dari `script` bab body_ip HARUS berupa hook 1 kalimat singkat yang menggebrak dan langsung menyebut nama HP — DILARANG memulai dengan 'Halo', 'Hai', 'Yuk', 'Oke', 'Jadi', 'Nah', atau sapaan generik.",
-        "- CTA ANTI-DUPLIKASI: Pastikan TIDAK ADA pengulangan kata yang sama berurutan di kalimat CTA (contoh salah: 'Baterai badak, baterai awet' — hapus kata duplikat).",
-        "- Kembalikan HANYA objek JSON murni dengan key persis: body_ip, screen_os, perf_mem, bat_feat, camera, cta, caption, hashtags, thumbnail_hook, thumbnail_phone, thumbnail_verdict, thumbnail_badge, thumbnail_headline.",
+        "- JANGAN PERNAH menyalin candaan tidak relevan dari transkrip reviewer atau menambahkan kata seperti 'kuliah sore', 'anak kuliah', dsb.",
+        f"- HOOK WAJIB KUAT: Kalimat PERTAMA dari `{first_key}` HARUS berupa hook singkat menggebrak langsung menyebut nama HP — DILARANG 'Halo/Hai/Yuk/Oke/Jadi/Nah'.",
+        "- CTA ANTI-DUPLIKASI: Pastikan TIDAK ADA pengulangan kata berurutan di kalimat CTA.",
+        f"- Kembalikan HANYA objek JSON murni dengan key persis: {keys_csv}.",
         "- Nilai `hashtags` WAJIB berupa string berisi 5-7 hashtag relevan yang SETIAP katanya diawali tanda pagar `#` " + (
             "(contoh untuk ENGLISH video: \"#SmartphoneReview #TechShorts #GadgetReview #PhoneReview #Shorts\"). "
-            "WAJIB 100% berbahasa Inggris — DILARANG menggunakan kata Indonesia seperti 'ReviewHP', 'GadgetIndonesia', 'Smartphone Indonesia', dsb."
+            "WAJIB 100% berbahasa Inggris — DILARANG kata Indonesia."
             if lang == "en" else
             "(contoh: \"#ReviewHP #GadgetIndonesia #Smartphone #Shorts\")."
-        ) + "",
+        ),
         *thumb_lang_rules,
-        "- Setiap bab (body_ip s/d cta) wajib memiliki key:",
-        "  * `start_sec` (angka detik awal bab di video sumber)",
-        "  * `end_sec` (angka detik akhir bab di video sumber)",
-        "  * `script` (teks narasi utuh bab tersebut)",
-        "  * `scenes` (array berisi 1-2 objek sub-adegan: `{\"scene_id\": \"...\", \"visual_focus\": \"...\", \"start_sec\": ..., \"end_sec\": ..., \"script\": \"potongan klausa narasi adegan ini\"}`). Pastikan gabungan `script` pada `scenes` sama persis dengan `script` babnya!"
+        "- Setiap key adegan aktif wajib memiliki: `start_sec` (angka), `end_sec` (angka), `script` (teks narasi bersih sesuai kata target adegan tersebut)."
     ])
 
     payload = {
@@ -1068,21 +1383,24 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
     res = call_gemini_json(payload, api_key)
     res = normalize_parsed_json_to_dict(res) if res else None
 
-    # Jika skema bersarang gagal atau key bab kurang dari 4, coba prompt JSON datar sederhana (scenes akan dipecah otomatis oleh ensure_chapter_scenes)
-    keys = ["body_ip", "screen_os", "perf_mem", "bat_feat", "camera", "cta"]
-    if not isinstance(res, dict) or sum(1 for k in keys if k in res) < 4:
-        print("    [!] Mencoba skema JSON ringkas untuk memastikan validitas 100%...", flush=True)
+    min_req = max(2, min(4, len(active_keys)))
+    if not isinstance(res, dict) or sum(1 for k in active_keys if k in res) < min_req:
+        print("    [!] Mencoba skema JSON ringkas untuk naskah adegan aktif...", flush=True)
+        simple_keys_csv = ", ".join(active_keys + ["caption", "hashtags", "thumbnail_hook", "thumbnail_phone", "thumbnail_verdict"])
+        simple_hints = "; ".join(f"{sc['id']} (~{sc.get('target_words', 10)} kata)" for sc in plan_list)
         simple_prompt = "\n".join([
             f"Judul Video: \"{video_title}\" (Durasi: {int(total_dur)}s)",
             f"Deskripsi: \"{video_desc[:1500]}\"",
+            chap_summary,
             "Transkrip:",
             short_transcript[:10000],
             "",
-            "Susun JSON murni dengan key persis: body_ip, screen_os, perf_mem, bat_feat, camera, cta, caption, hashtags, thumbnail_hook, thumbnail_phone, thumbnail_verdict.",
-            f"Setiap key bab (body_ip s/d cta) berisi objek: {{\"start_sec\": angka, \"end_sec\": angka, \"script\": \"narasi {lang_label} 15-20 kata sesuai spesifikasi asli di transkrip\"}}.",
-            (f"HOOK WAJIB EN [{hook_style_name}]: {hook_style_desc} Hindari pembuka klise seperti 'This beast just...' atau 'Hello'." if lang == "en" else "HOOK WAJIB: script bab body_ip HARUS diawali hook 1 kalimat menggebrak yang langsung menyebut nama HP — DILARANG memulai dengan Halo/Hai/Yuk/Oke/Jadi."),
-            "CTA ANTI-DUPLIKASI: Tidak boleh ada pengulangan kata berurutan di kalimat CTA.",
-            (f"GLOBAL & DYNAMIC THUMB EN: caption/hashtags/thumbnail 100% English without Indonesia/rupiah; make thumbnail_hook ({thumb_angle_name}) and spec-driven thumbnail_verdict super punchy & avoid generic clichés." if lang == "en" else ""),
+            f"Susun JSON murni dengan key persis: {simple_keys_csv}.",
+            f"Jatah tiap adegan aktif: {simple_hints}.",
+            f"Setiap key adegan berisi objek: {{\"start_sec\": angka, \"end_sec\": angka, \"script\": \"narasi {lang_label} padat sesuai jatah kata & spek asli\"}}.",
+            (f"HOOK WAJIB EN pada `{first_key}` [{hook_style_name}]: {hook_style_desc}" if lang == "en" else f"HOOK WAJIB pada `{first_key}`: awali kalimat menggebrak menyebut nama HP — DILARANG Halo/Hai/Yuk/Oke."),
+            "CTA ANTI-DUPLIKASI: Tidak boleh ada pengulangan kata berurutan.",
+            (f"GLOBAL & DYNAMIC THUMB EN: 100% English without Indonesia/rupiah; angle {thumb_angle_name}." if lang == "en" else ""),
             cta_simple_hint
         ])
         simple_payload = {
@@ -1095,13 +1413,15 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
     if not isinstance(res, dict):
         return None
 
-    step = max(30.0, (total_dur - 45.0) / 6.0)
-    for idx, k in enumerate(keys):
-        default_s = 35.0 + idx * step
-        default_e = min(total_dur - 10.0, default_s + step)
+    step = max(20.0, (total_dur - 40.0) / max(1, len(active_keys)))
+    for idx, sc in enumerate(plan_list):
+        k = sc["id"]
+        clips = sc.get("assigned_clips", [])
+        default_s = clips[0]["start_s"] if clips else (30.0 + idx * step)
+        default_e = clips[-1]["end_s"] if clips else min(total_dur - 10.0, default_s + step)
         val = res.get(k)
         if not isinstance(val, dict):
-            res[k] = {"start_sec": default_s, "end_sec": default_e, "script": str(val or ""), "scenes": []}
+            res[k] = {"start_sec": default_s, "end_sec": default_e, "script": sanitize_subtitle_text(str(val or "")), "scenes": []}
         else:
             try:
                 res[k]["start_sec"] = float(val.get("start_sec") or default_s)
@@ -1165,7 +1485,6 @@ def split_script_into_n_clauses(script_text, target_n):
     if len(words) < 7:
         return [clean_s]
 
-    # Cari titik potong terbaik di sekitar pertengahan kalimat (30% - 70% posisi kata)
     conjunctions = {
         "tapi", "namun", "berkat", "dengan", "didukung", "dipadu", "serta",
         "lengkap", "ditambah", "hadir", "menggunakan", "membawa", "dan", "untuk",
@@ -1198,44 +1517,45 @@ def split_script_into_n_clauses(script_text, target_n):
     part2 = " ".join(words[best_split_idx:]).strip()
     return [p for p in (part1, part2) if p]
 
-def ensure_chapter_scenes(chap_cfg, chap_data, events, total_dur):
+def ensure_chapter_scenes(chap_cfg, chap_data, events, total_dur, assigned_clips=None, max_cuts=None):
     """
-    Memastikan setiap bab memiliki daftar sub-adegan (`scenes`) yang lengkap:
-    - Memiliki klausa VO (`script`), `visual_focus`, `keywords`, dan rentang `start_sec`..`end_sec` spesifik.
-    - Jika AI belum memecah `scenes` atau hanya mengembalikan 1 item padahal template memiliki 2 sub-adegan,
-      pecah klausa VO secara otomatis pada titik jeda kalimat/konjungsi dan petakan ke transkrip asli.
+    Memastikan setiap jenis adegan aktif memiliki daftar sub-adegan (`scenes`) yang sinkron
+    dengan jumlah klip unik terklasifikasi (`max_cuts <= len(assigned_clips)`).
     """
-    templates = chap_cfg.get("scene_templates", [])
-    target_n = max(1, len(templates))
     chap_s = float(chap_data.get("start_sec", 40.0))
     chap_e = float(chap_data.get("end_sec", min(total_dur - 10.0, chap_s + 90.0)))
     chap_script = sanitize_subtitle_text(chap_data.get("script", ""))
 
-    raw_scenes = chap_data.get("scenes", [])
-    valid_raw = []
-    if isinstance(raw_scenes, list):
-        for sc in raw_scenes:
-            if isinstance(sc, dict) and sanitize_subtitle_text(sc.get("script", "")):
-                valid_raw.append(sc)
+    avail_clips = list(assigned_clips or [])
+    n_cuts_cap = max(1, int(max_cuts if max_cuts is not None else (len(avail_clips) if avail_clips else 2)))
 
-    if len(valid_raw) >= target_n:
-        clauses = [sanitize_subtitle_text(sc.get("script", "")) for sc in valid_raw[:target_n]]
-        if len(valid_raw) > target_n:
-            extra = " ".join(sanitize_subtitle_text(sc.get("script", "")) for sc in valid_raw[target_n:])
+    # Pecah menjadi 1 sub-adegan utuh (kecuali teks cukup panjang & ada >= 2 klip berbeda)
+    target_n = 2 if (n_cuts_cap >= 2 and len(chap_script.split()) >= 14) else 1
+    raw_scenes = chap_data.get("scenes", [])
+    valid_raw = [
+        sc for sc in (raw_scenes if isinstance(raw_scenes, list) else [])
+        if isinstance(sc, dict) and sanitize_subtitle_text(sc.get("script", ""))
+    ]
+
+    if len(valid_raw) >= target_n and target_n == 2:
+        clauses = [sanitize_subtitle_text(sc.get("script", "")) for sc in valid_raw[:2]]
+        if len(valid_raw) > 2:
+            extra = " ".join(sanitize_subtitle_text(sc.get("script", "")) for sc in valid_raw[2:])
             clauses[-1] = f"{clauses[-1]} {extra}".strip()
+    elif target_n == 1:
+        base_text = chap_script if chap_script else " ".join(sanitize_subtitle_text(sc.get("script", "")) for sc in valid_raw)
+        clauses = [base_text]
     else:
         base_text = chap_script if chap_script else " ".join(sanitize_subtitle_text(sc.get("script", "")) for sc in valid_raw)
         clauses = split_script_into_n_clauses(base_text, target_n)
 
     built_scenes = []
+    # Alokasikan jatah max_cuts ke masing-masing sub-adegan secara adil tanpa melebihi total n_cuts_cap
+    cuts_per_sub = [n_cuts_cap] if len(clauses) == 1 else [max(1, n_cuts_cap // 2), max(1, n_cuts_cap - max(1, n_cuts_cap // 2))]
+
     for idx, cl_text in enumerate(clauses):
-        tmpl = templates[min(idx, len(templates) - 1)] if templates else {
-            "scene_id": f"{chap_cfg['id']}_{idx+1}",
-            "visual_focus": chap_cfg["title"],
-            "keywords": chap_cfg["keywords"]
-        }
         raw_sc = valid_raw[idx] if idx < len(valid_raw) else {}
-        kws = list(dict.fromkeys((raw_sc.get("keywords") or []) + tmpl.get("keywords", [])))
+        kws = list(dict.fromkeys((raw_sc.get("keywords") or []) + chap_cfg.get("keywords", [])))
 
         sub_span = max(15.0, (chap_e - chap_s) / max(1, len(clauses)))
         def_s = chap_s + idx * sub_span
@@ -1247,25 +1567,29 @@ def ensure_chapter_scenes(chap_cfg, chap_data, events, total_dur):
         except Exception:
             sc_s, sc_e = def_s, def_e
 
-        # Pertajam rentang detik sub-adegan berdasarkan kemunculan kata kunci di transkrip asli
         kw_s, kw_e = find_keyword_time_window_in_transcript(events, kws, sc_s, sc_e, total_dur)
 
-        # Pastikan klausa memiliki tanda baca akhir agar TTS memberi jeda napas alami
         if cl_text and cl_text[-1] not in ".!?,;:":
             cl_text += "," if idx < len(clauses) - 1 else "."
 
+        vis_focus = chap_cfg.get("visual_rule") or chap_cfg["title"]
+        if avail_clips:
+            sel_cl = avail_clips[min(idx, len(avail_clips) - 1)]
+            if sel_cl.get("visual_note"):
+                vis_focus = sel_cl["visual_note"]
+
         built_scenes.append({
-            "scene_id": tmpl.get("scene_id", f"{chap_cfg['id']}_{idx+1}"),
+            "scene_id": f"{chap_cfg['id']}_{idx + 1}",
             "chapter_id": chap_cfg["id"],
             "chapter_title": chap_cfg["title"],
-            "visual_focus": str(raw_sc.get("visual_focus") or tmpl.get("visual_focus") or chap_cfg["title"]),
+            "visual_focus": str(raw_sc.get("visual_focus") or vis_focus),
             "keywords": kws,
             "start_sec": kw_s,
             "end_sec": kw_e,
-            "script": cl_text
+            "script": cl_text,
+            "max_cuts": cuts_per_sub[min(idx, len(cuts_per_sub) - 1)]
         })
 
-    # Rekonsiliasi script bab agar 100% identik dengan gabungan klausa sub-adegan
     rejoined_chap_script = " ".join(sc["script"] for sc in built_scenes).strip()
     if rejoined_chap_script and rejoined_chap_script[-1] not in ".!?":
         rejoined_chap_script += "."
@@ -2014,7 +2338,8 @@ def analyze_wav_scenes_and_build_subtitles(chapters_with_scenes, wav_path, ass_p
             # Bagi Sub-Adegan menjadi N cut visual (target ~1.8s - 2.8s per cut) di mana setiap titik pergantian cut
             # DIKUNCI PERSIS di batas selesai chunk subtitle 2-3 kata (tidak pernah memotong di tengah kata/subtitle)!
             scene_cuts = []
-            target_n_cuts = max(1, min(len(scene_sub_items), int(round(sc_dur / 2.25))))
+            max_cuts_cap = max(1, int(sc_obj.get("max_cuts") or chap_obj.get("max_cuts") or 99))
+            target_n_cuts = max(1, min(max_cuts_cap, len(scene_sub_items), int(round(sc_dur / 2.25))))
             if target_n_cuts >= 2 and len(scene_sub_items) >= target_n_cuts:
                 split_points = [sc_start]
                 sub_groups = []
@@ -2715,17 +3040,542 @@ def collect_candidates_for_scene(scene_info, chap_cfg, chap_start_s, chap_end_s,
         + downsample(tier4_backup, 6)
     )
 
-def cut_exact_broll_clip_1080p(video_path, seg_start, exact_dur, out_path):
+def cut_exact_broll_clip_1080p(video_path, seg_start, exact_dur, out_path, avail_dur=None):
+    vf = "crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:1920:flags=lanczos"
+    if avail_dur is not None and 0.8 <= float(avail_dur) < (exact_dur - 0.08):
+        src_span = float(avail_dur)
+        pts_factor = min(1.65, exact_dur / max(0.8, src_span))
+        vf += f",setpts=(PTS-STARTPTS)*{pts_factor:.4f},fps=30,format=yuv420p"
+    else:
+        src_span = exact_dur
+        vf += ",fps=30,format=yuv420p,setpts=PTS-STARTPTS"
     cmd = [
         "ffmpeg", "-nostdin", "-y", "-loglevel", "fatal",
-        "-ss", f"{seg_start:.3f}", "-i", video_path, "-t", f"{exact_dur:.3f}",
-        "-vf", "crop=ih*9/16:ih:(iw-ow)/2:0,scale=1080:1920:flags=lanczos,fps=30,format=yuv420p,setpts=PTS-STARTPTS",
+        "-ss", f"{seg_start:.3f}", "-t", f"{src_span:.3f}", "-i", video_path,
+        "-vf", vf,
+        "-t", f"{exact_dur:.3f}",
         "-an",
         "-c:v", "libx264", "-preset", "superfast", "-crf", "19",
         "-g", "30", "-video_track_timescale", "30000",
         out_path
     ]
     subprocess.run(cmd, check=True)
+
+def _sample_frames_sequential(cap, timestamps, fps=30.0, state=None):
+    """
+    Membaca frame pada daftar timestamp menaik secara sekuensial dengan cap.grab()
+    agar H.264 tidak melakukan seek-keyframe berulang kali (~40x lebih cepat di ARM/Termux).
+    """
+    if cap is None or not timestamps:
+        return []
+    safe_fps = float(fps) if (fps and 5.0 <= fps <= 120.0) else 30.0
+    if state is None:
+        state = {"cur_t": None}
+    out = []
+    for t_q in timestamps:
+        target_t = float(t_q)
+        cur_t = state.get("cur_t")
+        if cur_t is None or target_t < cur_t - 0.15 or (target_t - cur_t) > 4.0:
+            cap.set(cv2.CAP_PROP_POS_MSEC, max(0.0, target_t * 1000.0))
+            if not cap.grab():
+                state["cur_t"] = None
+                continue
+            ret, frm = cap.retrieve()
+            if not ret or frm is None:
+                continue
+            state["cur_t"] = target_t
+            out.append((target_t, frm))
+        else:
+            steps = max(0, int(round((target_t - cur_t) * safe_fps)))
+            if steps == 0:
+                if not cap.grab():
+                    state["cur_t"] = None
+                    continue
+                steps = 1
+            else:
+                ok_grab = True
+                for _ in range(steps):
+                    if not cap.grab():
+                        ok_grab = False
+                        break
+                if not ok_grab:
+                    state["cur_t"] = None
+                    continue
+            ret, frm = cap.retrieve()
+            state["cur_t"] = cur_t + (steps / safe_fps)
+            if ret and frm is not None:
+                out.append((target_t, frm))
+    return out
+
+
+def segment_face_free_by_shots(video_path, face_free_segs, total_dur, max_subclips=60):
+    """
+    Memecah segmen bebas-wajah pada pergantian shot visual nyata (korelasi HSV < 0.72)
+    sehingga satu kandidat klip tidak pernah mencampur dua adegan berbeda (mis. body + gaming).
+    """
+    if not face_free_segs:
+        return []
+    safe_min = 20.0 if total_dur > 90.0 else 6.0
+    safe_max = max(safe_min + 15.0, total_dur - 12.0) if total_dur > 90.0 else max(safe_min + 5.0, total_dur - 3.0)
+
+    raw_intervals = []
+    for fs_s, fs_e in face_free_segs:
+        s = max(safe_min, float(fs_s))
+        e = min(safe_max, float(fs_e))
+        if (e - s) >= 1.55:
+            raw_intervals.append((s, e))
+
+    sub_windows = []
+    cap = cv2.VideoCapture(video_path) if (video_path and os.path.exists(video_path)) else None
+    vid_fps = float(cap.get(cv2.CAP_PROP_FPS) or 30.0) if cap is not None else 30.0
+    seq_state = {"cur_t": None}
+    try:
+        for s, e in raw_intervals:
+            dur = e - s
+            if dur <= 3.6 or cap is None:
+                # Langsung jadikan 1 kandidat bersih atau bagi rata jika terlalu panjang tanpa video
+                if dur <= 3.8:
+                    sub_windows.append((round(s, 2), round(e, 2)))
+                else:
+                    n_part = min(3, max(1, int(round(dur / 2.8))))
+                    span = dur / n_part
+                    for k in range(n_part):
+                        sub_windows.append((round(s + k * span, 2), round(min(e, s + (k + 1) * span), 2)))
+                continue
+
+            # Deteksi shot-cut internal pada ~3 fps sekuensial tanpa re-seek berulang
+            sample_ts = []
+            t_cur = s + 0.14
+            while t_cur <= e - 0.10:
+                sample_ts.append(t_cur)
+                t_cur += 0.33
+
+            prev_hist = None
+            shot_start = s
+            shot_spans = []
+            for t_q, frm in _sample_frames_sequential(cap, sample_ts, fps=vid_fps, state=seq_state):
+                crop = crop_center_9_16(frm)
+                sm = cv2.resize(crop, (64, 114), interpolation=cv2.INTER_AREA)
+                hsv = cv2.cvtColor(sm, cv2.COLOR_BGR2HSV)
+                cur_hist = cv2.calcHist([hsv], [0, 1], None, [12, 8], [0, 180, 0, 256])
+                cv2.normalize(cur_hist, cur_hist, 0, 1, cv2.NORM_MINMAX)
+
+                if prev_hist is not None and cv2.compareHist(prev_hist, cur_hist, cv2.HISTCMP_CORREL) < 0.72:
+                    cut_end = max(shot_start, t_q - 0.16)
+                    if (cut_end - shot_start) >= 1.55:
+                        shot_spans.append((shot_start, cut_end))
+                    shot_start = t_q + 0.16
+                    prev_hist = None
+                else:
+                    prev_hist = cur_hist
+
+            if (e - shot_start) >= 1.55:
+                shot_spans.append((shot_start, e))
+
+            for a, b in shot_spans:
+                sdur = b - a
+                if sdur <= 3.8:
+                    sub_windows.append((round(a, 2), round(b, 2)))
+                else:
+                    n_slices = min(3, max(2, int(round(sdur / 2.8))))
+                    step = (sdur - 2.6) / max(1, n_slices - 1) if sdur > 7.5 else (sdur / n_slices)
+                    for k in range(n_slices):
+                        if sdur > 7.5:
+                            w0 = a + k * step
+                            w1 = min(b, w0 + 2.8)
+                        else:
+                            w0 = a + k * step
+                            w1 = min(b, a + (k + 1) * step - (0.08 if k < n_slices - 1 else 0.0))
+                        if (w1 - w0) >= 1.55:
+                            sub_windows.append((round(w0, 2), round(w1, 2)))
+    finally:
+        if cap is not None:
+            cap.release()
+
+    if len(sub_windows) > max_subclips:
+        pick_idx = np.linspace(0, len(sub_windows) - 1, max_subclips, dtype=int)
+        sub_windows = [sub_windows[int(i)] for i in pick_idx]
+    return sub_windows
+
+def _extract_local_clip_samples(video_path, candidate_windows, detector, events):
+    """
+    Mengambil 5 frame sampel per kandidat window dalam satu pass OpenCV sekuensial,
+    membuang wajah/subscribe/2-HP, dan menandai metadata lokal statis / teks tepi untuk Vision.
+    """
+    if not candidate_windows or not video_path or not os.path.exists(video_path):
+        return []
+    cap = cv2.VideoCapture(video_path)
+    vid_fps = float(cap.get(cv2.CAP_PROP_FPS) or 30.0)
+    seq_state = {"cur_t": None}
+    samples = []
+    ordered_windows = sorted(enumerate(candidate_windows), key=lambda x: (float(x[1][0]), float(x[1][1])))
+    try:
+        for cid_num, (t_s, t_e) in ordered_windows:
+            sub_ctx = get_transcript_slice(events, max(0.0, t_s - 3.5), t_e + 3.5).lower()
+            if any(bad_kw in sub_ctx for bad_kw in SUBSCRIBE_BLACKLIST_KEYWORDS):
+                continue
+
+            span = max(0.5, t_e - t_s)
+            ts_list = [t_s + span * f for f in (0.12, 0.32, 0.52, 0.72, 0.90)]
+            frames_270 = []
+            has_face = False
+            for _, frm in _sample_frames_sequential(cap, ts_list, fps=vid_fps, state=seq_state):
+                crop = crop_center_9_16(frm)
+                sm = cv2.resize(crop, (270, 480), interpolation=cv2.INTER_AREA)
+                if detector is not None:
+                    _, faces = detector.detect(sm)
+                    if faces is not None and len(faces) > 0:
+                        has_face = True
+                        break
+                frames_270.append(sm)
+
+            if has_face or len(frames_270) < 3:
+                continue
+            if has_animated_subscribe_badge(frames_270):
+                continue
+            if has_side_by_side_dual_phones(frames_270):
+                continue
+
+            mid_fr = frames_270[len(frames_270) // 2]
+            mid_hist = _compute_frame_hist(mid_fr)
+            is_static_loc = is_static_still_sequence(frames_270)
+            has_edge_loc = has_cropped_or_floating_static_text(frames_270)
+
+            strip = [
+                cv2.resize(frames_270[0], (180, 320), interpolation=cv2.INTER_AREA),
+                cv2.resize(mid_fr, (180, 320), interpolation=cv2.INTER_AREA),
+                cv2.resize(frames_270[-1], (180, 320), interpolation=cv2.INTER_AREA),
+            ]
+            samples.append({
+                "idx": cid_num,
+                "start_s": round(t_s, 2),
+                "end_s": round(t_e, 2),
+                "duration_s": round(t_e - t_s, 2),
+                "strip": strip,
+                "mid_hist": mid_hist,
+                "is_static_local": bool(is_static_loc),
+                "has_edge_text_local": bool(has_edge_loc),
+                "transcript_slice": get_transcript_slice(events, t_s, t_e),
+            })
+    finally:
+        cap.release()
+    return samples
+
+def _build_row_strip_contact_sheet(batch_samples, quality=84):
+    """Menyusun strip horisontal 3-frame per kandidat menjadi 1 contact sheet vertikal bernomor #1..#N."""
+    tw, th = 180, 320
+    row_w = tw * 3
+    n_rows = len(batch_samples)
+    sheet = np.zeros((n_rows * th, row_w, 3), dtype=np.uint8)
+    for r_i, item in enumerate(batch_samples):
+        y0 = r_i * th
+        for c_i, fr in enumerate(item["strip"][:3]):
+            cell = cv2.resize(fr, (tw, th), interpolation=cv2.INTER_AREA) if (fr.shape[1] != tw or fr.shape[0] != th) else fr.copy()
+            sheet[y0:y0 + th, c_i * tw:(c_i + 1) * tw] = cell
+        label = f"#{r_i + 1}"
+        cv2.rectangle(sheet, (4, y0 + 4), (24 + 18 * len(label), y0 + 38), (0, 0, 0), -1)
+        cv2.putText(sheet, label, (10, y0 + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 235, 255), 2, cv2.LINE_AA)
+    _, buf = cv2.imencode(".jpg", sheet, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+    return base64.b64encode(buf.tobytes()).decode("utf-8")
+
+def _match_youtube_chapter_title(t_mid, youtube_chapters):
+    for ch in (youtube_chapters or []):
+        if ch["start_sec"] <= t_mid <= ch["end_sec"]:
+            return ch["title"]
+    return ""
+
+def _deduplicate_classified_pools(pools):
+    """Menghapus duplikasi visual (HSV corr >= 0.85 atau jeda < 3.0s) di dalam setiap pool kategori."""
+    cleaned = {}
+    for cid, items in pools.items():
+        ranked = sorted(items, key=lambda x: (-float(x.get("confidence", 0.5)), x["start_s"]))
+        kept = []
+        for it in ranked:
+            mid_t = (it["start_s"] + it["end_s"]) / 2.0
+            too_close = any(abs(mid_t - ((k["start_s"] + k["end_s"]) / 2.0)) < 3.0 for k in kept)
+            if too_close:
+                continue
+            h_cur = it.get("mid_hist")
+            if h_cur is not None and any(
+                k.get("mid_hist") is not None and cv2.compareHist(h_cur, k["mid_hist"], cv2.HISTCMP_CORREL) >= 0.85
+                for k in kept
+            ):
+                continue
+            kept.append(it)
+        cleaned[cid] = kept
+    return cleaned
+
+def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, detector, events, youtube_chapters, total_dur, api_key):
+    """
+    Klasifikasi menyeluruh Visual-First:
+    - Memecah segmen bebas-wajah pada batas shot, membuang wajah/subscribe/2+ HP secara lokal.
+    - Mengirim strip 3-frame bernomor secara batch (6 klip/sheet) + konteks transkrip & chapter
+      ke Gemini Vision untuk memetakan tiap klip secara akurat ke 10 jenis adegan SCENE_CATALOG atau REJECT.
+    - Menjamin klip game yang terselip di zona body masuk ke `benchmark_dapur_pacu`, bukan acak.
+    """
+    cache_path = os.path.join(work_dir, "scene_classification_cache.json")
+    pools = {c["id"]: [] for c in SCENE_CATALOG}
+
+    if os.path.exists(cache_path):
+        try:
+            cached = json.load(open(cache_path, "r", encoding="utf-8"))
+            if cached.get("vid_id") == vid_id and cached.get("version") == 1 and cached.get("items"):
+                raw_items = cached["items"]
+                cap = cv2.VideoCapture(video_path) if (video_path and os.path.exists(video_path)) else None
+                for it in raw_items:
+                    cid = it.get("category")
+                    if cid not in pools:
+                        continue
+                    mid_hist = None
+                    if cap is not None:
+                        mid_t = (float(it["start_s"]) + float(it["end_s"])) / 2.0
+                        cap.set(cv2.CAP_PROP_POS_MSEC, mid_t * 1000.0)
+                        ret, frm = cap.read()
+                        if ret and frm is not None:
+                            mid_hist = _compute_frame_hist(crop_center_9_16(frm))
+                    it_copy = dict(it)
+                    it_copy["mid_hist"] = mid_hist
+                    pools[cid].append(it_copy)
+                if cap is not None:
+                    cap.release()
+                deduped = _deduplicate_classified_pools(pools)
+                total_ok = sum(len(v) for v in deduped.values())
+                if total_ok >= 1:
+                    print(f"[+] Memuat {total_ok} klip terklasifikasi unik dari Cache Klasifikasi v1.", flush=True)
+                    return deduped
+        except Exception:
+            pass
+
+    print("\n[*] Memecah & Mengklasifikasikan Setiap Frame/Shot ke 10 Jenis Adegan...", flush=True)
+    sub_windows = segment_face_free_by_shots(video_path, face_free_segs, total_dur, max_subclips=60)
+    samples = _extract_local_clip_samples(video_path, sub_windows, detector, events)
+    print(f"    -> Ditemukan {len(sub_windows)} sub-shot bebas wajah -> {len(samples)} kandidat bersih pasca-filter lokal (anti-wajah/subscribe/2-HP).", flush=True)
+
+    if not samples:
+        return pools
+
+    cat_guide = "\n".join(f"- `{c['id']}` ({c['title']}): {c['visual_rule']}" for c in SCENE_CATALOG)
+    accepted_flat = []
+    used_vision_ok = False
+    batch_size = 6
+
+    for b_start in range(0, len(samples), batch_size):
+        batch = samples[b_start:b_start + batch_size]
+        b64_sheet = _build_row_strip_contact_sheet(batch) if api_key else ""
+        ctx_lines = []
+        for idx_in_b, item in enumerate(batch, 1):
+            t_mid = (item["start_s"] + item["end_s"]) / 2.0
+            yt_ch = _match_youtube_chapter_title(t_mid, youtube_chapters)
+            sub = (item["transcript_slice"] or "")[:120]
+            ctx_lines.append(
+                f"Baris #{idx_in_b} [{int(item['start_s'])}s-{int(item['end_s'])}s]"
+                + (f" | Chapter: {yt_ch}" if yt_ch else "")
+                + (f" | Transkrip: \"{sub}\"" if sub else "")
+            )
+
+        parsed = None
+        if api_key and b64_sheet:
+            prompt = "\n".join([
+                f"Gambar ini berisi {len(batch)} baris kandidat klip video (Baris #1 s/d #{len(batch)}, dari atas ke bawah).",
+                "Setiap baris menampilkan 3 frame berurutan dari kiri ke kanan (awal, tengah, akhir) dari satu potongan video 9:16.",
+                "",
+                "KONTEKS TIAP BARIS:",
+                *ctx_lines,
+                "",
+                "ATURAN KLASIFIKASI KETAT (UTAMAKAN APA YANG BENAR-BENAR TERLIHAT DI FRAME!):",
+                "- Klasifikasikan SETIAP baris tepat ke SALAH SATU kategori berikut, ATAU `REJECT`:",
+                cat_guide,
+                "- `REJECT`: Ada 2 atau lebih HP dalam 1 frame (perbandingan), ada wajah manusia, dus/kotak/kabel tanpa unit HP, screen-recording penuh tanpa bodi fisik HP, tabel spek/slide statis non-kamera, teks/watermark editor besar/huruf terpotong di tepi kiri-kanan, atau popup Subscribe.",
+                "",
+                "ATURAN ANTI-SALAH-ADU:",
+                "- JANGAN terkecoh oleh posisi detik! Jika di segmen unboxing/body terselip adegan bermain game atau skor benchmark -> wajib klasifikasikan ke `benchmark_dapur_pacu`, BUKAN `body`!",
+                "- Jika menampilkan air menyiram/merendam HP atau uji jatuh -> `ketahanan_fisik`.",
+                "- Jika menampilkan menu Settings/About/Control Center UI -> `os` (bukan `design_layar`).",
+                "- Hanya 1 unit HP yang diizinkan (`phone_count = 1`), kecuali foto/video hasil jepretan kamera pada kategori `kamera` (`phone_count = 0`).",
+                "",
+                "Kembalikan HANYA JSON murni berbentuk:",
+                '{"items": [{"id": <int 1..N>, "category": "<10_id_atau_REJECT>", "phone_count": <0|1|2>, "is_clean_broll": <true|false>, "is_back_of_phone": <true|false>, "confidence": <0.0..1.0>, "visual_note": "<deskripsi singkat visual nyata dlm 5-8 kata>"}]}'
+            ])
+            payload = {
+                "contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": "image/jpeg", "data": b64_sheet}}]}],
+                "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"}
+            }
+            parsed = call_gemini_json(payload, api_key)
+
+        items_res = parsed.get("items") if isinstance(parsed, dict) else None
+        if isinstance(items_res, list) and items_res:
+            used_vision_ok = True
+            by_id = {}
+            for r in items_res:
+                if isinstance(r, dict) and "id" in r:
+                    try:
+                        by_id[int(r["id"])] = r
+                    except Exception:
+                        pass
+            for idx_in_b, smp in enumerate(batch, 1):
+                r = by_id.get(idx_in_b)
+                if not r:
+                    continue
+                cat_id = str(r.get("category") or "REJECT").strip().lower()
+                cfg = SCENE_CATALOG_MAP.get(cat_id)
+                if not cfg:
+                    continue
+                try:
+                    p_cnt = int(r.get("phone_count", 1))
+                except Exception:
+                    p_cnt = 1
+                is_clean = r.get("is_clean_broll", True) is True
+                if not is_clean or p_cnt >= 2:
+                    continue
+                if p_cnt == 0 and not cfg["allow_phone_count_zero"]:
+                    continue
+                if (smp["is_static_local"] or smp["has_edge_text_local"]) and not cfg["allow_static_local"]:
+                    continue
+                try:
+                    conf = float(r.get("confidence", 0.75))
+                except Exception:
+                    conf = 0.75
+
+                entry = {
+                    "start_s": smp["start_s"],
+                    "end_s": smp["end_s"],
+                    "duration_s": smp["duration_s"],
+                    "category": cat_id,
+                    "phone_count": p_cnt,
+                    "is_clean_broll": True,
+                    "is_back_of_phone": bool(r.get("is_back_of_phone", False)),
+                    "confidence": conf,
+                    "visual_note": sanitize_subtitle_text(r.get("visual_note") or cfg["title"])[:90],
+                    "transcript_slice": smp["transcript_slice"][:180],
+                    "is_static_local": smp["is_static_local"],
+                    "has_edge_text_local": smp["has_edge_text_local"],
+                    "mid_hist": smp["mid_hist"],
+                }
+                pools[cat_id].append(entry)
+                accepted_flat.append({k: v for k, v in entry.items() if k != "mid_hist"})
+        else:
+            # Fallback kata kunci lokal hanya bila Vision batch gagal total / tanpa API Key
+            for smp in batch:
+                if smp["is_static_local"] or smp["has_edge_text_local"]:
+                    continue
+                t_mid = (smp["start_s"] + smp["end_s"]) / 2.0
+                ch_txt = _match_youtube_chapter_title(t_mid, youtube_chapters).lower()
+                ctx = f"{ch_txt} {smp['transcript_slice']}".lower()
+                matched_cid = "body"
+                best_hits = 0
+                for c in SCENE_CATALOG:
+                    hits = sum(1 for kw in c["keywords"] if kw in ctx)
+                    if hits > best_hits:
+                        best_hits = hits
+                        matched_cid = c["id"]
+                entry = {
+                    "start_s": smp["start_s"],
+                    "end_s": smp["end_s"],
+                    "duration_s": smp["duration_s"],
+                    "category": matched_cid,
+                    "phone_count": 1,
+                    "is_clean_broll": True,
+                    "is_back_of_phone": False,
+                    "confidence": 0.45,
+                    "visual_note": SCENE_CATALOG_MAP[matched_cid]["title"],
+                    "transcript_slice": smp["transcript_slice"][:180],
+                    "is_static_local": smp["is_static_local"],
+                    "has_edge_text_local": smp["has_edge_text_local"],
+                    "mid_hist": smp["mid_hist"],
+                }
+                pools[matched_cid].append(entry)
+                accepted_flat.append({k: v for k, v in entry.items() if k != "mid_hist"})
+
+    deduped = _deduplicate_classified_pools(pools)
+    if accepted_flat and used_vision_ok:
+        try:
+            flat_deduped = [
+                {k: v for k, v in it.items() if k != "mid_hist"}
+                for cid_list in deduped.values() for it in cid_list
+            ]
+            with open(cache_path, "w", encoding="utf-8") as f:
+                json.dump({"vid_id": vid_id, "version": 1, "items": flat_deduped}, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    print("    📊 Hasil Klasifikasi Unik per Jenis Adegan:", flush=True)
+    for c in SCENE_CATALOG:
+        cnt = len(deduped.get(c["id"], []))
+        mark = "✅" if cnt >= 1 else "⚠️ (0 - akan diabaikan)"
+        print(f"       - {c['id']:22s}: {cnt:2d} klip unik {mark}", flush=True)
+    return deduped
+
+def select_active_scenes_and_assign_slots(classified_pools):
+    """
+    Memilih adegan yang benar-benar memiliki >= 1 klip unik terklasifikasi (>= 1.5s),
+    mengabaikan adegan yang tidak memadai, dan mengalokasikan klip 1:1 tanpa pengulangan.
+    """
+    pools = {cid: list(classified_pools.get(cid, [])) for cid in SCENE_CATALOG_MAP}
+
+    # Jika CTA tidak punya klip berlabel cta khusus, cadangkan 1 hero showcase sisa yang belum dipakai dari pool berlebih (>= 2 klip)
+    if not pools["cta"]:
+        for donor_id in ("body", "fitur_unik", "design_layar", "kamera"):
+            if len(pools[donor_id]) >= 2:
+                # Pilih item back-of-phone terbaik atau item paling akhir agar tidak mengambil hero utama donor
+                donor_list = pools[donor_id]
+                pick_i = next((i for i in range(len(donor_list) - 1, -1, -1) if donor_list[i].get("is_back_of_phone")), len(donor_list) - 1)
+                hero = donor_list.pop(pick_i)
+                hero_copy = dict(hero)
+                hero_copy["category"] = "cta"
+                pools["cta"].append(hero_copy)
+                break
+
+    active_cfg_list = []
+    for cfg in SCENE_CATALOG:
+        cid = cfg["id"]
+        avail = pools.get(cid, [])
+        if len(avail) >= 1:
+            active_cfg_list.append((cfg, avail))
+        else:
+            print(f"    ⏭️ [ABAIKAN ADEGAN] {cfg['title']} ({cid}): jumlah frame unik tidak memadai (0 klip).", flush=True)
+
+    if not active_cfg_list:
+        return []
+
+    n_active = len(active_cfg_list)
+    # Tentukan batas cut maksimal tiap adegan tanpa melebihi stok klip uniknya (total cut nyaman <= 18 untuk Shorts)
+    cut_counts = [min(len(avail), cfg["max_cuts"]) for cfg, avail in active_cfg_list]
+    if n_active <= 5:
+        cut_counts = [min(len(avail), max(cfg["max_cuts"], 3)) for cfg, avail in active_cfg_list]
+    while sum(cut_counts) > 18 and any(c > 1 for c in cut_counts):
+        # Pangkas terlebih dahulu kategori bernilai 3 lalu kategori pelengkap sebelum kategori utama
+        trimmed = False
+        for cid_pref in ("cta", "speaker", "os", "ketahanan_fisik", "fitur_unik", "baterai_daya", "design_layar", "body", "benchmark_dapur_pacu", "kamera"):
+            for i, (cfg, _) in enumerate(active_cfg_list):
+                if cfg["id"] == cid_pref and cut_counts[i] > 1:
+                    cut_counts[i] -= 1
+                    trimmed = True
+                    break
+            if trimmed:
+                break
+
+    # Target total kata proporsional (cukup untuk durasi Shorts 35-55 detik)
+    total_word_budget = min(104, max(44, n_active * 12))
+    raw_weights = [1.0 + 0.35 * (cc - 1) + (0.25 if cfg["id"] == "cta" else 0.0) for (cfg, _), cc in zip(active_cfg_list, cut_counts)]
+    w_sum = max(1.0, sum(raw_weights))
+
+    active_plan = []
+    for (cfg, avail), cc, rw in zip(active_cfg_list, cut_counts, raw_weights):
+        t_words = max(6, int(round(total_word_budget * (rw / w_sum))))
+        if cfg["id"] == "cta":
+            t_words = max(10, min(15, t_words))
+        assigned = sorted(avail[:cc], key=lambda x: x["start_s"])
+        active_plan.append({
+            "id": cfg["id"],
+            "title": cfg["title"],
+            "keywords": cfg["keywords"],
+            "visual_rule": cfg["visual_rule"],
+            "max_cuts": cc,
+            "target_words": t_words,
+            "assigned_clips": assigned,
+            "spare_clips": avail[cc:],
+        })
+    return active_plan
 
 def normalize_hashtags(raw_hashtags, lang="id"):
     """
@@ -3063,11 +3913,16 @@ def has_indonesian_words(text_up):
     tokens = [re.sub(r"[^A-Z0-9]", "", w) for w in str(text_up or "").upper().split()]
     return any(t in INDONESIAN_DETECTION_WORDS for t in tokens if t)
 
+_PLAN_SPEC_KEYS = tuple(
+    [c["id"] for c in SCENE_CATALOG if c["id"] != "cta"]
+    + ["body_ip", "screen_os", "perf_mem", "bat_feat", "camera"]
+)
+
 def extract_english_specs_from_plan(plan):
     """Mengekstrak 3 poin spesifikasi teknis Bahasa Inggris langsung dari naskah VO bahasa Inggris jika perlu."""
     joined_en = " ".join(
         str(plan.get(k, {}).get("script", ""))
-        for k in ("screen_os", "perf_mem", "bat_feat", "camera", "body_ip")
+        for k in _PLAN_SPEC_KEYS
         if isinstance(plan.get(k), dict)
     )
     found = []
@@ -3129,7 +3984,7 @@ def extract_english_verdict_from_plan(plan, rng=None):
         return ""
     joined = " ".join(
         str(plan.get(k, {}).get("script", ""))
-        for k in ("body_ip", "screen_os", "perf_mem", "bat_feat", "camera")
+        for k in _PLAN_SPEC_KEYS
         if isinstance(plan.get(k), dict)
     )
     options = []
@@ -3407,9 +4262,9 @@ def _gather_source_sample_timestamps(face_free_segs, chapters_with_scenes, total
     body_win, cam_win = (0.0, 0.0), (0.0, 0.0)
     for ch in (chapters_with_scenes or []):
         cid = ch.get("id", "")
-        if cid == "body_ip":
+        if cid in ("body", "body_ip", "fitur_unik", "cta"):
             body_win = (float(ch.get("start_sec", 0.0)), float(ch.get("end_sec", 0.0)))
-        elif cid == "camera":
+        elif cid in ("kamera", "camera"):
             cam_win = (float(ch.get("start_sec", 0.0)), float(ch.get("end_sec", 0.0)))
 
     samples = []
@@ -3922,13 +4777,92 @@ Dialogue: 4,0:00:00.00,0:00:05.00,HookBot,,0,0,0,,{{\\q2\\pos(540,{bot_y}){bot_s
 
     return out_thumb_path, meta
 
+def _build_deterministic_active_plan(active_plan, video_title, total_dur, lang="id"):
+    """Fallback naskah deterministik hanya untuk adegan aktif terklasifikasi bila seluruh model teks AI sibuk."""
+    short_title = re.sub(r"[^a-zA-Z0-9\s\-]", "", video_title).strip()[:38] or ("this flagship phone" if lang == "en" else "HP Flagship ini")
+    if lang == "en":
+        _, _, en_cta_fb = pick_english_cta_style_and_fallback(video_title)
+        _, _, en_hook_tpl = pick_english_opening_hook_style(video_title)
+        open_hook = en_hook_tpl.format(phone=short_title)
+        templates = {
+            "body": f"{open_hook} Its sleek frame feels solid and well crafted in hand.",
+            "ketahanan_fisik": "Built tough to handle daily splashes, dust, and accidental drops confidently.",
+            "design_layar": "The vibrant high refresh rate display stays super sharp and bright.",
+            "baterai_daya": "A large all-day battery pairs smoothly with rapid fast charging support.",
+            "os": "Its clean software interface delivers fluid animations and smart daily controls.",
+            "benchmark_dapur_pacu": "Powered by a fast chipset, multitasking and demanding games run super smoothly.",
+            "speaker": "Dual stereo speakers produce clear, balanced audio with punchy volume.",
+            "fitur_unik": "Complete hardware extras like NFC and fast fingerprint unlock stand out clearly.",
+            "kamera": "Its main and selfie cameras capture crisp photos and steady video footage.",
+            "cta": en_cta_fb,
+        }
+        plan = {
+            "caption": f"Quick Verdict on {short_title}!",
+            "hashtags": "#SmartphoneReview #TechShorts #GadgetReview #Shorts"
+        }
+    else:
+        templates = {
+            "body": f"{short_title} hadir dengan desain bodi ramping, material kokoh, dan genggaman sangat nyaman.",
+            "ketahanan_fisik": "Ketahanan fisiknya tangguh menghadapi cipratan air, debu, serta benturan pemakaian harian.",
+            "design_layar": "Layarnya tampil tajam memanjakan mata dengan bezel tipis serta refresh rate super mulus.",
+            "baterai_daya": "Kapasitas baterainya tahan seharian dan didukung pengisian daya cepat sangat praktis.",
+            "os": "Antarmuka sistem operasinya terasa ringan, rapi, dan responsif untuk navigasi harian.",
+            "benchmark_dapur_pacu": "Dapur pacunya bertenaga kencang untuk melibas benchmark berat maupun bermain game lancar.",
+            "speaker": "Keluaran suara speaker stereonya terdengar lantang, jernih, dan seimbang di telinga.",
+            "fitur_unik": "Dilengkapi fitur unggulan lengkap mulai dari sensor sidik jari gesit hingga konektivitas NFC.",
+            "kamera": "Kamera depan dan belakangnya menghasilkan foto tajam serta rekaman video stabil jernih.",
+            "cta": "Paket lengkap di kelas harganya, langsung cek info harga promo dan link pembeliannya sekarang!"
+        }
+        plan = {
+            "caption": f"Review Singkat {short_title}!",
+            "hashtags": "#ReviewHP #GadgetIndonesia #Smartphone #Shorts"
+        }
+
+    for idx, sc in enumerate(active_plan):
+        cid = sc["id"]
+        clips = sc.get("assigned_clips", [])
+        s_t = clips[0]["start_s"] if clips else 35.0
+        e_t = clips[-1]["end_s"] if clips else min(total_dur - 10.0, s_t + 30.0)
+        txt = templates.get(cid, sc["title"])
+        if idx == 0 and cid != "body":
+            txt = (f"{open_hook} {txt}" if lang == "en" else f"{short_title} tampil memikat! {txt}")
+        plan[cid] = {"start_sec": s_t, "end_sec": e_t, "script": txt, "scenes": []}
+    return plan
+
+def _cut_classified_clip_fit(video_path, clip_obj, exact_dur, clip_out, clip_detector, face_free_segs, is_cam_chap):
+    """Memotong tepat durasi VO dari klip terklasifikasi tanpa meluber keluar batas wajah/shot dan tanpa duplikasi."""
+    c_start = float(clip_obj["start_s"])
+    c_end = float(clip_obj["end_s"])
+    avail = max(0.5, c_end - c_start)
+
+    if avail >= exact_dur:
+        seg_start = c_start + (avail - exact_dur) * 0.5
+        cut_exact_broll_clip_1080p(video_path, seg_start, exact_dur, clip_out)
+        if verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
+            return True
+        return False
+
+    # Coba perluas sedikit bila masih di dalam segmen bebas-wajah aman dan tetap lolos filter lokal
+    enclosing = next(((float(fs), float(fe)) for fs, fe in face_free_segs if float(fs) - 0.1 <= c_start and float(fe) + 0.1 >= c_end), None)
+    if enclosing and (enclosing[1] - enclosing[0]) >= exact_dur:
+        ext_s = max(enclosing[0], min(enclosing[1] - exact_dur, c_start - (exact_dur - avail) * 0.5))
+        if verify_source_window_clean(video_path, ext_s, exact_dur, clip_detector, is_camera_chap=is_cam_chap):
+            cut_exact_broll_clip_1080p(video_path, ext_s, exact_dur, clip_out)
+            if verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
+                return True
+
+    # Fit halus ke durasi eksak menggunakan setpts pada klip terklasifikasi yang bersih (tanpa meluber ke adegan lain)
+    cut_exact_broll_clip_1080p(video_path, c_start, exact_dur, clip_out, avail_dur=avail)
+    return verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap)
+
 def main():
-    parser = argparse.ArgumentParser(description="AI Agent Pro Clipper 1080p (Smart Scene-Level VO Segmentation & Visual Sync)")
+    parser = argparse.ArgumentParser(description="AI Agent Pro Clipper 1080p (Visual-First Classified Scene Pipeline)")
     parser.add_argument("--url", required=True)
     parser.add_argument("--api-key", default=os.environ.get("GEMINI_API_KEY"))
     parser.add_argument("--lang", choices=["id", "en"], default="id")
     parser.add_argument("--voice", default="Despina")
     parser.add_argument("--tts-model", default=None)
+    parser.add_argument("--cookies", default=None, help="Path opsional cookies.txt untuk unduhan YouTube/subtitle bebas 429")
     parser.add_argument("--skip-download", action="store_true")
     parser.add_argument("--rescan-faces", action="store_true")
     args = parser.parse_args()
@@ -3947,25 +4881,50 @@ def main():
         shutil.rmtree(out_dir)
     os.makedirs(out_dir, exist_ok=True)
 
-    video_path, sub_file, video_title, video_desc, vid_id = download_video_and_subs(args.url, work_dir, args.skip_download)
-    events = load_transcript_events(sub_file)
-    timestamped_transcript = build_timestamped_transcript_digest(events)
+    # Tahap 1: Unduh Video + Subtitle Anti-429 (+ Fallback Transkrip Audio Gemini & YouTube Chapters)
+    video_path, sub_file, video_title, video_desc, vid_id, youtube_chapters = download_video_and_subs(
+        args.url, work_dir, args.skip_download, cookies_path=args.cookies
+    )
 
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     total_dur = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) / fps
     cap.release()
 
+    events = load_transcript_events(sub_file)
+    if not events:
+        events = transcribe_video_audio_with_gemini(
+            video_path, vid_id, work_dir, total_dur, args.api_key, youtube_chapters=youtube_chapters
+        )
+    timestamped_transcript = build_timestamped_transcript_digest(events, youtube_chapters=youtube_chapters)
+
     face_free_segs = get_or_scan_face_free_segments(
-        video_path, model_path, total_dur, vid_id, work_dir, min_duration=2.1, force_rescan=args.rescan_faces
+        video_path, model_path, total_dur, vid_id, work_dir, min_duration=1.8, force_rescan=args.rescan_faces
     )
 
-    print("\n[*] Tahap 1/4: Menganalisis Voiceover Bawaan untuk Memetakan 6 Bab & Sub-Adegan Visual Cerdas...", flush=True)
+    clip_detector = cv2.FaceDetectorYN.create(
+        model=model_path, config="", input_size=(270, 480),
+        score_threshold=0.36, nms_threshold=0.3, top_k=5000
+    )
+
+    # Tahap 2: Klasifikasi Setiap Frame/Shot ke 10 Jenis Adegan & Pangkas Adegan Tanpa Klip Memadai
+    print("\n[*] Tahap 1/4: Klasifikasi Frame per Jenis Adegan (Anti-Random & Anti-Pengulangan)...", flush=True)
+    classified_pools = classify_all_candidate_clips(
+        video_path, vid_id, work_dir, face_free_segs, clip_detector,
+        events, youtube_chapters, total_dur, args.api_key
+    )
+    active_plan = select_active_scenes_and_assign_slots(classified_pools)
+    if not active_plan:
+        print("[ERROR] Tidak ditemukan klip B-roll produk bersih (bebas wajah & maksimal 1 HP) yang memadai untuk disusun menjadi video.", flush=True)
+        sys.exit(1)
+
+    print(f"\n[*] Tahap 2/4: Menyusun Naskah VO Khusus {len(active_plan)} Adegan Aktif (Selaras 1:1 dengan Klip Terklasifikasi)...", flush=True)
     plan_raw = analyze_native_transcript_and_build_chapters(
-        video_title, video_desc, timestamped_transcript, total_dur, args.api_key, lang=args.lang
+        video_title, video_desc, timestamped_transcript, total_dur, args.api_key,
+        lang=args.lang, active_scenes_plan=active_plan, youtube_chapters=youtube_chapters
     )
     if isinstance(plan_raw, list) and len(plan_raw) > 0:
-        plan = plan_raw[0] if isinstance(plan_raw[0], dict) else {"body_ip": str(plan_raw[0])}
+        plan = plan_raw[0] if isinstance(plan_raw[0], dict) else {}
     elif isinstance(plan_raw, dict):
         plan = plan_raw
     else:
@@ -3979,64 +4938,52 @@ def main():
         elif not isinstance(v, str):
             plan[k] = str(v or "")
 
-    if not plan or not isinstance(plan, dict):
-        print("   [!] Semua model teks sedang sibuk/gagal JSON, mengaktifkan penyusun bab deterministik dari transkrip...", flush=True)
-        short_title = re.sub(r"[^a-zA-Z0-9\s\-]", "", video_title).strip()[:38] or ("this flagship phone" if args.lang == "en" else "HP Flagship ini")
-        if args.lang == "en":
-            _, _, en_cta_fb = pick_english_cta_style_and_fallback(video_title)
-            _, _, en_hook_tpl = pick_english_opening_hook_style(video_title)
-            en_open_hook = en_hook_tpl.format(phone=short_title)
-            plan = {
-                "body_ip": {"start_sec": 45.0, "end_sec": 120.0, "script": f"{en_open_hook} It pairs a sleek build with certified water resistance."},
-                "screen_os": {"start_sec": 120.0, "end_sec": 210.0, "script": "Its vibrant display panel delivers a smooth one hundred twenty hertz refresh rate with a clean, responsive software interface."},
-                "perf_mem": {"start_sec": 210.0, "end_sec": 320.0, "script": "Powered by a fast processor paired with generous RAM and high speed storage, it handles heavy multitasking and gaming effortlessly."},
-                "bat_feat": {"start_sec": 320.0, "end_sec": 430.0, "script": "The all day battery supports fast charging alongside complete connectivity features including NFC, stereo speakers, and a fast fingerprint sensor."},
-                "camera": {"start_sec": 430.0, "end_sec": 550.0, "script": "Its main and selfie cameras capture sharp photos and stable high resolution video across various lighting conditions."},
-                "cta": {"start_sec": 550.0, "end_sec": max(580.0, total_dur - 30.0), "script": en_cta_fb},
-                "caption": f"Quick Verdict on {short_title}!",
-                "hashtags": "#SmartphoneReview #TechShorts #GadgetReview #Shorts"
-            }
-        else:
-            plan = {
-                "body_ip": {"start_sec": 45.0, "end_sec": 120.0, "script": f"{short_title} hadir dengan desain bodi belakang yang sangat elegan, material kokoh, serta perlindungan sertifikasi tahan air kelas flagship."},
-                "screen_os": {"start_sec": 120.0, "end_sec": 210.0, "script": "Bagian layarnya menggunakan panel berkualitas tinggi dengan refresh rate seratus dua puluh hertz dan antarmuka sistem operasi yang mulus."},
-                "perf_mem": {"start_sec": 210.0, "end_sec": 320.0, "script": "Dapur pacunya ditenagai chipset kencang dengan kapasitas RAM dan penyimpanan lega untuk melibas multitasking maupun game berat."},
-                "bat_feat": {"start_sec": 320.0, "end_sec": 430.0, "script": "Daya tahan baterainya awet seharian penuh dengan pengisian daya cepat serta fitur pendukung lengkap seperti NFC dan speaker stereo."},
-                "camera": {"start_sec": 430.0, "end_sec": 550.0, "script": "Sektor kamera utamanya sanggup menghasilkan foto dan perekaman video yang stabil dengan detail tajam serta warna natural di berbagai kondisi cahaya."},
-                "cta": {"start_sec": 550.0, "end_sec": max(580.0, total_dur - 30.0), "script": "Dengan segala keunggulan yang ditawarkan, smartphone ini sangat layak masuk daftar pilihan utama kamu. Tulis pendapatmu di kolom komentar!"},
-                "caption": f"Review Lengkap {short_title} Indonesia!",
-                "hashtags": "#ReviewHP #GadgetIndonesia #Smartphone #Shorts"
-            }
+    active_ids = [s["id"] for s in active_plan]
+    if not plan or sum(1 for k in active_ids if isinstance(plan.get(k), dict) and plan[k].get("script")) < max(1, len(active_ids) // 2):
+        print("   [!] Mengaktifkan penyusun naskah deterministik terklasifikasi untuk adegan aktif...", flush=True)
+        fb_plan = _build_deterministic_active_plan(active_plan, video_title, total_dur, lang=args.lang)
+        for k, v in fb_plan.items():
+            if not plan.get(k) or (isinstance(plan.get(k), dict) and not plan[k].get("script")):
+                plan[k] = v
 
     chapters_with_scenes = []
     chapter_scripts = []
-    print("\n📋 Hasil Analisa 6 Bab & Pemisahan Sub-Adegan Voiceover:", flush=True)
-    for idx, cfg in enumerate(CHAPTER_CONFIG, 1):
-        cid = cfg["id"]
+    scene_clip_queues = {}
+    print("\n📋 Adegan Aktif & Pemetaan Klip Terklasifikasi (0 Pengulangan):", flush=True)
+    for idx, sc_plan in enumerate(active_plan, 1):
+        cid = sc_plan["id"]
         c_data = plan.get(cid, {})
         if not isinstance(c_data, dict):
-            c_data = {"start_sec": 35.0 + (idx - 1) * 45.0, "end_sec": 80.0 + (idx - 1) * 45.0, "script": str(c_data or "")}
-        built_scenes = ensure_chapter_scenes(cfg, c_data, events, total_dur)
-        s_sec = float(c_data.get("start_sec", 45.0))
-        e_sec = float(c_data.get("end_sec", min(total_dur - 10, s_sec + 120.0)))
+            c_data = {"start_sec": 35.0, "end_sec": min(total_dur - 10.0, 90.0), "script": str(c_data or "")}
+        assigned_clips = list(sc_plan.get("assigned_clips", []))
+        spare_clips = list(sc_plan.get("spare_clips", []))
+        scene_clip_queues[cid] = assigned_clips + spare_clips
+
+        built_scenes = ensure_chapter_scenes(
+            sc_plan, c_data, events, total_dur,
+            assigned_clips=assigned_clips,
+            max_cuts=sc_plan["max_cuts"]
+        )
+        s_sec = float(c_data.get("start_sec", 40.0))
+        e_sec = float(c_data.get("end_sec", min(total_dur - 10.0, s_sec + 60.0)))
         s_txt = sanitize_subtitle_text(c_data.get("script", ""))
         chapter_scripts.append(s_txt)
         chapters_with_scenes.append({
             "id": cid,
-            "title": cfg["title"],
+            "title": sc_plan["title"],
             "start_sec": s_sec,
             "end_sec": e_sec,
+            "max_cuts": sc_plan["max_cuts"],
             "script": s_txt,
             "scenes": built_scenes
         })
-        print(f"   Bab {idx} [{cfg['title']}] (Zona Bab: {int(s_sec)}s-{int(e_sec)}s):", flush=True)
-        for sc_i, sc in enumerate(built_scenes, 1):
-            print(f"      🎬 Adegan {idx}.{sc_i} [{sc['visual_focus']}] ({int(sc['start_sec'])}s-{int(sc['end_sec'])}s): \"{sc['script']}\"", flush=True)
+        clips_lbl = ", ".join(f"[{int(c['start_s'])}-{int(c['end_s'])}s]" for c in assigned_clips)
+        print(f"   Adegan {idx} [{sc_plan['title']}] ({len(assigned_clips)} klip: {clips_lbl}): \"{s_txt}\"", flush=True)
 
     caption_txt = plan.get("caption", " ".join(chapter_scripts)[:140]).strip()
     hashtags_txt = normalize_hashtags(plan.get("hashtags", ""), lang=args.lang)
 
-    print("\n[*] Tahap 2/4: Memanggil Gemini TTS (1x Panggilan) & Memisahkan Batas Suara Eksak Tiap Adegan...", flush=True)
+    print("\n[*] Tahap 3/4: Memanggil Gemini TTS & Menyelaraskan Subtitle Presisi (DP Acoustic Alignment)...", flush=True)
     full_wav_path = os.path.join(out_dir, f"full_vo_{args.lang}.wav")
     ok_tts, used_model = generate_single_gemini_tts_chapters(
         chapter_scripts, full_wav_path, args.api_key, args.voice, args.tts_model, lang=args.lang
@@ -4059,161 +5006,64 @@ def main():
             flush=True
         )
 
-    print("\n[*] Tahap 3/4: Mencari & Memotong Klip Visual B-Roll Spesifik per Sub-Adegan (Terkunci Jeda Kalimat)...", flush=True)
+    print("\n[*] Memotong Klip 1080p 1:1 Sesuai Klasifikasi Jenis Adegan (0 Pengulangan)...", flush=True)
     all_final_clips = []
-    accepted_hists = []
-    used_mid_times = []
-    global_approved_pool = []
-
-    clip_detector = cv2.FaceDetectorYN.create(
-        model=model_path, config="", input_size=(270, 480),
-        score_threshold=0.36, nms_threshold=0.3, top_k=5000
-    )
-
-    recent_cut_starts = []
-    chap_cfg_map = {cfg["id"]: cfg for cfg in CHAPTER_CONFIG}
-    chap_plan_map = {c["id"]: c for c in chapters_with_scenes}
-
-    def _try_vision_candidate(cand_s, cand_e):
-        """Helper bersama memverifikasi segmen kandidat melalui storyboard lokal + Gemini Vision."""
-        actual_end = cand_s + 0.08 + exact_dur
-        if actual_end > (cand_e + 0.15):
-            return None
-        b64, mid_hist = extract_storyboard_and_hist(
-            video_path, cand_s + 0.08, actual_end, detector=clip_detector, is_camera_chap=is_cam_chap
-        )
-        if not b64 or is_visually_duplicate(mid_hist, accepted_hists):
-            return None
-        raw_sub = get_transcript_slice(events, cand_s, actual_end)
-        res = check_clean_broll_segment(
-            b64, raw_sub, c_title, is_cam_chap, args.api_key,
-            visual_focus=cut_item["visual_focus"],
-            scene_vo=cut_item["scene_vo_script"]
-        )
-        if not res:
-            return None
-        is_clean = (
-            res.get("is_product_broll") is True
-            and res.get("has_face") is False
-            and res.get("has_editor_overlay") is False
-            and res.get("has_subscribe_popup", False) is False
-            and res.get("has_multiple_phones", False) is False
-            and (is_cam_chap or res.get("is_static_image", False) is False)
-        )
-        status = "LOLOS" if is_clean else "DITOLAK"
-        print(f"      [{cand_s:.1f}s] {status} | {res.get('reason')}", flush=True)
-        if not is_clean:
-            return None
-        test_start = cand_s + 0.08
-        cut_exact_broll_clip_1080p(video_path, test_start, exact_dur, clip_out)
-        if not verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
-            print(f"      [!] Klip [{test_start:.1f}s] gagal cek akhir lokal (wajah/subscribe/2-hp/statis/teks tepi) -> Cari kandidat berikutnya...", flush=True)
-            return None
-        accepted_hists.append(mid_hist)
-        used_mid_times.append((cand_s + actual_end) / 2.0)
-        if not is_cam_chap:
-            global_approved_pool.append(test_start)
-        return test_start
+    consumed_clip_keys = set()
 
     for cut_idx, cut_item in enumerate(all_visual_cuts, 1):
         cid = cut_item["chapter_id"]
-        c_title = cut_item["chapter_title"]
-        cfg = chap_cfg_map[cid]
-        chap_info = chap_plan_map[cid]
-        chap_s = float(chap_info["start_sec"])
-        chap_e = float(chap_info["end_sec"])
         exact_dur = max(1.15, float(cut_item["duration_s"]))
-        is_cam_chap = (cid == "camera")
-
-        print(
-            f"\n ---> Visual Cut {cut_idx}/{len(all_visual_cuts)} [{cut_item['scene_id']}] "
-            f"| Durasi VO: {exact_dur:.2f}s | Fokus: {cut_item['visual_focus']}",
-            flush=True
-        )
-        print(f"      🗣️ Teks VO Cut: \"{cut_item['cut_spoken_text']}\"", flush=True)
-
-        candidates = collect_candidates_for_scene(
-            cut_item, cfg, chap_s, chap_e, face_free_segs, events, used_mid_times, total_dur=total_dur
-        )
+        is_cam_chap = (cid == "kamera")
 
         clip_out = os.path.join(
             out_dir,
             f"chap_{cut_item['chap_idx']:02d}_scene_{cut_item['scene_idx']:02d}_cut_{cut_item['cut_in_scene_idx']:02d}.mp4"
         )
 
-        # Tier 1: Kandidat utama terverifikasi Gemini Vision
-        chosen_start = None
-        for cand_s, cand_e in candidates:
-            chosen_start = _try_vision_candidate(cand_s, cand_e)
-            if chosen_start is not None:
+        print(
+            f"\n ---> Visual Cut {cut_idx}/{len(all_visual_cuts)} [{cid} | {cut_item['scene_id']}] "
+            f"| Durasi VO: {exact_dur:.2f}s | VO: \"{cut_item['cut_spoken_text']}\"",
+            flush=True
+        )
+
+        queue = scene_clip_queues.get(cid, [])
+        cut_ok = False
+        while queue:
+            cand_clip = queue.pop(0)
+            ckey = (round(float(cand_clip["start_s"]), 2), round(float(cand_clip["end_s"]), 2))
+            if ckey in consumed_clip_keys:
+                continue
+            ok_clip = _cut_classified_clip_fit(
+                video_path, cand_clip, exact_dur, clip_out, clip_detector, face_free_segs, is_cam_chap
+            )
+            if ok_clip:
+                consumed_clip_keys.add(ckey)
+                print(f"      ✅ Klip [{cand_clip['start_s']:.1f}s-{cand_clip['end_s']:.1f}s] ({cand_clip.get('visual_note', cid)}) -> LOLOS UNIK", flush=True)
+                cut_ok = True
                 break
+            print(f"      [!] Klip [{cand_clip['start_s']:.1f}s-{cand_clip['end_s']:.1f}s] gagal cek akhir lokal -> Ambil cadangan kelas {cid}...", flush=True)
 
-        # Tier 2: Vision Rescue Scan di segmen bebas-wajah global sebelum mengulang klip atau tanpa AI
-        if chosen_start is None and (not is_cam_chap) and args.api_key:
-            tried_set = {(round(cs, 1), round(ce, 1)) for cs, ce in candidates}
-            safe_min = 38.0 if total_dur > 140.0 else 15.0
-            safe_max = max(safe_min + 30.0, total_dur - 25.0) if total_dur > 140.0 else total_dur - 5.0
-            rescue_cands = []
+        # Emergency clean spare check hanya pada jendela yang BELUM pernah dikonsumsi (bukan mendaur ulang klip!)
+        if not cut_ok:
             for fs_s, fs_e in face_free_segs:
-                curr = max(float(fs_s), safe_min)
-                limit = min(float(fs_e), safe_max)
-                while (limit - curr) >= (exact_dur + 0.2):
-                    r_end = min(limit, curr + exact_dur + 0.2)
-                    key_r = (round(curr, 1), round(r_end, 1))
-                    mid_r = (curr + r_end) / 2.0
-                    if key_r not in tried_set and not any(abs(mid_r - u) < 1.8 for u in used_mid_times):
-                        sub_ctx = get_transcript_slice(events, max(0.0, curr - 4.0), r_end + 4.0).lower()
-                        if not any(bad_kw in sub_ctx for bad_kw in SUBSCRIBE_BLACKLIST_KEYWORDS):
-                            rescue_cands.append((curr, r_end))
-                    curr += max(3.5, exact_dur + 0.8)
-                    if len(rescue_cands) >= 18:
-                        break
-                if len(rescue_cands) >= 18:
-                    break
-            step_idx = np.linspace(0, len(rescue_cands) - 1, min(6, len(rescue_cands)), dtype=int) if rescue_cands else []
-            for ri in step_idx:
-                chosen_start = _try_vision_candidate(*rescue_cands[int(ri)])
-                if chosen_start is not None:
-                    break
-
-        # Tier 3 (Khusus Non-Kamera): Prioritaskan global_approved_pool (fisik HP 100% terverifikasi Vision & bebas teks terpotong, hindari pengulangan berurutan)
-        if chosen_start is None and (not is_cam_chap) and global_approved_pool:
-            ordered_pool = [s for s in reversed(global_approved_pool) if not any(abs(s - rs) < 1.5 for rs in recent_cut_starts[-2:])]
-            if not ordered_pool:
-                ordered_pool = list(reversed(global_approved_pool))
-            for fallback_s in ordered_pool:
-                cut_exact_broll_clip_1080p(video_path, fallback_s, exact_dur, clip_out)
-                if verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
-                    chosen_start = fallback_s
-                    break
-
-        # Tier 4 (Last Resort): Hanya bila belum ada klip Vision terverifikasi sama sekali
-        if chosen_start is None:
-            for cand_s, cand_e in candidates:
-                test_start = cand_s + 0.08
-                if verify_source_window_clean(video_path, test_start, exact_dur, clip_detector, is_camera_chap=is_cam_chap):
-                    cut_exact_broll_clip_1080p(video_path, test_start, exact_dur, clip_out)
+                if float(fs_s) < 20.0 or float(fs_e) > (total_dur - 12.0):
+                    continue
+                if (float(fs_e) - float(fs_s)) < exact_dur:
+                    continue
+                mid_fs = float(fs_s) + exact_dur / 2.0
+                if any(abs(mid_fs - ((cs + ce) / 2.0)) < 2.2 for cs, ce in consumed_clip_keys):
+                    continue
+                t0 = float(fs_s) + 0.1
+                if verify_source_window_clean(video_path, t0, exact_dur, clip_detector, is_camera_chap=is_cam_chap):
+                    cut_exact_broll_clip_1080p(video_path, t0, exact_dur, clip_out)
                     if verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
-                        chosen_start = test_start
-                        used_mid_times.append(test_start + exact_dur / 2.0)
+                        consumed_clip_keys.add((round(t0, 2), round(t0 + exact_dur, 2)))
+                        print(f"      ⚠️ Spare window bersih [{t0:.1f}s-{t0 + exact_dur:.1f}s] -> OK", flush=True)
+                        cut_ok = True
                         break
-            if chosen_start is None:
-                for fs_s, fs_e in face_free_segs:
-                    if fs_s < 38.0 or fs_e > (total_dur - 25.0):
-                        continue
-                    if (fs_e - fs_s) >= (exact_dur + 0.2):
-                        sub_ctx = get_transcript_slice(events, max(0.0, fs_s - 4.0), fs_s + exact_dur + 4.0).lower()
-                        if any(bad_kw in sub_ctx for bad_kw in SUBSCRIBE_BLACKLIST_KEYWORDS):
-                            continue
-                        if verify_source_window_clean(video_path, fs_s + 0.1, exact_dur, clip_detector, is_camera_chap=is_cam_chap):
-                            cut_exact_broll_clip_1080p(video_path, fs_s + 0.1, exact_dur, clip_out)
-                            if verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
-                                chosen_start = fs_s + 0.1
-                                break
 
-        if chosen_start is not None:
-            recent_cut_starts.append(chosen_start)
-        all_final_clips.append(clip_out)
+        if os.path.exists(clip_out):
+            all_final_clips.append(clip_out)
 
     list_file = os.path.join(out_dir, "concat_list.txt")
     with open(list_file, "w") as f:
@@ -4227,7 +5077,7 @@ def main():
         "-i", list_file, "-c", "copy", merged_silent_mp4
     ], check=True)
 
-    print(f"\n[*] Tahap 4/4: Merender Video Akhir 1080p ({len(all_final_clips)} Adegan Sinkron VO + Subtitle 2-3 Kata)...", flush=True)
+    print(f"\n[*] Tahap 4/4: Merender Video Akhir 1080p ({len(all_final_clips)} Cut Terklasifikasi + Subtitle Sinkron VO)...", flush=True)
     vf_chain = f"fps=30,setpts=PTS-STARTPTS,ass={ass_path}"
     af_chain = f"apad=whole_dur={target_final_dur:.2f}"
 
@@ -4273,7 +5123,7 @@ def main():
         if os.path.exists(thumb_output):
             shutil.copy(thumb_output, target_hp_dir)
         print("\n=====================================================", flush=True)
-        print(f" ✅ SELESAI! ({len(all_visual_cuts)} Adegan Terkunci VO Per Klausa | Durasi: {target_final_dur:.1f}s)", flush=True)
+        print(f" ✅ SELESAI! ({len(all_visual_cuts)} Cut Adegan Terklasifikasi & Sinkron VO | Durasi: {target_final_dur:.1f}s)", flush=True)
         print(f" 🎬 Video 1080p  : /sdcard/Download/Broll_Clips/{os.path.basename(final_output)}", flush=True)
         if os.path.exists(thumb_output):
             print(f" 🖼️ Thumbnail    : /sdcard/Download/Broll_Clips/{os.path.basename(thumb_output)}", flush=True)

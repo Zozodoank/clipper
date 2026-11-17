@@ -118,7 +118,7 @@ SCENE_CATALOG = [
         "id": "kamera",
         "title": "Fitur Kamera Depan & Belakang",
         "keywords": ["kamera", "camera", "megapixel", "mp", "ois", "eis", "selfie", "depan", "belakang", "ultrawide", "telephoto", "foto", "video", "1080p", "4k", "60fps", "lensa", "potret"],
-        "visual_rule": "Close-up modul lensa kamera HP, antarmuka viewfinder aplikasi kamera pada HP, ATAU sampel foto/video hasil jepretan kamera (pemandangan, objek, potret tanpa watermark/teks).",
+        "visual_rule": "Close-up modul lensa kamera HP, antarmuka viewfinder aplikasi kamera pada HP, ATAU sampel foto/video hasil jepretan kamera (pemandangan, bangunan, malam, objek — boleh ada watermark bawah/badge mode kamera, WAJIB bebas wajah manusia).",
         "allow_phone_count_zero": True,
         "allow_static_local": True,
         "max_cuts": 3,
@@ -2835,16 +2835,16 @@ def verify_clip_100pct_face_free(clip_path, detector, step=3, is_camera_chap=Fal
         return False
     if sampled_small and has_side_by_side_dual_phones(sampled_small):
         return False
-    if len(sampled_small) >= 3:
+    if not is_camera_chap and len(sampled_small) >= 3:
         # Cek still-image menggunakan 6 sampel renggang (~seluruh durasi klip) agar slow-fit halus tidak salah ditandai statis
-        if not is_camera_chap and len(sampled_small) >= 4:
+        if len(sampled_small) >= 4:
             still_idx = np.linspace(0, len(sampled_small) - 1, min(6, len(sampled_small)), dtype=int)
             if is_static_still_sequence([sampled_small[i] for i in still_idx]):
                 return False
-        # Cek potongan huruf/overlay menggunakan hingga 12 sampel rapat agar teks singkat di awal/akhir tertangkap
+        # Cek potongan huruf/overlay menggunakan hingga 12 sampel rapat (khusus non-Kamera agar hasil tangkapan kamera alami tetap lolos)
         pick_idx = np.linspace(0, len(sampled_small) - 1, min(12, len(sampled_small)), dtype=int)
         motion_samples = [sampled_small[i] for i in pick_idx]
-        if has_cropped_or_floating_static_text(motion_samples, allow_natural_scene=is_camera_chap):
+        if has_cropped_or_floating_static_text(motion_samples, allow_natural_scene=False):
             return False
     return True
 
@@ -2852,7 +2852,7 @@ def verify_source_window_clean(video_path, seg_start, exact_dur, detector, sampl
     """
     Memverifikasi segmen kandidat langsung dari video sumber (sebelum dipotong 1080p)
     untuk memastikan 0% frame wajah (YuNet), 0% animasi tombol Subscribe YouTube,
-    bebas 2 handphone berdampingan, bebas gambar statis (di luar Kamera), dan bebas teks terpotong kiri-kanan-bawah.
+    bebas 2 handphone berdampingan, dan (khusus di luar Bab Kamera) bebas gambar statis maupun teks terpotong kiri-kanan-bawah.
     """
     cap = cv2.VideoCapture(video_path)
     sampled_small = []
@@ -2881,10 +2881,10 @@ def verify_source_window_clean(video_path, seg_start, exact_dur, detector, sampl
         return False
     if sampled_small and has_side_by_side_dual_phones(sampled_small):
         return False
-    if len(sampled_small) >= 3:
-        if not is_camera_chap and len(sampled_small) >= 4 and is_static_still_sequence(sampled_small):
+    if not is_camera_chap and len(sampled_small) >= 3:
+        if len(sampled_small) >= 4 and is_static_still_sequence(sampled_small):
             return False
-        if has_cropped_or_floating_static_text(sampled_small, allow_natural_scene=is_camera_chap):
+        if has_cropped_or_floating_static_text(sampled_small, allow_natural_scene=False):
             return False
     return True
 
@@ -2931,11 +2931,12 @@ def extract_storyboard_and_hist(video_path, start_s, end_s, detector=None, is_ca
         return None, None
     if has_side_by_side_dual_phones(crops):
         return None, None
-    # Tolak gambar statis (di luar Kamera) serta potongan huruf/watermark di semua bab
-    if not is_camera_chap and is_static_still_sequence(crops):
-        return None, None
-    if has_cropped_or_floating_static_text(crops, allow_natural_scene=is_camera_chap):
-        return None, None
+    # Tolak gambar statis maupun potongan huruf/watermark di luar Bab Kamera (Kamera tetap dicek wajah/2-HP/subscribe di atas)
+    if not is_camera_chap:
+        if is_static_still_sequence(crops):
+            return None, None
+        if has_cropped_or_floating_static_text(crops, allow_natural_scene=False):
+            return None, None
     _, buf = cv2.imencode(".jpg", np.hstack(crops), [int(cv2.IMWRITE_JPEG_QUALITY), 80])
     return base64.b64encode(buf).decode("utf-8"), mid_hist
 
@@ -3365,7 +3366,7 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
     if os.path.exists(cache_path):
         try:
             cached = json.load(open(cache_path, "r", encoding="utf-8"))
-            if cached.get("vid_id") == vid_id and cached.get("version") == 2 and cached.get("items"):
+            if cached.get("vid_id") == vid_id and cached.get("version") == 3 and cached.get("items"):
                 raw_items = cached["items"]
                 cap = cv2.VideoCapture(video_path) if (video_path and os.path.exists(video_path)) else None
                 for it in raw_items:
@@ -3373,13 +3374,11 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                     cfg_c = SCENE_CATALOG_MAP.get(cid)
                     if not cfg_c:
                         continue
-                    if it.get("has_overlay_text") is True:
+                    if it.get("has_face") is True:
                         continue
-                    if cfg_c["allow_static_local"]:
-                        if it.get("has_edge_text_cam_local"):
+                    if not cfg_c["allow_static_local"]:
+                        if it.get("has_overlay_text") is True or it.get("has_edge_text_local") or it.get("is_static_local"):
                             continue
-                    elif it.get("has_edge_text_local") or it.get("is_static_local"):
-                        continue
                     mid_hist = None
                     if cap is not None:
                         mid_t = (float(it["start_s"]) + float(it["end_s"])) / 2.0
@@ -3395,13 +3394,13 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                 deduped = _deduplicate_classified_pools(pools)
                 total_ok = sum(len(v) for v in deduped.values())
                 if total_ok >= 1:
-                    print(f"[+] Memuat {total_ok} klip terklasifikasi unik dari Cache Klasifikasi v2.", flush=True)
+                    print(f"[+] Memuat {total_ok} klip terklasifikasi unik dari Cache Klasifikasi v3.", flush=True)
                     return deduped
         except Exception:
             pass
 
     print("\n[*] Memecah & Mengklasifikasikan Setiap Frame/Shot ke 10 Jenis Adegan...", flush=True)
-    sub_windows = segment_face_free_by_shots(video_path, face_free_segs, total_dur, max_subclips=60)
+    sub_windows = segment_face_free_by_shots(video_path, face_free_segs, total_dur, max_subclips=75)
     samples = _extract_local_clip_samples(video_path, sub_windows, detector, events)
     print(f"    -> Ditemukan {len(sub_windows)} sub-shot bebas wajah -> {len(samples)} kandidat bersih pasca-filter lokal (anti-wajah/subscribe/2-HP).", flush=True)
 
@@ -3439,17 +3438,18 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                 "ATURAN KLASIFIKASI KETAT (UTAMAKAN APA YANG BENAR-BENAR TERLIHAT DI FRAME!):",
                 "- Klasifikasikan SETIAP baris tepat ke SALAH SATU kategori berikut, ATAU `REJECT`:",
                 cat_guide,
-                "- `REJECT`: Ada 2+ HP dalam 1 frame (perbandingan), wajah manusia, dus/kabel tanpa HP, screen-recording penuh tanpa bodi fisik HP, slide animasi/infografis logo chipset (mis. Dimensity/Snapdragon dengan teks besar melayang tanpa wujud fisik HP), tabel spek/slide statis non-kamera, popup Subscribe, ATAU terdapat potongan huruf/kata/teks/watermark editor yang melayang maupun terpotong di tepi kiri/kanan/bawah layar!",
+                "- `REJECT`: Ada WAJAH MANUSIA (termasuk selfie/potret/wajah kecil di foto kamera sekalipun), 2+ HP perbandingan, dus/kabel tanpa HP, screen-recording penuh tanpa bodi fisik HP, slide animasi/infografis logo chipset tanpa unit HP, tabel spek/slide statis non-kamera, popup Subscribe, ATAU (untuk kategori SELAIN `kamera`) potongan huruf/teks/watermark editor di tepi/layar!",
                 "",
-                "ATURAN ANTI-SALAH-ADU & ANTI-TEKS:",
+                "ATURAN KHUSUS KATEGORI `kamera` vs NON-KAMERA:",
+                "- Untuk `kamera`: AGAK LONGGAR khusus teks/foto! Tetap WAJIB bebas wajah manusia & bebas 2 HP, tetapi HASIL JEPRETAN KAMERA (pemandangan, bangunan, malam, objek) maupun viewfinder kamera Boleh memiliki watermark bawah ('Shot on...'), badge mode kamera (1x/2x/Night), atau teks alami di foto.",
                 "- JANGAN terkecoh oleh posisi detik! Jika di segmen unboxing/body terselip adegan bermain game -> wajib klasifikasikan ke `benchmark_dapur_pacu`, BUKAN `body`!",
-                "- Set `has_overlay_text: true` jika ada potongan huruf di tepi frame, teks nama fitur/chipset melayang di luar layar HP, atau strip watermark putih kamera di bawah.",
+                "- Set `has_face: true` jika ada wajah manusia. Set `has_overlay_text: true` jika ada potongan huruf di tepi frame atau teks fitur/chipset melayang di luar layar HP.",
                 "- Jika menampilkan air menyiram/merendam HP atau uji jatuh -> `ketahanan_fisik`.",
                 "- Jika menampilkan menu Settings/About/Control Center UI -> `os` (bukan `design_layar`).",
                 "- Hanya 1 unit HP yang diizinkan (`phone_count = 1`), kecuali foto/video hasil jepretan kamera pada kategori `kamera` (`phone_count = 0`).",
                 "",
                 "Kembalikan HANYA JSON murni berbentuk:",
-                '{"items": [{"id": <int 1..N>, "category": "<10_id_atau_REJECT>", "phone_count": <0|1|2>, "is_clean_broll": <true|false>, "has_overlay_text": <true|false>, "is_back_of_phone": <true|false>, "confidence": <0.0..1.0>, "visual_note": "<deskripsi singkat visual nyata dlm 5-8 kata>"}]}'
+                '{"items": [{"id": <int 1..N>, "category": "<10_id_atau_REJECT>", "phone_count": <0|1|2>, "has_face": <true|false>, "is_clean_broll": <true|false>, "has_overlay_text": <true|false>, "is_back_of_phone": <true|false>, "confidence": <0.0..1.0>, "visual_note": "<deskripsi singkat visual nyata dlm 5-8 kata>"}]}'
             ])
             payload = {
                 "contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": "image/jpeg", "data": b64_sheet}}]}],
@@ -3471,6 +3471,8 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                 r = by_id.get(idx_in_b)
                 if not r:
                     continue
+                if r.get("has_face") is True:
+                    continue
                 cat_id = str(r.get("category") or "REJECT").strip().lower()
                 cfg = SCENE_CATALOG_MAP.get(cat_id)
                 if not cfg:
@@ -3481,15 +3483,20 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                     p_cnt = 1
                 is_clean = r.get("is_clean_broll", True) is True
                 has_txt_ov = r.get("has_overlay_text", False) is True
-                if not is_clean or has_txt_ov or p_cnt >= 2:
+                is_camera_cat = (cat_id == "kamera")
+                if p_cnt >= 2:
                     continue
                 if p_cnt == 0 and not cfg["allow_phone_count_zero"]:
                     continue
-                if smp["is_static_local"] and not cfg["allow_static_local"]:
-                    continue
-                edge_blocked = smp["has_edge_text_cam_local"] if cfg["allow_static_local"] else smp["has_edge_text_local"]
-                if edge_blocked:
-                    continue
+                if not is_camera_cat:
+                    if not is_clean or has_txt_ov:
+                        continue
+                    if smp["is_static_local"] or smp["has_edge_text_local"]:
+                        continue
+                else:
+                    # Untuk `kamera`: izinkan foto/video hasil tangkapan walau ada watermark/teks/statis; hanya blokir jika tidak layak karena wajah/2-HP (is_clean False tanpa alasan overlay_text)
+                    if (not is_clean) and (not has_txt_ov):
+                        continue
                 try:
                     conf = float(r.get("confidence", 0.75))
                 except Exception:
@@ -3501,8 +3508,9 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                     "duration_s": smp["duration_s"],
                     "category": cat_id,
                     "phone_count": p_cnt,
+                    "has_face": False,
                     "is_clean_broll": True,
-                    "has_overlay_text": False,
+                    "has_overlay_text": bool(has_txt_ov),
                     "is_back_of_phone": bool(r.get("is_back_of_phone", False)),
                     "confidence": conf,
                     "visual_note": sanitize_subtitle_text(r.get("visual_note") or cfg["title"])[:90],
@@ -3517,8 +3525,6 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
         else:
             # Fallback kata kunci lokal hanya bila Vision batch gagal total / tanpa API Key
             for smp in batch:
-                if smp["is_static_local"] or smp["has_edge_text_local"]:
-                    continue
                 t_mid = (smp["start_s"] + smp["end_s"]) / 2.0
                 ch_txt = _match_youtube_chapter_title(t_mid, youtube_chapters).lower()
                 ctx = f"{ch_txt} {smp['transcript_slice']}".lower()
@@ -3529,12 +3535,15 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                     if hits > best_hits:
                         best_hits = hits
                         matched_cid = c["id"]
+                if matched_cid != "kamera" and (smp["is_static_local"] or smp["has_edge_text_local"]):
+                    continue
                 entry = {
                     "start_s": smp["start_s"],
                     "end_s": smp["end_s"],
                     "duration_s": smp["duration_s"],
                     "category": matched_cid,
                     "phone_count": 1,
+                    "has_face": False,
                     "is_clean_broll": True,
                     "has_overlay_text": False,
                     "is_back_of_phone": False,
@@ -3557,7 +3566,7 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                 for cid_list in deduped.values() for it in cid_list
             ]
             with open(cache_path, "w", encoding="utf-8") as f:
-                json.dump({"vid_id": vid_id, "version": 2, "items": flat_deduped}, f, ensure_ascii=False, indent=2)
+                json.dump({"vid_id": vid_id, "version": 3, "items": flat_deduped}, f, ensure_ascii=False, indent=2)
         except Exception:
             pass
 

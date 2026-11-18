@@ -1134,58 +1134,106 @@ def pick_english_cta_style_and_fallback(video_title=""):
     idx = rng.randrange(len(ENGLISH_CTA_VARIATIONS))
     return idx, ENGLISH_CTA_VARIATIONS[idx], ENGLISH_CTA_FALLBACK_TEMPLATES[idx]
 
-def _remove_leading_word_repetition(text):
+def _remove_leading_word_repetition(text, prev_text=""):
     """
-    Menghapus pengulangan kata yang sama di awal kalimat kedua setelah tanda koma/titik.
+    Menghapus pengulangan kata/frasa berurutan di dalam CTA maupun kata pengulangan saat transisi
+    masuk dari akhir adegan sebelum CTA (`prev_text`).
     Contoh: 'Baterai badak, baterai awet seharian' -> 'Baterai badak, awet seharian'
-    Juga menghapus pengulangan kata jika klausa terakhir kalimat pertama diulang di awal kalimat kedua.
     """
-    # Pisah di koma/tanda titik koma pertama
-    split_match = re.split(r'([,;])\s*', text, maxsplit=1)
-    if len(split_match) < 3:
-        return text
-    part1, sep, part2 = split_match[0], split_match[1], split_match[2]
-    words1 = [w.lower().strip(".,!?;:") for w in part1.split() if w]
-    words2 = part2.split()
-    if not words1 or not words2:
-        return text
-    # Hapus kata-kata awal part2 yang sudah ada di akhir part1
-    last3_words1 = set(words1[-3:])
-    cleaned2 = []
-    skip_mode = True
-    for w in words2:
-        bare = w.lower().strip(".,!?;:")
-        if skip_mode and bare in last3_words1:
-            continue  # lewati kata duplikat di awal part2
-        skip_mode = False
-        cleaned2.append(w)
-    if not cleaned2:
-        return text
-    # Pastikan huruf awal part2 kapital
-    result_part2 = " ".join(cleaned2)
-    if result_part2:
-        result_part2 = result_part2[0].upper() + result_part2[1:]
-    return f"{part1}{sep} {result_part2}"
+    txt = " ".join(str(text or "").split())
+    if not txt:
+        return txt
+    # 1. Hapus pengulangan kata identik berdekatan (stutter), mis. 'that that', 'baterai baterai'
+    txt = re.sub(r"\b([a-zA-Z0-9]+)\s+\1\b", r"\1", txt, flags=re.IGNORECASE)
+
+    # 2. Jika akhir adegan sebelum CTA mengulang 1-3 kata awal CTA (transisi masuk CTA), pangkas duplikatnya (berulang hingga bersih)
+    if prev_text:
+        prev_words = [re.sub(r"[^a-zA-Z0-9]", "", w).lower() for w in str(prev_text).split() if w.strip()]
+        tail_window = prev_words[-12:]
+        for _ in range(3):
+            cta_words = txt.split()
+            if len(tail_window) < 2 or len(cta_words) < 6:
+                break
+            trim_k = 0
+            for k in (3, 2):
+                if len(cta_words) - k >= 4:
+                    prefix_k = [re.sub(r"[^a-zA-Z0-9]", "", w).lower() for w in cta_words[:k]]
+                    for s_i in range(max(0, len(tail_window) - k + 1)):
+                        if tail_window[s_i:s_i + k] == prefix_k:
+                            trim_k = k
+                            break
+                if trim_k:
+                    break
+            if not trim_k and tail_window:
+                first_bare = re.sub(r"[^a-zA-Z0-9]", "", cta_words[0]).lower()
+                if len(first_bare) >= 4 and first_bare == tail_window[-1]:
+                    trim_k = 1
+            if not (trim_k and (len(cta_words) - trim_k) >= 4):
+                break
+            rest = " ".join(cta_words[trim_k:]).lstrip(",;:- ")
+            if not rest:
+                break
+            txt = rest[0].upper() + rest[1:]
+
+    # 3. Hapus pengulangan kata/klausa awal pada setiap klausa setelah tanda koma / titik / titik koma
+    tokens = re.split(r"([,;]|[.!?](?=\s|$))\s*", txt)
+    if len(tokens) < 3:
+        return txt
+
+    out_parts = [tokens[0]]
+    i = 1
+    while i + 1 < len(tokens):
+        sep = tokens[i]
+        next_part = tokens[i + 1]
+        if next_part:
+            prev_full = " ".join(out_parts)
+            words1 = [w.lower().strip(".,!?;:") for w in prev_full.split() if w]
+            words2 = next_part.split()
+            if words1 and words2:
+                last_tail = set(words1[-4:])
+                cleaned2 = []
+                skip_mode = True
+                for w in words2:
+                    bare = w.lower().strip(".,!?;:")
+                    if skip_mode and bare in last_tail:
+                        continue
+                    skip_mode = False
+                    cleaned2.append(w)
+                if not cleaned2:
+                    # Seluruh klausa mengulang persis kata sebelumnya -> buang klausa duplikat ini beserta koma/pemisahnya
+                    i += 2
+                    continue
+                rp2 = " ".join(cleaned2)
+                if sep in ".!?" and rp2:
+                    rp2 = rp2[0].upper() + rp2[1:]
+                next_part = rp2
+        out_parts.append(sep + " " + next_part if next_part else sep)
+        i += 2
+    if i < len(tokens) and tokens[i]:
+        out_parts.append(tokens[i])
+
+    joined = "".join(out_parts)
+    joined = re.sub(r"\s+([,.;:!?])", r"\1", joined)
+    return " ".join(joined.split())
 
 
-def ensure_english_like_and_subscribe_cta(cta_script, fallback_template):
-    """Memastikan naskah CTA Bahasa Inggris 100% mengandung ajakan Like dan Subscribe dengan kalimat bervariasi."""
+def ensure_english_like_and_subscribe_cta(cta_script, fallback_template, prev_text=""):
+    """Memastikan naskah CTA Bahasa Inggris 100% mengandung ajakan Like dan Subscribe dengan kalimat bervariasi dan bebas pengulangan kata."""
     txt = sanitize_subtitle_text(cta_script)
     if not txt:
-        return fallback_template
+        return _remove_leading_word_repetition(fallback_template, prev_text=prev_text)
     low = txt.lower()
     has_sub  = "subscribe" in low
     has_like = ("like" in low) or ("thumbs up" in low) or ("double tap" in low)
     if has_sub and has_like:
-        return _remove_leading_word_repetition(txt)
-    # Jika kalimat pertama adalah kesimpulan namun belum ada like+subscribe lengkap, gabungkan klausa pertama dengan akhiran bervariasi
+        return _remove_leading_word_repetition(txt, prev_text=prev_text)
     first_clause = re.split(r"[.!?]", txt)[0].strip().rstrip(",;:")
     suffix_match = re.split(r",\s*", fallback_template, maxsplit=1)
     varied_suffix = suffix_match[1] if len(suffix_match) > 1 else "hit that like button and subscribe for more tech reviews!"
     if first_clause and len(first_clause.split()) <= 9:
         combined = f"{first_clause}, {varied_suffix}"
-        return _remove_leading_word_repetition(combined)
-    return _remove_leading_word_repetition(fallback_template)
+        return _remove_leading_word_repetition(combined, prev_text=prev_text)
+    return _remove_leading_word_repetition(fallback_template, prev_text=prev_text)
 
 INDONESIAN_CTA_VARIATIONS = [
     (
@@ -1228,23 +1276,22 @@ def pick_indonesian_cta_style_and_fallback(video_title=""):
     idx = rng.randrange(len(INDONESIAN_CTA_VARIATIONS))
     return idx, INDONESIAN_CTA_VARIATIONS[idx], INDONESIAN_CTA_FALLBACK_TEMPLATES[idx]
 
-def ensure_indonesian_affiliate_soft_selling_cta(cta_script, fallback_template):
-    """Memastikan CTA Bahasa Indonesia tetap bersih, bebas frasa aneh ('kuliah sore'), dan bernuansa soft-selling afiliasi standar."""
+def ensure_indonesian_affiliate_soft_selling_cta(cta_script, fallback_template, prev_text=""):
+    """Memastikan CTA Bahasa Indonesia tetap bersih, bebas frasa aneh, bebas pengulangan kata masuk CTA, dan bernuansa soft-selling."""
     txt = sanitize_subtitle_text(cta_script)
     if not txt or len(txt.split()) < 6:
-        return fallback_template
-    # Jika terdeteksi kata aneh atau terlalu pendek setelah sanitasi, gunakan klausa pertama + akhiran soft selling
+        return _remove_leading_word_repetition(fallback_template, prev_text=prev_text)
     low = txt.lower()
     has_soft_cta = any(k in low for k in ["cek", "link", "tertarik", "layak", "pilihan", "rekomendasi", "komentar", "incaran", "promo", "harga", "miliki", "pinang"])
     if has_soft_cta:
-        return _remove_leading_word_repetition(txt)
+        return _remove_leading_word_repetition(txt, prev_text=prev_text)
     first_clause = re.split(r"[.!?]", txt)[0].strip().rstrip(",;:")
     suffix_match = re.split(r",\s*", fallback_template, maxsplit=1)
     soft_suffix = suffix_match[-1] if len(suffix_match) > 1 else "cek harga promo dan link pembeliannya sekarang!"
     if first_clause and len(first_clause.split()) <= 9:
         combined = f"{first_clause}, {soft_suffix}"
-        return _remove_leading_word_repetition(combined)
-    return _remove_leading_word_repetition(fallback_template)
+        return _remove_leading_word_repetition(combined, prev_text=prev_text)
+    return _remove_leading_word_repetition(fallback_template, prev_text=prev_text)
 
 def _build_scene_key_prompt_spec(scene_plan, hook_style_name, hook_style_desc, var_idx, en_cta_style, id_cta_style, lang="id"):
     """Menyusun panduan penulisan VO khusus adegan aktif terklasifikasi agar 100% sinkron dengan visual klipnya."""
@@ -1277,12 +1324,12 @@ def _build_scene_key_prompt_spec(scene_plan, hook_style_name, hook_style_desc, v
         elif cid == "cta":
             if lang == "en":
                 rule = (
-                    f"{idx + 1}. `cta` (~{t_words} words): 4-5 word sharp takeaway + mandatory creative LIKE & SUBSCRIBE CTA in English "
+                    f"{idx + 1}. `cta` (~{t_words} words): 4-5 word sharp takeaway WITHOUT repeating words from previous scene + mandatory creative LIKE & SUBSCRIBE CTA in English "
                     f"inspired by style #{var_idx + 1}: {en_cta_style} | Visual penutup: [{vis_ctx}]"
                 )
             else:
                 rule = (
-                    f"{idx + 1}. `cta` (~{t_words} kata): Kesimpulan singkat keunggulan nyata HP + ajakan afiliasi soft-selling standar "
+                    f"{idx + 1}. `cta` (~{t_words} kata): Kesimpulan singkat keunggulan nyata HP TANPA mengulang kata akhir adegan sebelumnya + ajakan afiliasi soft-selling standar "
                     f"seperti gaya ini: {id_cta_style} (DILARANG istilah mengada-ada seperti 'kuliah sore'). Visual penutup: [{vis_ctx}]"
                 )
         else:
@@ -1361,7 +1408,7 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
         "- Semua angka spesifikasi & FPS rekaman video wajib 100% asli dari transkrip/deskripsi.",
         "- JANGAN PERNAH menyalin candaan tidak relevan dari transkrip reviewer atau menambahkan kata seperti 'kuliah sore', 'anak kuliah', dsb.",
         f"- HOOK WAJIB KUAT: Kalimat PERTAMA dari `{first_key}` HARUS berupa hook singkat menggebrak langsung menyebut nama HP — DILARANG 'Halo/Hai/Yuk/Oke/Jadi/Nah'.",
-        "- CTA ANTI-DUPLIKASI: Pastikan TIDAK ADA pengulangan kata berurutan di kalimat CTA.",
+        "- CTA ANTI-DUPLIKASI: Pastikan TIDAK ADA pengulangan kata/frasa berurutan di dalam kalimat CTA maupun saat masuk ke adegan CTA dari adegan sebelumnya (contoh salah: 'Baterai badak, baterai awet!' atau 'kamera jernih. Kamera jernih, cek link...').",
         f"- Kembalikan HANYA objek JSON murni dengan key persis: {keys_csv}.",
         "- Nilai `hashtags` WAJIB berupa string berisi 5-7 hashtag relevan yang SETIAP katanya diawali tanda pagar `#` " + (
             "(contoh untuk ENGLISH video: \"#SmartphoneReview #TechShorts #GadgetReview #PhoneReview #Shorts\"). "
@@ -1436,10 +1483,14 @@ def analyze_native_transcript_and_build_chapters(video_title, video_desc, timest
                 res[k]["scenes"] = []
 
     if "cta" in res and isinstance(res["cta"], dict):
+        non_cta_keys = [k for k in active_keys if k != "cta"]
+        prev_cta_txt = ""
+        if non_cta_keys and isinstance(res.get(non_cta_keys[-1]), dict):
+            prev_cta_txt = str(res[non_cta_keys[-1]].get("script") or "")
         if lang == "en":
-            enforced_cta = ensure_english_like_and_subscribe_cta(res["cta"].get("script", ""), en_cta_fallback)
+            enforced_cta = ensure_english_like_and_subscribe_cta(res["cta"].get("script", ""), en_cta_fallback, prev_text=prev_cta_txt)
         else:
-            enforced_cta = ensure_indonesian_affiliate_soft_selling_cta(res["cta"].get("script", ""), id_cta_fallback)
+            enforced_cta = ensure_indonesian_affiliate_soft_selling_cta(res["cta"].get("script", ""), id_cta_fallback, prev_text=prev_cta_txt)
         res["cta"]["script"] = enforced_cta
         if isinstance(res["cta"].get("scenes"), list) and len(res["cta"]["scenes"]) > 0 and isinstance(res["cta"]["scenes"][0], dict):
             res["cta"]["scenes"][0]["script"] = enforced_cta
@@ -1635,22 +1686,66 @@ def request_tts_pcm_bytes(prompt_text, api_key, voice_name, models_to_try):
     return None, None
 
 def is_pcm_tail_cut_off(pcm_bytes, sr=24000):
-    """Mendeteksi apakah akhir audio TTS terpotong di tengah kata (karena batas buffer ~61.2s Gemini TTS)."""
+    """Mendeteksi apakah akhir audio TTS terpotong di tengah kata akibat batas durasi maksimum (~61.2s Gemini TTS)."""
     samples = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32)
     dur = len(samples) / float(sr)
-    if len(samples) < sr:
+    if len(samples) < sr or dur < 54.0:
         return False
     hop = int(sr * 0.01)
     n_win = len(samples) // hop
     rms = np.sqrt(np.mean(samples[:n_win * hop].reshape((n_win, hop)) ** 2, axis=1))
     thresh = max(90.0, np.percentile(rms, 10) + (np.percentile(rms, 95) - np.percentile(rms, 10)) * 0.08)
-    # Jika 80ms terakhir masih memiliki energi suara tinggi atau durasi mentok di batas ~60.8s+
     tail_rms = float(np.mean(rms[-8:]))
-    return (tail_rms > thresh * 1.35) or (dur >= 60.5 and float(np.max(rms[-15:])) > thresh)
+    return (dur >= 59.5 and tail_rms > thresh * 1.35) or (dur >= 60.5 and float(np.max(rms[-15:])) > thresh)
+
+
+def _trim_pcm_silence_edges(pcm_bytes, sr=24000, lead_ms=50, tail_ms=90):
+    """Memangkas hening berlebih di awal dan akhir segmen PCM tanpa memotong konsonan akhir."""
+    arr = np.frombuffer(pcm_bytes, dtype=np.int16)
+    hop = int(sr * 0.01)
+    n_win = len(arr) // hop
+    if n_win < 8:
+        return arr
+    rms = np.sqrt(np.mean(arr[:n_win * hop].astype(np.float32).reshape((n_win, hop)) ** 2, axis=1))
+    sp = np.where(rms > 90.0)[0]
+    if len(sp) == 0:
+        return arr
+    w0 = max(0, int(sp[0]) - max(1, lead_ms // 10))
+    w1 = min(n_win, int(sp[-1]) + max(2, tail_ms // 10))
+    return arr[w0 * hop:w1 * hop]
+
+
+def _request_validated_tts_chunk(chunk_text, api_key, voice_name, models_to_try, sr=24000, lang="id"):
+    """Memanggil Gemini TTS untuk satu grup ringkas (< 45 kata) sambil menolak audio glitch/looping (durasi > 1.75x wajar)."""
+    words = [w for w in str(chunk_text).split() if w.strip()]
+    est_s = max(1.8, len(words) * (0.34 if lang == "en" else 0.37))
+    max_sane_s = max(12.5, est_s * 1.75 + 2.5)
+    best_pcm = None
+    used_model = None
+    best_dur = 999.0
+
+    for attempt in range(3):
+        pcm, mod = request_tts_pcm_bytes(chunk_text, api_key, voice_name, models_to_try)
+        if not pcm:
+            continue
+        dur_s = len(pcm) / float(2 * sr)
+        if dur_s <= max_sane_s:
+            return pcm, mod
+        print(f"    [!] Deteksi glitch/pengulangan durasi TTS ({dur_s:.1f}s > batas wajar {max_sane_s:.1f}s) -> Regenerasi grup bersih (percobaan {attempt + 1})...", flush=True)
+        if dur_s < best_dur:
+            best_dur = dur_s
+            best_pcm = pcm
+            used_model = mod
+        time.sleep(0.8)
+
+    if best_pcm and best_dur > max_sane_s * 1.35:
+        return None, None
+    return best_pcm, used_model
+
 
 def stitch_clean_cta_onto_body(body_and_cta_pcm, cta_pcm, chapter_scripts, sr=24000, lang="id"):
     """
-    Memotong bagian CTA yang terpotong di ujung `body_and_cta_pcm` tepat pada jeda hening sebelum Bab 6 (CTA),
+    Memotong bagian CTA yang terpotong di ujung `body_and_cta_pcm` tepat pada jeda hening sebelum Bab CTA,
     lalu menyambungkan `cta_pcm` yang utuh + bantalan hening 0.45s di akhir.
     """
     samples = np.frombuffer(body_and_cta_pcm, dtype=np.int16).astype(np.float32)
@@ -1666,7 +1761,6 @@ def stitch_clean_cta_onto_body(body_and_cta_pcm, cta_pcm, chapter_scripts, sr=24
     body_frac = sum(weights[:-1]) / max(1.0, sum(weights))
     approx_cut_s = (len(samples) / float(sr)) * body_frac
 
-    # Cari lembah hening terbaik di sekitar batas Bab 5 -> Bab 6
     best_cut_win = int(round(approx_cut_s / 0.01))
     best_score = 999.0
     in_sil, s0 = False, 0
@@ -1689,23 +1783,12 @@ def stitch_clean_cta_onto_body(body_and_cta_pcm, cta_pcm, chapter_scripts, sr=24
                 in_sil = False
 
     body_int16 = np.frombuffer(body_and_cta_pcm, dtype=np.int16)[:best_cut_win * hop]
-    cta_int16 = np.frombuffer(cta_pcm, dtype=np.int16)
-
-    # Trim hening berlebih di awal CTA baru
-    cta_f = cta_int16.astype(np.float32)
-    c_win = len(cta_f) // hop
-    if c_win > 5:
-        c_rms = np.sqrt(np.mean(cta_f[:c_win * hop].reshape((c_win, hop)) ** 2, axis=1))
-        c_sp = np.where(c_rms > 90.0)[0]
-        if len(c_sp) > 0:
-            start_pad_win = max(0, int(c_sp[0]) - 5)
-            end_pad_win = min(c_win, int(c_sp[-1]) + 8)
-            cta_int16 = cta_int16[start_pad_win * hop:end_pad_win * hop]
-
+    cta_int16 = _trim_pcm_silence_edges(cta_pcm, sr=sr, lead_ms=50, tail_ms=80)
     pause_between = np.zeros(int(sr * 0.28), dtype=np.int16)
     tail_pad = np.zeros(int(sr * 0.45), dtype=np.int16)
     combined = np.concatenate([body_int16, pause_between, cta_int16, tail_pad])
     return combined.tobytes()
+
 
 def generate_single_gemini_tts_chapters(chapter_scripts, out_wav, api_key, voice_name="Despina", custom_model=None, lang="id"):
     models_to_try = [custom_model] if custom_model else list(TTS_MODELS)
@@ -1714,30 +1797,62 @@ def generate_single_gemini_tts_chapters(chapter_scripts, out_wav, api_key, voice
         cs = sanitize_subtitle_text(s)
         if cs and cs[-1] not in ".!?":
             cs += "."
-        cleaned_chaps.append(cs)
+        if cs:
+            cleaned_chaps.append(cs)
 
-    # Gunakan spasi tunggal antar-bab (bukan \n\n) agar Gemini TTS tidak menyisipkan jeda hening > 1 detik per bab
-    joined_prompt_text = " ".join(cleaned_chaps)
-    pcm_bytes, used_model = request_tts_pcm_bytes(joined_prompt_text, api_key, voice_name, models_to_try)
-    if not pcm_bytes:
+    if not cleaned_chaps:
         return False, None
 
-    # Cek apakah kalimat terakhir (CTA) terpotong akibat batas durasi maksimum (~61.2s) Gemini TTS
-    if len(cleaned_chaps) >= 2 and is_pcm_tail_cut_off(pcm_bytes, 24000):
-        print("    [!] Terdeteksi ujung audio CTA terpotong batas buffer TTS -> Menambal audio Bab 6 (CTA) secara utuh...", flush=True)
-        cta_pcm, _ = request_tts_pcm_bytes(cleaned_chaps[-1], api_key, voice_name, [used_model] + models_to_try)
-        if cta_pcm:
-            pcm_bytes = stitch_clean_cta_onto_body(pcm_bytes, cta_pcm, cleaned_chaps, 24000, lang=lang)
+    # Pisahkan adegan isi vs adegan penutup (CTA) & jaga <= 44 kata/grup agar Gemini TTS tidak looping/terpotong ~61s
+    groups = []
+    if len(cleaned_chaps) >= 2:
+        body_chaps = cleaned_chaps[:-1]
+        cur_grp = []
+        cur_w = 0
+        for bc in body_chaps:
+            bw = len(bc.split())
+            if cur_grp and (cur_w + bw) > 42:
+                groups.append(" ".join(cur_grp))
+                cur_grp = [bc]
+                cur_w = bw
+            else:
+                cur_grp.append(bc)
+                cur_w += bw
+        if cur_grp:
+            groups.append(" ".join(cur_grp))
+        groups.append(cleaned_chaps[-1])  # CTA selalu bersih tersendiri tanpa risiko terpotong atau terulang!
+    else:
+        groups = [cleaned_chaps[0]]
 
-    # Pastikan selalu ada bantalan hening minimal 0.40 detik di ujung akhir WAV agar kata terakhir tidak pernah terpenggal
-    tail_silence = np.zeros(int(24000 * 0.40), dtype=np.int16).tobytes()
-    pcm_bytes = pcm_bytes + tail_silence
+    sr = 24000
+    chunk_arrays = []
+    used_model = None
+    lead_pause = np.zeros(int(sr * 0.18), dtype=np.int16)
+    inter_pause = np.zeros(int(sr * 0.36), dtype=np.int16)
+    tail_pause = np.zeros(int(sr * 0.42), dtype=np.int16)
+
+    for g_idx, g_txt in enumerate(groups):
+        pcm_g, mod_g = _request_validated_tts_chunk(
+            g_txt, api_key, voice_name, ([used_model] + models_to_try) if used_model else models_to_try, sr=sr, lang=lang
+        )
+        if not pcm_g:
+            return False, None
+        used_model = used_model or mod_g
+        trimmed = _trim_pcm_silence_edges(pcm_g, sr=sr, lead_ms=40, tail_ms=80)
+        if g_idx == 0:
+            chunk_arrays.append(lead_pause)
+        else:
+            chunk_arrays.append(inter_pause)
+        chunk_arrays.append(trimmed)
+
+    chunk_arrays.append(tail_pause)
+    final_pcm = np.concatenate(chunk_arrays).tobytes()
 
     with wave.open(out_wav, "wb") as wf:
         wf.setnchannels(1)
         wf.setsampwidth(2)
-        wf.setframerate(24000)
-        wf.writeframes(pcm_bytes)
+        wf.setframerate(sr)
+        wf.writeframes(final_pcm)
     return True, used_model
 
 def expand_indo_tech_for_timing(text):
@@ -2751,17 +2866,44 @@ def has_side_by_side_dual_phones(frame_or_frames):
         found_dual = False
         for cs, check_enclosing in cand_lists:
             boxes = []
+            narrow_boxes = []
             for cnt in cs:
                 x, y, bw, bh = cv2.boundingRect(cnt)
-                if bw < int(rw * 0.18) or bw > int(rw * 0.47) or bh < int(rh * 0.34):
+                if bh < int(rh * 0.30) or bw > int(rw * 0.47):
                     continue
                 aspect = bh / float(max(1, bw))
-                if not (1.25 <= aspect <= 3.6):
+                if not (1.25 <= aspect <= 6.8):
                     continue
                 solidity = cv2.contourArea(cnt) / float(max(1, bw * bh))
                 if solidity < 0.65:
                     continue
-                boxes.append((x, y, bw, bh, x + bw / 2.0))
+                if bw >= int(rw * 0.11):
+                    narrow_boxes.append((x, y, bw, bh, x + bw / 2.0))
+                if bw >= int(rw * 0.18) and bh >= int(rh * 0.34) and aspect <= 3.6:
+                    boxes.append((x, y, bw, bh, x + bw / 2.0))
+
+            # Deteksi baris 3+ / 4 unit HP sejajar horizontal (mis. promo lineup pilihan warna HP)
+            if len(narrow_boxes) >= 3:
+                nb_sorted = sorted(narrow_boxes, key=lambda b: b[0])
+                aligned_group = [nb_sorted[0]]
+                for nb in nb_sorted[1:]:
+                    prev = aligned_group[-1]
+                    y_ov = max(0, min(prev[1] + prev[3], nb[1] + nb[3]) - max(prev[1], nb[1]))
+                    if nb[0] >= prev[0] + int(prev[2] * 0.45) and y_ov >= 0.55 * min(prev[3], nb[3]):
+                        aligned_group.append(nb)
+                if len(aligned_group) >= 3:
+                    ux0 = aligned_group[0][0]
+                    ux1 = aligned_group[-1][0] + aligned_group[-1][2]
+                    uy0 = min(b[1] for b in aligned_group)
+                    uy1 = max(b[1] + b[3] for b in aligned_group)
+                    if (ux1 - ux0) >= int(rw * 0.55):
+                        inside_one = check_enclosing and any(
+                            ox0 <= ux0 + 4 and ox1 >= ux1 - 4 and oy0 <= uy0 + 6 and oy1 >= uy1 - 6
+                            for ox0, oy0, ox1, oy1 in outer_single_boxes
+                        )
+                        if not inside_one:
+                            found_dual = True
+                            break
 
             for i in range(len(boxes)):
                 for j in range(i + 1, len(boxes)):
@@ -2983,7 +3125,7 @@ def check_clean_broll_segment(b64_img, raw_sub, chapter_title, is_camera_chap, a
         f"1. {cam_rule}",
         "2. Set is_product_broll = false JIKA gambar adalah dus/kotak HP saja, monitor PC, toko online, rekaman layar tanpa bodi HP, atau latar tanpa unit handphone.",
         "3. has_face = true JIKA ada wajah manusia (wajah reviewer/orang) di SALAH SATU dari 5 frame. WAJIB TOLAK jika ada wajah.",
-        "4. has_subscribe_popup = true JIKA di SALAH SATU dari 5 frame terdapat animasi tombol SUBSCRIBE YouTube (merah/putih/hitam), ikon lonceng notifikasi, animasi kursor/tangan mengklik tombol Subscribe/Like, pop-up nama channel YouTube, atau banner ajakan Subscribe/Like/Follow yang bergerak masuk.",
+        "4. has_subscribe_popup = true JIKA di SALAH SATU dari 5 frame terdapat animasi logo/identitas channel (logo 3D melayang, URL website www..., bumper intro/outro channel), tombol SUBSCRIBE YouTube (merah/putih/hitam), ikon lonceng notifikasi, animasi kursor/tangan mengklik tombol Subscribe/Like, pop-up nama channel YouTube, atau banner ajakan Subscribe/Like/Follow yang bergerak masuk.",
         overlay_rule,
         static_rule,
         "7. has_multiple_phones = true JIKA di SALAH SATU dari 5 frame terlihat 2 UNIT HANDPHONE ATAU LEBIH secara bersamaan (misalnya perbandingan 2 HP berdampingan/sejajar di meja atau tangan, perbandingan layar sebelah-menyebelah, HP lain muncul sebagian di tepi frame, atau kolase HP pembanding). Maksimal HANYA boleh 1 unit handphone (atau 0 HP khusus sampel foto kamera)!",
@@ -3366,7 +3508,7 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
     if os.path.exists(cache_path):
         try:
             cached = json.load(open(cache_path, "r", encoding="utf-8"))
-            if cached.get("vid_id") == vid_id and cached.get("version") == 3 and cached.get("items"):
+            if cached.get("vid_id") == vid_id and cached.get("version") == 4 and cached.get("items"):
                 raw_items = cached["items"]
                 cap = cv2.VideoCapture(video_path) if (video_path and os.path.exists(video_path)) else None
                 for it in raw_items:
@@ -3374,10 +3516,15 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                     cfg_c = SCENE_CATALOG_MAP.get(cid)
                     if not cfg_c:
                         continue
-                    if it.get("has_face") is True:
+                    if it.get("has_face") is True or it.get("has_channel_overlay") is True:
                         continue
                     if not cfg_c["allow_static_local"]:
-                        if it.get("has_overlay_text") is True or it.get("has_edge_text_local") or it.get("is_static_local"):
+                        if (
+                            it.get("has_overlay_text") is True
+                            or it.get("has_edge_text_local")
+                            or it.get("is_static_local")
+                            or it.get("is_static_image") is True
+                        ):
                             continue
                     mid_hist = None
                     if cap is not None:
@@ -3394,7 +3541,7 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                 deduped = _deduplicate_classified_pools(pools)
                 total_ok = sum(len(v) for v in deduped.values())
                 if total_ok >= 1:
-                    print(f"[+] Memuat {total_ok} klip terklasifikasi unik dari Cache Klasifikasi v3.", flush=True)
+                    print(f"[+] Memuat {total_ok} klip terklasifikasi unik dari Cache Klasifikasi v4.", flush=True)
                     return deduped
         except Exception:
             pass
@@ -3438,18 +3585,17 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                 "ATURAN KLASIFIKASI KETAT (UTAMAKAN APA YANG BENAR-BENAR TERLIHAT DI FRAME!):",
                 "- Klasifikasikan SETIAP baris tepat ke SALAH SATU kategori berikut, ATAU `REJECT`:",
                 cat_guide,
-                "- `REJECT`: Ada WAJAH MANUSIA (termasuk selfie/potret/wajah kecil di foto kamera sekalipun), 2+ HP perbandingan, dus/kabel tanpa HP, screen-recording penuh tanpa bodi fisik HP, slide animasi/infografis logo chipset tanpa unit HP, tabel spek/slide statis non-kamera, popup Subscribe, ATAU (untuk kategori SELAIN `kamera`) potongan huruf/teks/watermark editor di tepi/layar!",
+                "- `REJECT`: Ada WAJAH MANUSIA (di kategori apa pun termasuk `kamera`), animasi OVERLAY IDENTITAS CHANNEL (logo 3D/2D channel berputar seperti DKID/GadgetIn, teks nama channel/URL `www...`, popup Subscribe/Like/Lonceng, promo channel), 2+ HP atau jejeran warna 3-4 HP perbandingan, dus/kabel tanpa HP, halaman luar tanpa HP (taman/rumput kosong non-kamera), slide animasi grafis chipset tanpa HP, ATAU (untuk SELAIN `kamera`) GAMBAR STATIS / FOTO DIAM / SLIDE / HP DIAM MEMBATU di stand tanpa gerakan nyata maupun potongan huruf/teks melayang!",
                 "",
                 "ATURAN KHUSUS KATEGORI `kamera` vs NON-KAMERA:",
-                "- Untuk `kamera`: AGAK LONGGAR khusus teks/foto! Tetap WAJIB bebas wajah manusia & bebas 2 HP, tetapi HASIL JEPRETAN KAMERA (pemandangan, bangunan, malam, objek) maupun viewfinder kamera Boleh memiliki watermark bawah ('Shot on...'), badge mode kamera (1x/2x/Night), atau teks alami di foto.",
+                "- Untuk `kamera`: AGAK LONGGAR khusus tangkapan kamera & teks foto! Tetap WAJIB bebas wajah manusia, bebas logo/identitas channel, & bebas 2+ HP, tetapi HASIL JEPRETAN KAMERA (pemandangan, hewan, bunga, bangunan, malam, viewfinder) boleh foto statis maupun memiliki watermark bawah/badge mode kamera.",
+                "- Untuk 9 kategori NON-KAMERA (`body`, `ketahanan_fisik`, `design_layar`, `baterai_daya`, `os`, `benchmark_dapur_pacu`, `speaker`, `fitur_unik`, `cta`): WAJIB terlihat gerakan video nyata pada unit HP (TOLAK gambar statis / Ken Burns zoom foto diam) dan set `is_static_image: true` bila ketiga frame berupa gambar/slide diam!",
                 "- JANGAN terkecoh oleh posisi detik! Jika di segmen unboxing/body terselip adegan bermain game -> wajib klasifikasikan ke `benchmark_dapur_pacu`, BUKAN `body`!",
-                "- Set `has_face: true` jika ada wajah manusia. Set `has_overlay_text: true` jika ada potongan huruf di tepi frame atau teks fitur/chipset melayang di luar layar HP.",
-                "- Jika menampilkan air menyiram/merendam HP atau uji jatuh -> `ketahanan_fisik`.",
-                "- Jika menampilkan menu Settings/About/Control Center UI -> `os` (bukan `design_layar`).",
+                "- Set `has_face: true` jika ada wajah. Set `has_channel_overlay: true` jika ada logo/identitas channel, URL website, atau animasi Subscribe/Like/Follow. Set `has_overlay_text: true` jika ada potongan huruf di tepi atau teks melayang.",
                 "- Hanya 1 unit HP yang diizinkan (`phone_count = 1`), kecuali foto/video hasil jepretan kamera pada kategori `kamera` (`phone_count = 0`).",
                 "",
                 "Kembalikan HANYA JSON murni berbentuk:",
-                '{"items": [{"id": <int 1..N>, "category": "<10_id_atau_REJECT>", "phone_count": <0|1|2>, "has_face": <true|false>, "is_clean_broll": <true|false>, "has_overlay_text": <true|false>, "is_back_of_phone": <true|false>, "confidence": <0.0..1.0>, "visual_note": "<deskripsi singkat visual nyata dlm 5-8 kata>"}]}'
+                '{"items": [{"id": <int 1..N>, "category": "<10_id_atau_REJECT>", "phone_count": <0|1|2>, "has_face": <true|false>, "has_channel_overlay": <true|false>, "is_static_image": <true|false>, "is_clean_broll": <true|false>, "has_overlay_text": <true|false>, "is_back_of_phone": <true|false>, "confidence": <0.0..1.0>, "visual_note": "<deskripsi singkat visual nyata dlm 5-8 kata>"}]}'
             ])
             payload = {
                 "contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": "image/jpeg", "data": b64_sheet}}]}],
@@ -3471,7 +3617,7 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                 r = by_id.get(idx_in_b)
                 if not r:
                     continue
-                if r.get("has_face") is True:
+                if r.get("has_face") is True or r.get("has_channel_overlay") is True:
                     continue
                 cat_id = str(r.get("category") or "REJECT").strip().lower()
                 cfg = SCENE_CATALOG_MAP.get(cat_id)
@@ -3483,19 +3629,20 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                     p_cnt = 1
                 is_clean = r.get("is_clean_broll", True) is True
                 has_txt_ov = r.get("has_overlay_text", False) is True
+                is_static_ai = r.get("is_static_image", False) is True
                 is_camera_cat = (cat_id == "kamera")
                 if p_cnt >= 2:
                     continue
                 if p_cnt == 0 and not cfg["allow_phone_count_zero"]:
                     continue
                 if not is_camera_cat:
-                    if not is_clean or has_txt_ov:
+                    if not is_clean or has_txt_ov or is_static_ai:
                         continue
                     if smp["is_static_local"] or smp["has_edge_text_local"]:
                         continue
                 else:
-                    # Untuk `kamera`: izinkan foto/video hasil tangkapan walau ada watermark/teks/statis; hanya blokir jika tidak layak karena wajah/2-HP (is_clean False tanpa alasan overlay_text)
-                    if (not is_clean) and (not has_txt_ov):
+                    # Untuk `kamera`: izinkan foto/video hasil tangkapan walau ada watermark/teks/statis; hanya blokir jika tidak layak karena wajah/identitas channel/2-HP
+                    if (not is_clean) and (not has_txt_ov) and (not is_static_ai):
                         continue
                 try:
                     conf = float(r.get("confidence", 0.75))
@@ -3509,6 +3656,8 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                     "category": cat_id,
                     "phone_count": p_cnt,
                     "has_face": False,
+                    "has_channel_overlay": False,
+                    "is_static_image": bool(is_static_ai),
                     "is_clean_broll": True,
                     "has_overlay_text": bool(has_txt_ov),
                     "is_back_of_phone": bool(r.get("is_back_of_phone", False)),
@@ -3544,6 +3693,8 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                     "category": matched_cid,
                     "phone_count": 1,
                     "has_face": False,
+                    "has_channel_overlay": False,
+                    "is_static_image": False,
                     "is_clean_broll": True,
                     "has_overlay_text": False,
                     "is_back_of_phone": False,
@@ -3566,7 +3717,7 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                 for cid_list in deduped.values() for it in cid_list
             ]
             with open(cache_path, "w", encoding="utf-8") as f:
-                json.dump({"vid_id": vid_id, "version": 3, "items": flat_deduped}, f, ensure_ascii=False, indent=2)
+                json.dump({"vid_id": vid_id, "version": 4, "items": flat_deduped}, f, ensure_ascii=False, indent=2)
         except Exception:
             pass
 
@@ -4898,6 +5049,13 @@ def _build_deterministic_active_plan(active_plan, video_title, total_dur, lang="
         txt = templates.get(cid, sc["title"])
         if idx == 0 and cid != "body":
             txt = (f"{open_hook} {txt}" if lang == "en" else f"{short_title} tampil memikat! {txt}")
+        if cid == "cta":
+            prev_txt = plan[active_plan[idx - 1]["id"]]["script"] if idx > 0 and active_plan[idx - 1]["id"] in plan else ""
+            if lang == "en":
+                txt = ensure_english_like_and_subscribe_cta(txt, templates["cta"], prev_text=prev_txt)
+            else:
+                _, _, id_fb = pick_indonesian_cta_style_and_fallback(video_title)
+                txt = ensure_indonesian_affiliate_soft_selling_cta(txt, id_fb, prev_text=prev_txt)
         plan[cid] = {"start_sec": s_t, "end_sec": e_t, "script": txt, "scenes": []}
     return plan
 
@@ -4920,6 +5078,37 @@ def _window_in_same_shot(video_path, core_s, core_e, ext_s, ext_dur, min_corr=0.
         cap.release()
 
 
+def _safe_remove_file(path):
+    if path and os.path.exists(path):
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+
+
+def _extract_clip_mid_hist(clip_path):
+    cap = cv2.VideoCapture(clip_path)
+    try:
+        nf = max(1, int(cap.get(cv2.CAP_PROP_FRAME_COUNT)))
+        cap.set(cv2.CAP_PROP_POS_FRAMES, nf // 2)
+        ret, frm = cap.read()
+        if ret and frm is not None:
+            return _compute_frame_hist(frm)
+        return None
+    finally:
+        cap.release()
+
+
+def _is_window_consumed(s_t, e_t, consumed_keys):
+    mid_t = (float(s_t) + float(e_t)) * 0.5
+    for cs, ce in consumed_keys:
+        if max(float(s_t), cs) < min(float(e_t), ce) - 0.25:
+            return True
+        if abs(mid_t - ((cs + ce) * 0.5)) < 3.2:
+            return True
+    return False
+
+
 def _cut_classified_clip_fit(video_path, clip_obj, exact_dur, clip_out, clip_detector, face_free_segs, is_cam_chap):
     """Memotong tepat durasi VO dari klip terklasifikasi tanpa meluber keluar batas shot maupun wajah dan tanpa duplikasi."""
     c_start = float(clip_obj["start_s"])
@@ -4931,12 +5120,16 @@ def _cut_classified_clip_fit(video_path, clip_obj, exact_dur, clip_out, clip_det
         cut_exact_broll_clip_1080p(video_path, seg_start, exact_dur, clip_out)
         if verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
             return True
+        _safe_remove_file(clip_out)
         return False
 
     # Utamakan fit halus di dalam batas shot terverifikasi [c_start, c_end] agar tidak meluber ke shot berteks di sebelah!
     if avail >= (exact_dur / 1.90):
         cut_exact_broll_clip_1080p(video_path, c_start, exact_dur, clip_out, avail_dur=avail)
-        return verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap)
+        if verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
+            return True
+        _safe_remove_file(clip_out)
+        return False
 
     # Hanya perluas bila sangat pendek (< exact_dur / 1.90) DAN terbukti secara histogram masih satu shot yang sama!
     enclosing = next(((float(fs), float(fe)) for fs, fe in face_free_segs if float(fs) - 0.1 <= c_start and float(fe) + 0.1 >= c_end), None)
@@ -4947,10 +5140,15 @@ def _cut_classified_clip_fit(video_path, clip_obj, exact_dur, clip_out, clip_det
                 cut_exact_broll_clip_1080p(video_path, ext_s, exact_dur, clip_out)
                 if verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
                     return True
+                _safe_remove_file(clip_out)
 
     # Fit halus ke durasi eksak pada klip terklasifikasi bersih jika selisih masih wajar (tanpa meluber ke shot lain)
-    cut_exact_broll_clip_1080p(video_path, c_start, exact_dur, clip_out, avail_dur=avail)
-    return verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap)
+    if avail >= (exact_dur / 2.15):
+        cut_exact_broll_clip_1080p(video_path, c_start, exact_dur, clip_out, avail_dur=avail)
+        if verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
+            return True
+    _safe_remove_file(clip_out)
+    return False
 
 def main():
     parser = argparse.ArgumentParser(description="AI Agent Pro Clipper 1080p (Visual-First Classified Scene Pipeline)")
@@ -5064,6 +5262,17 @@ def main():
         s_sec = float(c_data.get("start_sec", 40.0))
         e_sec = float(c_data.get("end_sec", min(total_dur - 10.0, s_sec + 60.0)))
         s_txt = sanitize_subtitle_text(c_data.get("script", ""))
+        if cid == "cta":
+            prev_ch_txt = chapter_scripts[-1] if chapter_scripts else ""
+            if args.lang == "en":
+                _, _, cta_fb = pick_english_cta_style_and_fallback(video_title)
+                s_txt = ensure_english_like_and_subscribe_cta(s_txt, cta_fb, prev_text=prev_ch_txt)
+            else:
+                _, _, cta_fb = pick_indonesian_cta_style_and_fallback(video_title)
+                s_txt = ensure_indonesian_affiliate_soft_selling_cta(s_txt, cta_fb, prev_text=prev_ch_txt)
+            c_data["script"] = s_txt
+            if len(built_scenes) == 1:
+                built_scenes[0]["script"] = s_txt
         chapter_scripts.append(s_txt)
         chapters_with_scenes.append({
             "id": cid,
@@ -5103,9 +5312,28 @@ def main():
             flush=True
         )
 
-    print("\n[*] Memotong Klip 1080p 1:1 Sesuai Klasifikasi Jenis Adegan (0 Pengulangan)...", flush=True)
+    print("\n[*] Memotong Klip 1080p 1:1 Sesuai Klasifikasi Jenis Adegan (0 Pengulangan & 100% Lolos Verifikasi)...", flush=True)
     all_final_clips = []
     consumed_clip_keys = set()
+    consumed_hists = []
+
+    def _try_classified_candidate(cand_clip, exact_dur, clip_out, is_cam_chap):
+        cs, ce = float(cand_clip["start_s"]), float(cand_clip["end_s"])
+        if _is_window_consumed(cs, ce, consumed_clip_keys):
+            return False
+        cand_h = cand_clip.get("mid_hist")
+        if cand_h is not None and is_visually_duplicate(cand_h, consumed_hists, threshold=0.86):
+            return False
+        if not _cut_classified_clip_fit(video_path, cand_clip, exact_dur, clip_out, clip_detector, face_free_segs, is_cam_chap):
+            return False
+        out_h = _extract_clip_mid_hist(clip_out)
+        if out_h is not None and is_visually_duplicate(out_h, consumed_hists, threshold=0.86):
+            _safe_remove_file(clip_out)
+            return False
+        consumed_clip_keys.add((round(cs, 2), round(ce, 2)))
+        if out_h is not None:
+            consumed_hists.append(out_h)
+        return True
 
     for cut_idx, cut_item in enumerate(all_visual_cuts, 1):
         cid = cut_item["chapter_id"]
@@ -5127,40 +5355,87 @@ def main():
         cut_ok = False
         while queue:
             cand_clip = queue.pop(0)
-            ckey = (round(float(cand_clip["start_s"]), 2), round(float(cand_clip["end_s"]), 2))
-            if ckey in consumed_clip_keys:
-                continue
-            ok_clip = _cut_classified_clip_fit(
-                video_path, cand_clip, exact_dur, clip_out, clip_detector, face_free_segs, is_cam_chap
-            )
-            if ok_clip:
-                consumed_clip_keys.add(ckey)
+            if _try_classified_candidate(cand_clip, exact_dur, clip_out, is_cam_chap):
                 print(f"      ✅ Klip [{cand_clip['start_s']:.1f}s-{cand_clip['end_s']:.1f}s] ({cand_clip.get('visual_note', cid)}) -> LOLOS UNIK", flush=True)
                 cut_ok = True
                 break
-            print(f"      [!] Klip [{cand_clip['start_s']:.1f}s-{cand_clip['end_s']:.1f}s] gagal cek akhir lokal -> Ambil cadangan kelas {cid}...", flush=True)
+            print(f"      [!] Klip [{cand_clip['start_s']:.1f}s-{cand_clip['end_s']:.1f}s] ditolak/duplikat -> Ambil cadangan kelas {cid}...", flush=True)
 
-        # Emergency clean spare check hanya pada jendela yang BELUM pernah dikonsumsi (bukan mendaur ulang klip!)
-        if not cut_ok:
-            for fs_s, fs_e in face_free_segs:
-                if float(fs_s) < 20.0 or float(fs_e) > (total_dur - 12.0):
+        # Tier Cadangan 1: Klip terklasifikasi lain yang BELUM terpakai di pool sejenis (mis. body/fitur_unik untuk non-kamera)
+        if not cut_ok and not is_cam_chap:
+            for alt_cid in ("body", "fitur_unik", "design_layar", "cta"):
+                if alt_cid == cid:
                     continue
-                if (float(fs_e) - float(fs_s)) < exact_dur:
-                    continue
-                mid_fs = float(fs_s) + exact_dur / 2.0
-                if any(abs(mid_fs - ((cs + ce) / 2.0)) < 2.2 for cs, ce in consumed_clip_keys):
-                    continue
-                t0 = float(fs_s) + 0.1
-                if verify_source_window_clean(video_path, t0, exact_dur, clip_detector, is_camera_chap=is_cam_chap):
-                    cut_exact_broll_clip_1080p(video_path, t0, exact_dur, clip_out)
-                    if verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
-                        consumed_clip_keys.add((round(t0, 2), round(t0 + exact_dur, 2)))
-                        print(f"      ⚠️ Spare window bersih [{t0:.1f}s-{t0 + exact_dur:.1f}s] -> OK", flush=True)
+                for alt_cl in list(classified_pools.get(alt_cid, [])):
+                    if _try_classified_candidate(alt_cl, exact_dur, clip_out, False):
+                        print(f"      ✅ Klip kompatibel dari [{alt_cid}] [{alt_cl['start_s']:.1f}s-{alt_cl['end_s']:.1f}s] -> LOLOS UNIK", flush=True)
                         cut_ok = True
                         break
+                if cut_ok:
+                    break
 
-        if os.path.exists(clip_out):
+        # Tier Cadangan 2 (Wajib Gemini Vision + OpenCV — dilarang keras meloloskan segmen mentah tanpa Vision!)
+        if not cut_ok:
+            safe_min_res = 38.0 if total_dur > 140.0 else 15.0
+            safe_max_res = max(safe_min_res + 30.0, total_dur - 15.0) if total_dur > 140.0 else (total_dur - 4.0)
+            min_src_dur = max(1.6, exact_dur / 1.90)
+            for fs_s, fs_e in face_free_segs:
+                s0 = max(float(fs_s), safe_min_res)
+                e0 = min(float(fs_e), safe_max_res)
+                while (e0 - s0) >= min_src_dur:
+                    cand_s = s0 + 0.12
+                    src_span_res = min(exact_dur, e0 - cand_s)
+                    cand_e = cand_s + src_span_res
+                    s0 += max(2.2, src_span_res * 0.75)
+                    if src_span_res < min_src_dur or cand_e > e0:
+                        break
+                    if _is_window_consumed(cand_s, cand_e, consumed_clip_keys):
+                        continue
+                    sub_ctx = get_transcript_slice(events, max(0.0, cand_s - 3.5), cand_e + 3.5).lower()
+                    if any(bkw in sub_ctx for bkw in SUBSCRIBE_BLACKLIST_KEYWORDS):
+                        continue
+                    if not verify_source_window_clean(video_path, cand_s, src_span_res, clip_detector, samples=12, is_camera_chap=is_cam_chap):
+                        continue
+                    b64_res, hist_res = extract_storyboard_and_hist(video_path, cand_s, cand_e, detector=clip_detector, is_camera_chap=is_cam_chap)
+                    if not b64_res or (hist_res is not None and is_visually_duplicate(hist_res, consumed_hists, threshold=0.86)):
+                        continue
+                    vis_res = check_clean_broll_segment(
+                        b64_res, sub_ctx, cut_item.get("chapter_title", cid), is_cam_chap, args.api_key,
+                        visual_focus=cut_item.get("visual_focus", cid), scene_vo=cut_item.get("cut_spoken_text", "")
+                    )
+                    if not (
+                        vis_res
+                        and vis_res.get("is_product_broll") is True
+                        and vis_res.get("has_face") is False
+                        and vis_res.get("has_editor_overlay") is False
+                        and vis_res.get("has_subscribe_popup", False) is False
+                        and vis_res.get("has_multiple_phones", False) is False
+                        and (is_cam_chap or vis_res.get("is_static_image", False) is False)
+                    ):
+                        continue
+                    avail_arg = src_span_res if src_span_res < (exact_dur - 0.08) else None
+                    cut_exact_broll_clip_1080p(video_path, cand_s, exact_dur, clip_out, avail_dur=avail_arg)
+                    if verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
+                        out_h = _extract_clip_mid_hist(clip_out)
+                        consumed_clip_keys.add((round(cand_s, 2), round(cand_e, 2)))
+                        if out_h is not None:
+                            consumed_hists.append(out_h)
+                        print(f"      ⚠️ Vision Rescue bersih [{cand_s:.1f}s-{cand_e:.1f}s] -> OK", flush=True)
+                        cut_ok = True
+                        break
+                    _safe_remove_file(clip_out)
+                if cut_ok:
+                    break
+
+        if cut_ok and os.path.exists(clip_out):
             all_final_clips.append(clip_out)
+        else:
+            _safe_remove_file(clip_out)
+            print(f"      [SKIP] Tidak ada klip cadangan yang lolos verifikasi ketat untuk cut ini.", flush=True)
+
+    if not all_final_clips:
+        print("[ERROR] Seluruh potongan klip gagal verifikasi bersih (anti-wajah/statis/identitas channel).", flush=True)
+        sys.exit(1)
 
     list_file = os.path.join(out_dir, "concat_list.txt")
     with open(list_file, "w") as f:

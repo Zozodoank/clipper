@@ -3062,9 +3062,7 @@ def extract_storyboard_and_hist(video_path, start_s, end_s, detector=None, is_ca
                 # sesaat di tengah/akhir klip pasti terlihat oleh Gemini Vision & detektor lokal!
                 crops.append(img)
                 if idx == 2:
-                    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-                    mid_hist = cv2.calcHist([hsv], [0, 1], None, [32, 32], [0, 180, 0, 256])
-                    cv2.normalize(mid_hist, mid_hist, 0, 1, cv2.NORM_MINMAX)
+                    mid_hist = _compute_frame_hist(img)
         except Exception:
             continue
     if not crops:
@@ -3086,9 +3084,10 @@ def is_visually_duplicate(curr_hist, prev_hists, threshold=0.87):
     if curr_hist is None or not prev_hists:
         return False
     for ph in prev_hists[-6:]:
-        if ph is not None:
-            if cv2.compareHist(curr_hist, ph, cv2.HISTCMP_CORREL) >= threshold:
-                return True
+        if ph is None or getattr(curr_hist, "shape", None) != getattr(ph, "shape", None):
+            continue
+        if cv2.compareHist(curr_hist, ph, cv2.HISTCMP_CORREL) >= threshold:
+            return True
     return False
 
 def check_clean_broll_segment(b64_img, raw_sub, chapter_title, is_camera_chap, api_key, visual_focus="", scene_vo=""):
@@ -3735,17 +3734,17 @@ def select_active_scenes_and_assign_slots(classified_pools):
     """
     pools = {cid: list(classified_pools.get(cid, [])) for cid in SCENE_CATALOG_MAP}
 
-    # Jika CTA tidak punya klip berlabel cta khusus, cadangkan 1 hero showcase sisa yang belum dipakai dari pool berlebih (>= 2 klip)
-    if not pools["cta"]:
+    # Jika CTA tidak punya (atau hanya 1) klip cta khusus, cadangkan hingga 2 hero showcase sisa dari pool berlebih (>= 2 klip)
+    if len(pools["cta"]) < 2:
         for donor_id in ("body", "fitur_unik", "design_layar", "kamera"):
-            if len(pools[donor_id]) >= 2:
-                # Pilih item back-of-phone terbaik atau item paling akhir agar tidak mengambil hero utama donor
+            while len(pools[donor_id]) >= 2 and len(pools["cta"]) < 2:
                 donor_list = pools[donor_id]
                 pick_i = next((i for i in range(len(donor_list) - 1, -1, -1) if donor_list[i].get("is_back_of_phone")), len(donor_list) - 1)
                 hero = donor_list.pop(pick_i)
                 hero_copy = dict(hero)
                 hero_copy["category"] = "cta"
                 pools["cta"].append(hero_copy)
+            if len(pools["cta"]) >= 2:
                 break
 
     active_cfg_list = []
@@ -5351,40 +5350,36 @@ def main():
             flush=True
         )
 
-        queue = scene_clip_queues.get(cid, [])
-        cut_ok = False
-        while queue:
-            cand_clip = queue.pop(0)
-            if _try_classified_candidate(cand_clip, exact_dur, clip_out, is_cam_chap):
-                print(f"      ✅ Klip [{cand_clip['start_s']:.1f}s-{cand_clip['end_s']:.1f}s] ({cand_clip.get('visual_note', cid)}) -> LOLOS UNIK", flush=True)
-                cut_ok = True
-                break
-            print(f"      [!] Klip [{cand_clip['start_s']:.1f}s-{cand_clip['end_s']:.1f}s] ditolak/duplikat -> Ambil cadangan kelas {cid}...", flush=True)
+        def _resolve_one_span(span_dur, target_mp4):
+            q_list = list(scene_clip_queues.get(cid, []))
+            for cand_clip in q_list:
+                if _try_classified_candidate(cand_clip, span_dur, target_mp4, is_cam_chap):
+                    if cand_clip in scene_clip_queues.get(cid, []):
+                        scene_clip_queues[cid].remove(cand_clip)
+                    print(f"      ✅ Klip [{cand_clip['start_s']:.1f}s-{cand_clip['end_s']:.1f}s] ({cand_clip.get('visual_note', cid)}) -> LOLOS UNIK", flush=True)
+                    return True
+                print(f"      [!] Klip [{cand_clip['start_s']:.1f}s-{cand_clip['end_s']:.1f}s] ditolak/duplikat -> Cari cadangan kelas {cid}...", flush=True)
 
-        # Tier Cadangan 1: Klip terklasifikasi lain yang BELUM terpakai di pool sejenis (mis. body/fitur_unik untuk non-kamera)
-        if not cut_ok and not is_cam_chap:
-            for alt_cid in ("body", "fitur_unik", "design_layar", "cta"):
-                if alt_cid == cid:
-                    continue
-                for alt_cl in list(classified_pools.get(alt_cid, [])):
-                    if _try_classified_candidate(alt_cl, exact_dur, clip_out, False):
-                        print(f"      ✅ Klip kompatibel dari [{alt_cid}] [{alt_cl['start_s']:.1f}s-{alt_cl['end_s']:.1f}s] -> LOLOS UNIK", flush=True)
-                        cut_ok = True
-                        break
-                if cut_ok:
-                    break
+            # Tier Cadangan 1: Klip terklasifikasi lain yang BELUM terpakai di pool sejenis (mis. body/fitur_unik untuk non-kamera)
+            if not is_cam_chap:
+                for alt_cid in ("body", "fitur_unik", "design_layar", "cta"):
+                    if alt_cid == cid:
+                        continue
+                    for alt_cl in list(classified_pools.get(alt_cid, [])):
+                        if _try_classified_candidate(alt_cl, span_dur, target_mp4, False):
+                            print(f"      ✅ Klip kompatibel dari [{alt_cid}] [{alt_cl['start_s']:.1f}s-{alt_cl['end_s']:.1f}s] -> LOLOS UNIK", flush=True)
+                            return True
 
-        # Tier Cadangan 2 (Wajib Gemini Vision + OpenCV — dilarang keras meloloskan segmen mentah tanpa Vision!)
-        if not cut_ok:
+            # Tier Cadangan 2 (Wajib Gemini Vision + OpenCV — dilarang keras meloloskan segmen mentah tanpa Vision!)
             safe_min_res = 38.0 if total_dur > 140.0 else 15.0
             safe_max_res = max(safe_min_res + 30.0, total_dur - 15.0) if total_dur > 140.0 else (total_dur - 4.0)
-            min_src_dur = max(1.6, exact_dur / 1.90)
+            min_src_dur = max(1.6, span_dur / 1.90)
             for fs_s, fs_e in face_free_segs:
                 s0 = max(float(fs_s), safe_min_res)
                 e0 = min(float(fs_e), safe_max_res)
                 while (e0 - s0) >= min_src_dur:
                     cand_s = s0 + 0.12
-                    src_span_res = min(exact_dur, e0 - cand_s)
+                    src_span_res = min(span_dur, e0 - cand_s)
                     cand_e = cand_s + src_span_res
                     s0 += max(2.2, src_span_res * 0.75)
                     if src_span_res < min_src_dur or cand_e > e0:
@@ -5413,19 +5408,41 @@ def main():
                         and (is_cam_chap or vis_res.get("is_static_image", False) is False)
                     ):
                         continue
-                    avail_arg = src_span_res if src_span_res < (exact_dur - 0.08) else None
-                    cut_exact_broll_clip_1080p(video_path, cand_s, exact_dur, clip_out, avail_dur=avail_arg)
-                    if verify_clip_100pct_face_free(clip_out, clip_detector, is_camera_chap=is_cam_chap):
-                        out_h = _extract_clip_mid_hist(clip_out)
+                    avail_arg = src_span_res if src_span_res < (span_dur - 0.08) else None
+                    cut_exact_broll_clip_1080p(video_path, cand_s, span_dur, target_mp4, avail_dur=avail_arg)
+                    if verify_clip_100pct_face_free(target_mp4, clip_detector, is_camera_chap=is_cam_chap):
+                        out_h = _extract_clip_mid_hist(target_mp4)
                         consumed_clip_keys.add((round(cand_s, 2), round(cand_e, 2)))
                         if out_h is not None:
                             consumed_hists.append(out_h)
                         print(f"      ⚠️ Vision Rescue bersih [{cand_s:.1f}s-{cand_e:.1f}s] -> OK", flush=True)
-                        cut_ok = True
-                        break
-                    _safe_remove_file(clip_out)
+                        return True
+                    _safe_remove_file(target_mp4)
+            return False
+
+        cut_ok = _resolve_one_span(exact_dur, clip_out)
+
+        # Jika 1 cut terlalu panjang (>= 4.2s) untuk 1 shot bersih tunggal, bagi visualnya menjadi 2 sub-klip unik tanpa duplikat!
+        if not cut_ok and exact_dur >= 4.2:
+            dur_a = round(exact_dur * 0.5, 3)
+            dur_b = round(exact_dur - dur_a, 3)
+            part_a = clip_out[:-4] + "_pa.mp4"
+            part_b = clip_out[:-4] + "_pb.mp4"
+            if _resolve_one_span(dur_a, part_a) and _resolve_one_span(dur_b, part_b):
+                p_list = clip_out[:-4] + "_plist.txt"
+                with open(p_list, "w") as pf:
+                    pf.write(f"file '{os.path.abspath(part_a)}'\nfile '{os.path.abspath(part_b)}'\n")
+                subprocess.run([
+                    "ffmpeg", "-nostdin", "-y", "-loglevel", "fatal",
+                    "-fflags", "+genpts", "-f", "concat", "-safe", "0",
+                    "-i", p_list, "-c", "copy", clip_out
+                ], check=True)
+                _safe_remove_file(p_list)
+                cut_ok = os.path.exists(clip_out)
                 if cut_ok:
-                    break
+                    print(f"      ✅ Durasi panjang ({exact_dur:.2f}s) dipecah mulus menjadi 2 klip unik ({dur_a:.2f}s + {dur_b:.2f}s)", flush=True)
+            _safe_remove_file(part_a)
+            _safe_remove_file(part_b)
 
         if cut_ok and os.path.exists(clip_out):
             all_final_clips.append(clip_out)

@@ -2659,18 +2659,50 @@ def has_animated_subscribe_badge(frames_bgr):
         return True
     return False
 
-def is_static_still_sequence(frames_bgr, min_motion_mad=1.85):
+def _compute_affine_aligned_residual(g_ref, g_mov, init_warp=None, err_thresh=2.2):
     """
-    Mendeteksi apakah serangkaian frame merupakan GAMBAR STATIS / FOTO DIAM / SLIDE / SCREENSHOT
-    (tidak ada pergerakan video nyata antar-frame).
-    Mengembalikan True jika rata-rata perubahan piksel di area tengah sangat rendah (< min_motion_mad)
-    ATAU jika hampir seluruh pasangan frame berurutan nyaris identik (< 1.25).
+    Menyelaraskan dua frame grayscale ter-blur memakai transformasi affine 2D (ECC)
+    lalu mengukur residual piksel di area tumpang-tindih tengah yang valid.
+    Mengembalikan (mean_err, p75_err, flat_frac, warp_3x3).
+    """
+    h, w = g_ref.shape[:2]
+    wm = init_warp[:2, :].astype(np.float32).copy() if init_warp is not None else np.eye(2, 3, dtype=np.float32)
+    if init_warp is None:
+        criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 24, 1e-3)
+        try:
+            _, wm = cv2.findTransformECC(g_ref, g_mov, wm, cv2.MOTION_AFFINE, criteria)
+        except Exception:
+            return 999.0, 999.0, 0.0, np.eye(3, dtype=np.float32)
+
+    mask = np.full((h, w), 255.0, dtype=np.float32)
+    warped_mask = cv2.warpAffine(mask, wm, (w, h), flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP)
+    valid = warped_mask > 250.0
+    m_y, m_x = max(2, int(h * 0.12)), max(2, int(w * 0.12))
+    valid[:m_y, :] = False
+    valid[h - m_y:, :] = False
+    valid[:, :m_x] = False
+    valid[:, w - m_x:] = False
+
+    if float(np.mean(valid)) < 0.35:
+        return 999.0, 999.0, 0.0, np.vstack([wm, [0.0, 0.0, 1.0]]).astype(np.float32)
+
+    aligned = cv2.warpAffine(g_mov, wm, (w, h), flags=cv2.INTER_LINEAR + cv2.WARP_INVERSE_MAP)
+    diff = np.abs(g_ref[valid] - aligned[valid])
+    w3 = np.vstack([wm, [0.0, 0.0, 1.0]]).astype(np.float32)
+    return float(np.mean(diff)), float(np.percentile(diff, 75)), float(np.mean(diff <= err_thresh)), w3
+
+
+def is_static_still_sequence(frames_bgr, min_motion_mad=2.20):
+    """
+    Mendeteksi apakah serangkaian frame merupakan GAMBAR STATIS / FOTO DIAM / SLIDE /
+    SCREENSHOT maupun gambar diam yang hanya diberi efek Ken Burns zoom/pan atau kedipan kecil.
     Catatan: Fungsi ini HANYA diaktifkan untuk bab SELAIN Kamera (`not is_camera_chap`).
     """
     if not frames_bgr or len(frames_bgr) < 3:
         return False
 
     grays = []
+    grays_ecc = []
     for fr in frames_bgr:
         if fr is None or fr.size == 0:
             continue
@@ -2682,13 +2714,13 @@ def is_static_still_sequence(frames_bgr, min_motion_mad=1.85):
         g = cv2.GaussianBlur(g, (3, 3), 0)
         grays.append(g.astype(np.float32))
 
+        g_full = cv2.cvtColor(cv2.resize(fr, (144, 256), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY)
+        grays_ecc.append(cv2.GaussianBlur(g_full, (5, 5), 0).astype(np.float32))
+
     if len(grays) < 3:
         return False
 
-    step_diffs = []
-    for i in range(len(grays) - 1):
-        mad = float(np.mean(np.abs(grays[i + 1] - grays[i])))
-        step_diffs.append(mad)
+    step_diffs = [float(np.mean(np.abs(grays[i + 1] - grays[i]))) for i in range(len(grays) - 1)]
 
     # Gunakan rata-rata tanpa 1 outlier tertinggi (mengantisipasi jika tepat ada 1 pergantian slide di tengah)
     sorted_diffs = sorted(step_diffs)
@@ -2696,9 +2728,41 @@ def is_static_still_sequence(frames_bgr, min_motion_mad=1.85):
     mean_core_mad = float(np.mean(core_diffs))
     span_mad = float(np.mean(np.abs(grays[-1] - grays[0])))
 
-    if mean_core_mad < min_motion_mad and span_mad < (min_motion_mad * 1.45):
+    if mean_core_mad < min_motion_mad and span_mad < (min_motion_mad * 2.2):
         return True
-    if sum(1 for d in step_diffs if d < 1.25) >= max(2, len(step_diffs) - 1):
+    if sum(1 for d in step_diffs if d < 1.55) >= max(2, len(step_diffs) - 1):
+        return True
+
+    # Lapis 2: Kompensasi gerak affine 2D (menangkap foto diam ber-efek Ken Burns zoom/pan maupun slide fade-lalu-membeku)
+    step_ecc = []
+    w_acc = np.eye(3, dtype=np.float32)
+    chain_ok = True
+    for i in range(len(grays_ecc) - 1):
+        s_mean, _, _, w3 = _compute_affine_aligned_residual(grays_ecc[i], grays_ecc[i + 1])
+        step_ecc.append(s_mean)
+        if s_mean >= 900.0:
+            chain_ok = False
+        else:
+            w_acc = w_acc @ w3
+
+    step_med = float(np.median(step_ecc))
+    e2e_mean, e2e_p75, e2e_flat, _ = _compute_affine_aligned_residual(
+        grays_ecc[0], grays_ecc[-1], init_warp=w_acc if chain_ok else None
+    )
+    dir_mean, dir_p75, dir_flat, _ = _compute_affine_aligned_residual(grays_ecc[0], grays_ecc[-1])
+    if dir_mean < e2e_mean:
+        e2e_mean, e2e_p75, e2e_flat = dir_mean, dir_p75, max(e2e_flat, dir_flat)
+
+    if step_med <= 2.35 and (e2e_mean <= 6.2 or (e2e_mean <= 7.5 and e2e_p75 <= 5.2)):
+        return True
+
+    sub_mean, sub_p75, sub_flat = 999.0, 999.0, 0.0
+    if len(grays_ecc) >= 4:
+        sub_mean, sub_p75, sub_flat, _ = _compute_affine_aligned_residual(grays_ecc[1], grays_ecc[-1], err_thresh=2.0)
+        if sub_mean <= 4.8 and sub_p75 <= 2.8 and sum(1 for e in step_ecc[1:] if e <= 1.80) >= max(2, len(step_ecc) - 2):
+            return True
+
+    if step_med <= 2.5 and ((e2e_mean <= 7.5 and e2e_flat >= 0.78) or (sub_mean <= 6.0 and sub_flat >= 0.80)):
         return True
     return False
 
@@ -2955,21 +3019,24 @@ def verify_clip_100pct_face_free(clip_path, detector, step=3, is_camera_chap=Fal
     if not os.path.exists(clip_path):
         return True
     cap = cv2.VideoCapture(clip_path)
-    n_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    step = max(1, int(step))
     is_clean = True
     sampled_small = []
-    for idx in range(0, max(1, n_frames), step):
-        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
-        ret, fr = cap.read()
-        if not ret or fr is None:
-            continue
-        sm = cv2.resize(fr, (270, 480), interpolation=cv2.INTER_AREA)
-        if detector is not None:
-            _, faces = detector.detect(sm)
-            if faces is not None and len(faces) > 0:
-                is_clean = False
-                break
-        sampled_small.append(sm)
+    idx = 0
+    while True:
+        if not cap.grab():
+            break
+        if idx % step == 0:
+            ret, fr = cap.retrieve()
+            if ret and fr is not None:
+                sm = cv2.resize(fr, (270, 480), interpolation=cv2.INTER_AREA)
+                if detector is not None:
+                    _, faces = detector.detect(sm)
+                    if faces is not None and len(faces) > 0:
+                        is_clean = False
+                        break
+                sampled_small.append(sm)
+        idx += 1
     cap.release()
     if not is_clean:
         return False
@@ -2978,11 +3045,10 @@ def verify_clip_100pct_face_free(clip_path, detector, step=3, is_camera_chap=Fal
     if sampled_small and has_side_by_side_dual_phones(sampled_small):
         return False
     if not is_camera_chap and len(sampled_small) >= 3:
-        # Cek still-image menggunakan 6 sampel renggang (~seluruh durasi klip) agar slow-fit halus tidak salah ditandai statis
-        if len(sampled_small) >= 4:
-            still_idx = np.linspace(0, len(sampled_small) - 1, min(6, len(sampled_small)), dtype=int)
-            if is_static_still_sequence([sampled_small[i] for i in still_idx]):
-                return False
+        # Cek still-image menggunakan hingga 6 sampel renggang (~seluruh durasi klip) agar slow-fit halus & Ken Burns tetap terdeteksi presisi
+        still_idx = np.linspace(0, len(sampled_small) - 1, min(6, len(sampled_small)), dtype=int)
+        if is_static_still_sequence([sampled_small[i] for i in still_idx]):
+            return False
         # Cek potongan huruf/overlay menggunakan hingga 12 sampel rapat (khusus non-Kamera agar hasil tangkapan kamera alami tetap lolos)
         pick_idx = np.linspace(0, len(sampled_small) - 1, min(12, len(sampled_small)), dtype=int)
         motion_samples = [sampled_small[i] for i in pick_idx]
@@ -2997,14 +3063,11 @@ def verify_source_window_clean(video_path, seg_start, exact_dur, detector, sampl
     bebas 2 handphone berdampingan, dan (khusus di luar Bab Kamera) bebas gambar statis maupun teks terpotong kiri-kanan-bawah.
     """
     cap = cv2.VideoCapture(video_path)
+    vid_fps = float(cap.get(cv2.CAP_PROP_FPS) or 30.0)
     sampled_small = []
     is_clean = True
-    times = np.linspace(seg_start, max(seg_start + 0.2, seg_start + exact_dur - 0.05), samples)
-    for t in times:
-        cap.set(cv2.CAP_PROP_POS_MSEC, float(t) * 1000.0)
-        ret, fr = cap.read()
-        if not ret or fr is None:
-            continue
+    times = [float(t) for t in np.linspace(seg_start, max(seg_start + 0.2, seg_start + exact_dur - 0.05), samples)]
+    for _, fr in _sample_frames_sequential(cap, times, fps=vid_fps):
         h, w = fr.shape[:2]
         cw = int(h * 9 / 16)
         x0 = max(0, (w - cw) // 2)
@@ -3024,7 +3087,7 @@ def verify_source_window_clean(video_path, seg_start, exact_dur, detector, sampl
     if sampled_small and has_side_by_side_dual_phones(sampled_small):
         return False
     if not is_camera_chap and len(sampled_small) >= 3:
-        if len(sampled_small) >= 4 and is_static_still_sequence(sampled_small):
+        if is_static_still_sequence(sampled_small):
             return False
         if has_cropped_or_floating_static_text(sampled_small, allow_natural_scene=False):
             return False
@@ -3108,7 +3171,7 @@ def check_clean_broll_segment(b64_img, raw_sub, chapter_title, is_camera_chap, a
             "subtitle permanen video asli, watermark teks besar, screenshot marketplace, animasi tombol Subscribe/Like/Lonceng, "
             "ATAU POTONGAN HURUF/KATA YANG TERPOTONG MASUK DARI TEPI KIRI ATAU KANAN FRAME akibat crop vertikal 9:16."
         )
-        static_rule = "6. is_static_image = true JIKA kelima frame menampilkan GAMBAR STATIS / FOTO DIAM / SLIDE PRESENTASI / SCREENSHOT / SKOR ANTUTU DIAM / TABEL SPESIFIKASI tanpa pergerakan video nyata (atau hanya efek zoom/pan lambat pada foto diam). Untuk bab selain Kamera, gambar statis WAJIB DITOLAK!"
+        static_rule = "6. is_static_image = true JIKA kelima frame menampilkan GAMBAR STATIS / FOTO DIAM / SLIDE PRESENTASI / SCREENSHOT / SKOR ANTUTU DIAM / TABEL SPESIFIKASI, ATAU foto/ponsel yang berpose identik membeku antar-frame dan hanya mengalami efek zoom/pan kamera perlahan (Ken Burns) tanpa gerakan tangan memutar HP atau interaksi layar nyata. Untuk bab selain Kamera, gambar statis WAJIB DITOLAK!"
 
     focus_line = f"Fokus Visual Sub-Adegan: {visual_focus}" if visual_focus else f"Target Bab Visual: {chapter_title}"
     vo_line = f"Kalimat Voiceover Adegan Ini: \"{scene_vo}\"" if scene_vo else ""
@@ -3252,7 +3315,7 @@ def _sample_frames_sequential(cap, timestamps, fps=30.0, state=None):
     Membaca frame pada daftar timestamp menaik secara sekuensial dengan cap.grab()
     agar H.264 tidak melakukan seek-keyframe berulang kali (~40x lebih cepat di ARM/Termux).
     """
-    if cap is None or not timestamps:
+    if cap is None or timestamps is None or len(timestamps) == 0:
         return []
     safe_fps = float(fps) if (fps and 5.0 <= fps <= 120.0) else 30.0
     if state is None:
@@ -3507,7 +3570,7 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
     if os.path.exists(cache_path):
         try:
             cached = json.load(open(cache_path, "r", encoding="utf-8"))
-            if cached.get("vid_id") == vid_id and cached.get("version") == 4 and cached.get("items"):
+            if cached.get("vid_id") == vid_id and cached.get("version") == 5 and cached.get("items"):
                 raw_items = cached["items"]
                 cap = cv2.VideoCapture(video_path) if (video_path and os.path.exists(video_path)) else None
                 for it in raw_items:
@@ -3540,7 +3603,7 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                 deduped = _deduplicate_classified_pools(pools)
                 total_ok = sum(len(v) for v in deduped.values())
                 if total_ok >= 1:
-                    print(f"[+] Memuat {total_ok} klip terklasifikasi unik dari Cache Klasifikasi v4.", flush=True)
+                    print(f"[+] Memuat {total_ok} klip terklasifikasi unik dari Cache Klasifikasi v5.", flush=True)
                     return deduped
         except Exception:
             pass
@@ -3588,7 +3651,7 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                 "",
                 "ATURAN KHUSUS KATEGORI `kamera` vs NON-KAMERA:",
                 "- Untuk `kamera`: AGAK LONGGAR khusus tangkapan kamera & teks foto! Tetap WAJIB bebas wajah manusia, bebas logo/identitas channel, & bebas 2+ HP, tetapi HASIL JEPRETAN KAMERA (pemandangan, hewan, bunga, bangunan, malam, viewfinder) boleh foto statis maupun memiliki watermark bawah/badge mode kamera.",
-                "- Untuk 9 kategori NON-KAMERA (`body`, `ketahanan_fisik`, `design_layar`, `baterai_daya`, `os`, `benchmark_dapur_pacu`, `speaker`, `fitur_unik`, `cta`): WAJIB terlihat gerakan video nyata pada unit HP (TOLAK gambar statis / Ken Burns zoom foto diam) dan set `is_static_image: true` bila ketiga frame berupa gambar/slide diam!",
+                "- Untuk 9 kategori NON-KAMERA (`body`, `ketahanan_fisik`, `design_layar`, `baterai_daya`, `os`, `benchmark_dapur_pacu`, `speaker`, `fitur_unik`, `cta`): WAJIB terlihat gerakan video nyata pada unit HP (TOLAK gambar/foto diam maupun ponsel berpose identik yang hanya di-zoom/pan Ken Burns perlahan tanpa pergerakan sudut/tangan/layar nyata) dan set `is_static_image: true` bila ketiga frame tampak diam!",
                 "- JANGAN terkecoh oleh posisi detik! Jika di segmen unboxing/body terselip adegan bermain game -> wajib klasifikasikan ke `benchmark_dapur_pacu`, BUKAN `body`!",
                 "- Set `has_face: true` jika ada wajah. Set `has_channel_overlay: true` jika ada logo/identitas channel, URL website, atau animasi Subscribe/Like/Follow. Set `has_overlay_text: true` jika ada potongan huruf di tepi atau teks melayang.",
                 "- Hanya 1 unit HP yang diizinkan (`phone_count = 1`), kecuali foto/video hasil jepretan kamera pada kategori `kamera` (`phone_count = 0`).",
@@ -3716,7 +3779,7 @@ def classify_all_candidate_clips(video_path, vid_id, work_dir, face_free_segs, d
                 for cid_list in deduped.values() for it in cid_list
             ]
             with open(cache_path, "w", encoding="utf-8") as f:
-                json.dump({"vid_id": vid_id, "version": 4, "items": flat_deduped}, f, ensure_ascii=False, indent=2)
+                json.dump({"vid_id": vid_id, "version": 5, "items": flat_deduped}, f, ensure_ascii=False, indent=2)
         except Exception:
             pass
 
@@ -3734,16 +3797,27 @@ def select_active_scenes_and_assign_slots(classified_pools):
     """
     pools = {cid: list(classified_pools.get(cid, [])) for cid in SCENE_CATALOG_MAP}
 
-    # Jika CTA tidak punya (atau hanya 1) klip cta khusus, cadangkan hingga 2 hero showcase sisa dari pool berlebih (>= 2 klip)
+    # Jika CTA tidak punya (atau hanya 1) klip cta khusus, cadangkan hingga 2 hero showcase sisa non-statis berwujud HP dari pool berlebih
+    def _is_eligible_cta_donor(item):
+        if item.get("has_face") is True or item.get("has_channel_overlay") is True:
+            return False
+        if item.get("is_static_image") is True or item.get("is_static_local"):
+            return False
+        if item.get("has_overlay_text") is True or item.get("has_edge_text_local"):
+            return False
+        return int(item.get("phone_count", 1)) >= 1
+
     if len(pools["cta"]) < 2:
         for donor_id in ("body", "fitur_unik", "design_layar", "kamera"):
-            while len(pools[donor_id]) >= 2 and len(pools["cta"]) < 2:
-                donor_list = pools[donor_id]
-                pick_i = next((i for i in range(len(donor_list) - 1, -1, -1) if donor_list[i].get("is_back_of_phone")), len(donor_list) - 1)
+            donor_list = pools[donor_id]
+            eligible_idx = [i for i, it in enumerate(donor_list) if _is_eligible_cta_donor(it)]
+            while len(donor_list) >= 2 and eligible_idx and len(pools["cta"]) < 2:
+                pick_i = next((i for i in reversed(eligible_idx) if donor_list[i].get("is_back_of_phone")), eligible_idx[-1])
                 hero = donor_list.pop(pick_i)
                 hero_copy = dict(hero)
                 hero_copy["category"] = "cta"
                 pools["cta"].append(hero_copy)
+                eligible_idx = [i for i, it in enumerate(donor_list) if _is_eligible_cta_donor(it)]
             if len(pools["cta"]) >= 2:
                 break
 
@@ -5317,6 +5391,8 @@ def main():
     consumed_hists = []
 
     def _try_classified_candidate(cand_clip, exact_dur, clip_out, is_cam_chap):
+        if (not is_cam_chap) and (cand_clip.get("is_static_image") is True or cand_clip.get("is_static_local")):
+            return False
         cs, ce = float(cand_clip["start_s"]), float(cand_clip["end_s"])
         if _is_window_consumed(cs, ce, consumed_clip_keys):
             return False
